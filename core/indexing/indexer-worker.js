@@ -1,9 +1,6 @@
 /**
- * Indexer Worker — worker_thread entry point for ORT inference.
- *
- * Loads a model (embedding or LI) and processes batches received from
- * the main thread. Each worker owns its own ORT session with an
- * independent thread pool for true CPU parallelism.
+ * Each worker owns its own ORT session with an independent thread pool for
+ * true CPU parallelism.
  */
 
 import { parentPort, workerData } from 'worker_threads';
@@ -29,7 +26,6 @@ async function initEmbeddingWorker() {
 
   const INDEXING_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_INDEXING_MAX_LENGTH || '512', 10);
 
-  // Load model
   await fetchModel('coderankembed-int8');
   const ort = await initOrt();
   const entry = getModelEntry('coderankembed-int8');
@@ -41,7 +37,6 @@ async function initEmbeddingWorker() {
   delete sessionOptions.executionProviders;
   const session = await ort.InferenceSession.create(onnxPath, sessionOptions);
 
-  // Two-pass warmup
   const warmupTexts = [
     'export class AuthService { constructor(private jwtProvider) {} }',
     'function buildIndex(vectors) { return new HNSWIndex({ dimension: 256 }); }',
@@ -53,7 +48,6 @@ async function initEmbeddingWorker() {
 
   parentPort.postMessage({ type: 'ready', workerIndex });
 
-  // Handle inference requests
   parentPort.on('message', async (msg) => {
     if (msg.type === 'embed') {
       try {
@@ -67,8 +61,8 @@ async function initEmbeddingWorker() {
         const outputs = await session.run(feed);
         const pooled = extractPooledEmbeddings(outputs, tokenized.attention_mask, true);
 
-        // Transfer the embedding buffer to avoid copying
         const buffer = pooled.data.buffer;
+        // Transfer the embedding buffer to avoid copying
         parentPort.postMessage(
           {
             type: 'embedResult',
@@ -77,7 +71,7 @@ async function initEmbeddingWorker() {
             dim: pooled.dim,
             count: pooled.batchSize,
           },
-          [buffer], // transferList: zero-copy
+          [buffer],
         );
       } catch (err) {
         parentPort.postMessage({

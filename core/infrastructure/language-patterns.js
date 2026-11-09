@@ -5,8 +5,8 @@
  * and graph extraction patterns across all supported languages/formats.
  *
  * Used by:
- * - ast-chunker.js        → chunk boundary detection via getChunkerPatterns()
- * - core/graph-extractor.js → entity/relationship extraction via getGraphPatterns()
+ * - core/indexing/ast-chunker.js → chunk boundary detection via getChunkerPatterns()
+ * - core/graph/graph-extractor.js → entity/relationship extraction via getGraphPatterns()
  *
  * Design:
  * - EXTENSION_MAP: complete for all 35+ languages (always resolves)
@@ -20,12 +20,7 @@ import { EXTENSION_MAP, FILENAME_MAP } from './language-patterns/maps.js';
 import { LANGUAGES } from './language-patterns/registry.js';
 export { EXTENSION_MAP, FILENAME_MAP, LANGUAGES };
 
-// =============================================================================
-// API FUNCTIONS
-// =============================================================================
-
 /**
- * Get language config by file extension.
  * @param {string} ext - File extension including dot (e.g. '.py')
  * @returns {{ id: string, ...config } | null}
  */
@@ -83,16 +78,14 @@ const HEADER_DISAMBIGUATOR_SCAN_BYTES = 2048;
  * cpp; otherwise keep the default routing. No project-level state, no
  * cross-file leakage; per-file decision is locally explainable.
  *
- * @param {string} filePath - File path
- * @param {string} [content] - File content (optional; required for `.h` disambiguation)
+ * @param {string} [content] - optional; required for `.h` disambiguation
  * @returns {{ id: string, ...config } | null}
  */
 export function resolveLanguage(filePath, content) {
   const langInfo = getLanguageByPath(filePath);
   if (!langInfo) return null;
   if (langInfo.id !== 'c') return langInfo;
-  // Only attempt content disambiguation for `.h` (the ambiguous extension).
-  // `.c` files are unambiguous C; we won't override them based on content.
+  // `.c` files are unambiguous C; only `.h` is disambiguated by content.
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.h') return langInfo;
   if (typeof content !== 'string' || content.length === 0) return langInfo;
@@ -106,8 +99,7 @@ export function resolveLanguage(filePath, content) {
 }
 
 /**
- * Get language config by file path (handles both extension and filename).
- * @param {string} filePath - File path
+ * Handles both extension and filename.
  * @returns {{ id: string, ...config } | null}
  */
 export function getLanguageByPath(filePath) {
@@ -116,9 +108,7 @@ export function getLanguageByPath(filePath) {
     const result = getLanguageByExtension(ext);
     if (result) return result;
   }
-  // No extension — check filename
   const basename = path.basename(filePath);
-  // Check exact match
   const id = FILENAME_MAP[basename];
   if (id) {
     const lang = LANGUAGES[id];
@@ -137,8 +127,6 @@ export function getLanguageByPath(filePath) {
 }
 
 /**
- * Get chunker patterns for a language.
- * @param {string} languageId - Language identifier (e.g. 'python')
  * @returns {Object<string, RegExp> | null}
  */
 export function getChunkerPatterns(languageId) {
@@ -146,8 +134,6 @@ export function getChunkerPatterns(languageId) {
 }
 
 /**
- * Get graph extraction patterns for a language.
- * @param {string} languageId
  * @returns {{ entities: Object, relationships: Object, skipCallObjects: string[] } | null}
  */
 export function getGraphPatterns(languageId) {
@@ -155,8 +141,6 @@ export function getGraphPatterns(languageId) {
 }
 
 /**
- * Get language metadata (indent style, comments).
- * @param {string} languageId
  * @returns {{ indentBased: boolean, endKeyword: string|null, comment: Object } | null}
  */
 export function getLanguageMeta(languageId) {
@@ -169,27 +153,14 @@ export function getLanguageMeta(languageId) {
   };
 }
 
-/**
- * Get all supported file extensions.
- * @returns {string[]}
- */
 export function getSupportedExtensions() {
   return Object.keys(EXTENSION_MAP);
 }
 
-/**
- * Check if a language uses indentation for scoping.
- * @param {string} languageId
- * @returns {boolean}
- */
 export function isIndentBased(languageId) {
   return LANGUAGES[languageId]?.indentBased || false;
 }
 
-/**
- * Get all registered language IDs.
- * @returns {string[]}
- */
 export function getRegisteredLanguages() {
   return Object.keys(LANGUAGES);
 }

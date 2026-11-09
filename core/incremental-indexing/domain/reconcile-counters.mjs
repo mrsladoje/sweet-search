@@ -82,11 +82,6 @@ export class ReconcileCounters {
     this._fields.wal = freshWalState();
   }
 
-  /**
-   * Increment a counter by 1 (or by `n`).
-   * @param {keyof typeof DEFAULT_FIELDS|string} key
-   * @param {number} n
-   */
   inc(key, n = 1) {
     if (typeof this._fields[key] === 'number') {
       this._fields[key] += n;
@@ -105,9 +100,6 @@ export class ReconcileCounters {
 
   /**
    * Set an arbitrary scalar (used for `epoch`, `tick_ms`, watermarks, etc.).
-   *
-   * @param {string} key
-   * @param {*} value
    */
   set(key, value) {
     if (key.includes('.')) {
@@ -126,8 +118,6 @@ export class ReconcileCounters {
   /**
    * Return the metrics object as it would be serialised to
    * `.sweet-search/reconcile-metrics.jsonl`. Plan § 20.1.
-   *
-   * @returns {object}
    */
   snapshot() {
     return JSON.parse(JSON.stringify(this._fields));

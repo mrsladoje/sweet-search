@@ -1,8 +1,3 @@
-/**
- * Indexer ANN - HNSW, late interaction, and quantized artifact building.
- * Extracted from index-codebase-v21.js for file size compliance (<500 lines).
- */
-
 import { existsSync } from 'fs';
 import path from 'path';
 
@@ -27,16 +22,6 @@ function counted(encode, label) {
 }
 
 
-
-// =============================================================================
-// SQLITE VECTOR STREAMING (Phase B — eliminates O(n*d) in-memory arrays)
-// =============================================================================
-
-/**
- * Stream vectors from SQLite in the specified order.
- * For 'sequential' order, reads by rowid (no temp table needed).
- * For 'shuffle' or 'diversity', pre-computes order in a temp table.
- */
 // Alias rows (dedup sibling pointers) are filtered out of HNSW construction.
 // Inserting them with the exemplar's duplicate embedding floods top-K with
 // ties and displaces higher-quality matches. Sibling promotion at query
@@ -60,8 +45,6 @@ function vectorIndexWhere(db, alias = '') {
 }
 
 /**
- * Pure decision function — should the hybrid CPU+GPU LI dispatcher arm?
- *
  * Exported for direct unit testing without constructing the full
  * `buildLateInteractionIndex` pipeline. The runtime call site in the
  * encoder-selection block reimplements the same conditions inline; if
@@ -195,9 +178,8 @@ export function planLateInteractionBatches(items, options = {}) {
       const candidateLongest = indexed[i + batchSize].estTokens;
       const candidateCount = batchSize + 1;
       if (candidateCount > batchSizeUpperCap) break;
-      // Memory cap — linear in seq_len (hidden state ~ batch × seq × hidden_size)
+      // Memory cap: linear in seq_len. Compute cap: quadratic (attention ~ batch × seq²).
       if (candidateLongest * candidateCount > tokenBudget) break;
-      // Compute cap — quadratic in seq_len (attention ~ batch × seq²)
       if (candidateLongest * candidateLongest * candidateCount > attentionBudget) break;
       batchSize = candidateCount;
     }
@@ -207,10 +189,6 @@ export function planLateInteractionBatches(items, options = {}) {
 
   return batches;
 }
-
-// =============================================================================
-// PHASE 4: LATE INTERACTION INDEX
-// =============================================================================
 
 export async function buildLateInteractionIndex(chunks, dryRun = false, filesToRemove = [], options = {}) {
   const {
@@ -229,9 +207,8 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     attentionBudget = null,
     segmentSize = null, // override SSLX-v3 segment threshold (default 10k)
     projectRoot,        // honored by LI skip policy for .sweet-search.config.json excludes
-    // Bounded-memory build (streaming path): evict each flushed segment's
-    // per-token slabs from the index's in-memory map so peak heap stays
-    // O(one segment) on huge repos. Safe only for from-scratch full rebuilds.
+    // Streaming path: evicts each flushed segment's per-token slabs so peak
+    // heap stays O(one segment). Safe only for from-scratch full rebuilds.
     buildEvict = false,
     // The streaming caller applies the LI skip policy once during its spill
     // pass (where chunk content is in hand), so skip it here to avoid needing
@@ -245,7 +222,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     return;
   }
 
-  // Apply LI skip policy: last-mile guard before the slow encoder runs.
+  // Last-mile guard before the slow encoder runs.
   // The embed indexer has already dropped glob-excluded files at discovery
   // time using the same loadProjectConfig() excludes; this pass adds the
   // LI-specific check globs can't do: content-based @generated markers.
@@ -278,7 +255,6 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     return;
   }
 
-  // Default to the product LI quantization, with env vars available for A/B overrides.
   const defaultQuantBits = LATE_INTERACTION_CONFIG.quantization === 'int4' ? 4 : 8;
   const quantBits = parseInt(process.env.SWEET_SEARCH_LI_QUANT_BITS || String(defaultQuantBits), 10);
   const whtSeed = parseInt(process.env.SWEET_SEARCH_LI_WHT_SEED || '0', 10);
@@ -402,8 +378,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
       maxLength: LATE_INTERACTION_CONFIG.activeModel?.maxDocLength || 2048,
     });
 
-    // ── Hybrid CPU+GPU dispatch (OPT-IN, experimental) ──
-    //
+    // Hybrid CPU+GPU dispatch (OPT-IN, experimental).
     // Default routes all LI through whichever single encoder is available
     // (native GPU preferred when present, ORT INT8 CPU fallback otherwise).
     //
@@ -428,9 +403,8 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     let cpuEncoder = null;
     let singleEncoder = null;
 
-    // Hybrid dispatcher decision — see `decideHybridDispatcher` above for
-    // the full policy. Logs a diagnostic when hybrid was enabled but
-    // declined because the Metal queue is contended by parallel embed.
+    // Logs a diagnostic when hybrid was enabled but declined because the
+    // Metal queue is contended by parallel embed.
     // This is the common user trap — setting `SWEET_SEARCH_LI_HYBRID=1`
     // alone on default config silently degrades instead of parallelizing
     // (see tests/diagnose-hybrid-hang.js).
@@ -502,7 +476,6 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
       }
     }
 
-    // Shared finalizer for one batch's results.
     // Profile: tracks finalize cost (single-threaded JS work inside liIndex.add).
     // Set SWEET_SEARCH_LI_PROFILE=1 to print rolling stats.
     const profile = process.env.SWEET_SEARCH_LI_PROFILE === '1';
@@ -549,8 +522,6 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     try {
       if (profile) stats.wallStart = Date.now(); // reset to first batch
       if (useHybrid) {
-        // ── Smart bidirectional routing ──
-        //
         // The bucketer (`buildLateInteractionBatches`) sorts batches ASCENDING
         // by token length, so `batches[0]` has the shortest chunks and
         // `batches[N-1]` the longest. The general-shape per-batch profile is:
@@ -619,8 +590,8 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     }
   }
 
-  // Dedup: register alias pointers. Aliases reuse their exemplar's per-token
-  // matrix at MaxSim time, so no encoder work was done for them above.
+  // Aliases reuse their exemplar's per-token matrix at MaxSim time, so no
+  // encoder work was done for them above.
   if (aliasChunks.length > 0) {
     let registered = 0;
     let orphaned = 0;
@@ -647,7 +618,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     log(`LateInteraction dedup: registered ${registered} alias pointer(s)${orphaned > 0 ? `, ${orphaned} orphaned (exemplar absent)` : ''}`, 'dim');
   }
 
-  // If paths matched (no staging), resetForSave was not called above; set path now.
+  // No staging: resetForSave was not called above.
   if (saveToPath === loadFromPath) {
     liIndex.indexPath = saveToPath;
   }
@@ -665,10 +636,6 @@ export const __TEST__ = {
   vectorIndexWhere,
   liveVectorSql,
 };
-
-// =============================================================================
-// PHASE 5: BINARY HNSW + INT8 QUANTIZED ARTIFACTS
-// =============================================================================
 
 export async function buildQuantizedArtifactsPhase(dryRun = false, options = {}) {
   log('\n━━━ Phase 5: Binary HNSW + Int8 Artifacts ━━━', 'bright');
@@ -688,11 +655,10 @@ export async function buildQuantizedArtifactsPhase(dryRun = false, options = {})
 
     const skipCheck = await shouldSkipArtifactRebuild({ changedFiles, force });
 
-    // usearch float HNSW was removed (commit c2a9817) — the binary HNSW is now
-    // the ONLY semantic search surface, and search dispatches to it whenever the
-    // artifact exists. So we can NO LONGER defer its rebuild on a sub-threshold
-    // change: that left vectors freshly committed to codebase.db invisible to
-    // 3-stage search until the next rebuild fired (the staleness Codex caught).
+    // The binary HNSW is the ONLY semantic search surface, and search
+    // dispatches to it whenever the artifact exists. So its rebuild cannot be
+    // deferred on a sub-threshold change: that left vectors freshly committed
+    // to codebase.db invisible to 3-stage search until the next rebuild.
     // Any actual change must rebuild the binary artifact to stay consistent with
     // codebase.db; only a genuine no-op run (0 changed files) may skip. (The
     // default daemon reconcile path maintains this per-tick via applyBinaryHNSWDelta.)

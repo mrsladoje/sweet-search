@@ -6,7 +6,7 @@ import { resolveEntityKindInfo } from './entity-kind.js';
 import { classifyFileKindIntent } from './query-analysis.js';
 import { envFloatRange } from './env-tuning.js';
 
-// Declarative / doc-string-heavy chunk demotion (added 2026-05-05).
+// Declarative / doc-string-heavy chunk demotion.
 //
 // Three narrow, independent content-shape triggers — each catches a specific
 // failure shape observed in the May-05 novel-probe analysis:
@@ -78,10 +78,8 @@ export function avgFnBodyLines(text) {
   let totalBodyLines = 0;
   let counted = 0;
   for (const startIdx of matches) {
-    // Find the opening `{` after this fn signature.
     const openIdx = text.indexOf('{', startIdx);
     if (openIdx === -1) continue;
-    // Walk braces to find the matching close.
     let depth = 1;
     let j = openIdx + 1;
     let inString = false;
@@ -130,17 +128,14 @@ export function rawStringDensity(text) {
   const len = text.length;
   while (i < len) {
     if (!/\s/.test(text[i])) total++;
-    // Detect `r#*"` opener.
     if (text[i] === 'r' && (text[i + 1] === '"' || text[i + 1] === '#')) {
       let j = i + 1;
       let hashCount = 0;
       while (text[j] === '#') { hashCount++; j++; }
       if (text[j] === '"') {
-        // We're inside a raw string. Find the matching close.
         const closeNeedle = '"' + '#'.repeat(hashCount);
         const closeAt = text.indexOf(closeNeedle, j + 1);
         if (closeAt === -1) {
-          // unterminated — count rest of file as inside
           for (let k = j + 1; k < len; k++) {
             if (!/\s/.test(text[k])) { inside++; total++; }
           }
@@ -271,7 +266,7 @@ export function anomalousChunkDemotion(result, opts = {}) {
 }
 
 /**
- * Mega-entity penalty (F1, 2026-05-07): when a chunk's enclosing entity
+ * Mega-entity penalty (F1): when a chunk's enclosing entity
  * (e.g. function fastify @ 735 lines, Flask App class @ 1516 lines) exceeds
  * a configurable cap, demote the chunk's score. The fix targets the post-
  * retrieval envelope-bloat pattern from the taxonomy: small chunks score
@@ -284,11 +279,8 @@ export function anomalousChunkDemotion(result, opts = {}) {
  * Off by default (Infinity); calibrated via SWEET_SEARCH_MAX_ENVELOPE_LINES
  * env var or opts.maxEnvelopeLines.
  */
-// Loop-invariant resolution of the env-controlled envelope cap. Computed
-// once per applyResultDemotions call (see ruleOpts setup) and stashed on
-// opts._megaEnvelopeMax to avoid the env+parseInt+default lookup per
-// result. Resolver returns -1 to mean "skip the rule entirely" (when the
-// env var is set to a non-positive/non-finite value).
+// Resolved once per applyResultDemotions call and stashed on opts._megaEnvelopeMax.
+// Returns -1 to mean "skip the rule entirely" (env var set to a non-positive/non-finite value).
 export function resolveMaxEnvelopeLines(opts) {
   if (typeof opts._megaEnvelopeMax === 'number') return opts._megaEnvelopeMax;
   const raw = process.env.SWEET_SEARCH_MAX_ENVELOPE_LINES;
@@ -312,9 +304,7 @@ export function megaEntityPenalty(result, opts = {}) {
   if (!opts.codeGraphRepo || typeof opts.codeGraphRepo.findEnclosingEntity !== 'function') {
     return 1.0;
   }
-  // Route through resolveEntityKindInfo so we hit the search-scoped
-  // _entityKindCache instead of going to SQLite again. The cached entity
-  // carries startLine/endLine which is all this rule needs.
+  // Via resolveEntityKindInfo to hit the search-scoped _entityKindCache instead of SQLite.
   const entity = resolveEntityKindInfo(result, opts);
   if (!entity || !Number.isFinite(entity.startLine) || !Number.isFinite(entity.endLine)) return 1.0;
   const entityLines = (entity.endLine - entity.startLine) + 1;
@@ -324,7 +314,7 @@ export function megaEntityPenalty(result, opts = {}) {
 }
 
 /**
- * Doc-comment-only chunk demotion (F6, 2026-05-07).
+ * Doc-comment-only chunk demotion (F6).
  *
  * Detects chunks whose content is predominantly doc-comments without any
  * executable type/function declarations. Diagnosed from S3-Q8 ripgrep
@@ -368,6 +358,45 @@ export function docCommentOnlyDemotion(result, opts = {}) {
   return opts.docCommentOnlyFactor ?? 0.70;
 }
 
+/**
+ * Mega-chunk size penalty (60-probe diagnosis).
+ *
+ * Long candidate chunks (entire 1500-line classes, 700-line module
+ * functions) systematically outscore precise 30-line chunks even when the
+ * latter contain the actual answer. The dense bi-encoder doesn't penalise
+ * length the way BM25's `b` parameter does, so a mega-chunk that touches
+ * many topics earns a moderate similarity to many queries.
+ *
+ * SOTA precedent: BM25 length normalization (Robertson & Zaragoza 2009),
+ * subsequently incorporated as length penalties in dense rerankers
+ * (ColBERTv2 token-budget caps, MS-MARCO-tuned cross-encoders). Soft
+ * piecewise-linear here rather than `1/(1 + b·L/L_avg)` because (a) we
+ * lack a per-corpus L_avg estimate at query time and (b) BM25-style
+ * normalization is too aggressive for long behavioural-flow chunks where
+ * length carries some signal.
+ *
+ * Tuning floor/slope to be PERMISSIVE — ONLY truly mega chunks lose score:
+ *   - L ≤ 500 lines → factor 1.0 (no penalty — every reasonable function chunk)
+ *   - L = 800       → ~0.91 (typical large class)
+ *   - L = 1000      → ~0.85
+ *   - L ≥ 1500      → 0.80 (floor — entire-file chunks)
+ *
+ * Tightened cutoff from 200 → 500 after S6-Q6 gin regression: a 40-line
+ * `New` function had been the right top-1, but penalising 200+ chunks
+ * shifted the within-file ranking. 500-line cutoff exempts every legit
+ * function/method chunk and only demotes whole-class megachunks.
+ *
+ * Override via env: SWEET_SEARCH_MEGA_CHUNK_CUTOFF (default 500),
+ * SWEET_SEARCH_MEGA_CHUNK_SLOPE (default 0.0003 per-line),
+ * SWEET_SEARCH_MEGA_CHUNK_FLOOR (default 0.80). Disable via
+ * SWEET_SEARCH_MEGA_CHUNK_FLOOR=1 (no-op) or
+ * `ablations: ['no-mega-chunk-penalty']`.
+ *
+ * Diagnosed cases (60-probe new-set):
+ *   - S5-Q10 flask: 1516-line `class Flask` chunk beat 30-line `abort` fn
+ *   - S4-Q2 fastify: 735-line `function fastify` chunk beat 1-line
+ *     `kRouteContext` symbol declaration
+ */
 export function megaChunkSizePenalty(result, opts = {}) {
   const floor = (() => {
     const raw = process.env.SWEET_SEARCH_MEGA_CHUNK_FLOOR;
@@ -404,7 +433,6 @@ export function bodyDensityMultiplier(result, opts = {}) {
   const intent = opts.intent || classifyFileKindIntent(opts.query || '');
   if (intent !== 'implementation') return 1;
 
-  // Trigger 1: declarative-entity types. Cheap — uses already-known metadata.
   const recordedType = normalizeType(resolveResultType(result));
   const inferredType = recordedType && recordedType !== 'code' && recordedType !== 'chunk'
     ? recordedType
@@ -461,7 +489,7 @@ export function bodyDensityMultiplier(result, opts = {}) {
   return mult;
 }
 
-// Reference-count boost (added 2026-05-05). Aider-style behavioural-graph
+// Reference-count boost. Aider-style behavioural-graph
 // signal: chunks whose primary entity is invoked from many call sites get
 // a small log-scaled boost, capped low enough that it can't dominate
 // embedding scores.
@@ -533,9 +561,7 @@ export function referenceCountBoost(result, refCounts, opts = {}) {
   return boost;
 }
 
-// Pre-compute incoming-call counts for ALL candidate names in one DB query.
-// Without this, the multiplier function would do N queries per result set
-// (one per candidate), which adds 100-200 ms in practice.
+// One DB query for all candidate names; per-candidate queries add 100-200 ms in practice.
 export function buildRefCountMap(results, opts = {}) {
   const repo = opts.codeGraphRepo;
   if (!repo || typeof repo.countIncomingCallsByNames !== 'function') return new Map();

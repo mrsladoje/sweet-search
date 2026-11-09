@@ -234,7 +234,6 @@ function acquireLock() {
     return fd;
   } catch (err) {
     if (err.code !== 'EEXIST') return null;
-    // Another process holds the lock. Read it to see if they're still alive.
     let holderRaw = '';
     try { holderRaw = readFileSync(LOCK_PATH, 'utf-8').trim(); } catch { /* unreadable */ }
     // Empty or unparseable: another process is mid-write between its
@@ -244,9 +243,8 @@ function acquireLock() {
     const holder = Number(holderRaw);
     if (!Number.isFinite(holder)) return null;
     if (pidAlive(holder) && holder !== process.pid) {
-      return null; // legitimate live holder
+      return null;
     }
-    // Verifiably dead holder — unlink + retry once.
     try { unlinkSync(LOCK_PATH); } catch { /* ignore */ }
     try {
       const fd = openSync(LOCK_PATH, 'wx');

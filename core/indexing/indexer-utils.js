@@ -1,8 +1,3 @@
-/**
- * Indexer Utilities - SQLite config, logging, atomic swap, WSL paths, gitignore, file discovery.
- * Extracted from index-codebase-v21.js for file size compliance (<500 lines).
- */
-
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
@@ -11,9 +6,6 @@ import fg from 'fast-glob';
 import { PROJECT_ROOT, setQuietMode as setGlobalQuietMode } from '../infrastructure/config/index.js';
 import { createAdmissionPolicy } from './admission-policy.js';
 
-// `.gitignore` alignment now lives in gitignore-filter.js (shared with the
-// incremental admission policy). Re-exported here so existing
-// `import { ... } from indexer-utils` / barrel call sites keep working.
 export {
   toPosixPath,
   isGitignoreAllowlistedAgenticPath,
@@ -22,10 +14,6 @@ export {
 } from './gitignore-filter.js';
 
 const glob = fg.glob || fg;
-
-// =============================================================================
-// P0: SQLITE WRITE OPTIMIZATION (WAL Mode + Batch Insert Chunking)
-// =============================================================================
 
 export function isWalSafe(dbPath) {
   // WSL + NTFS mount: WAL is unreliable due to lack of proper file locking
@@ -48,10 +36,8 @@ export function configureJournalMode(db, dbPath, sqliteFastMode) {
     db.pragma('synchronous = NORMAL');
     // Indexing-optimized: larger WAL before auto-checkpoint (~16 MB vs default ~4 MB)
     db.pragma('wal_autocheckpoint = 4000');
-    // 1 GB mmap for reads during build, 64 MB page cache
     db.pragma('mmap_size = 1073741824');
     db.pragma('cache_size = -64000');
-    // Cap WAL file growth at 64 MB
     db.pragma('journal_size_limit = 67108864');
     return 'WAL';
   }
@@ -61,10 +47,7 @@ export function configureJournalMode(db, dbPath, sqliteFastMode) {
   return 'DELETE';
 }
 
-/**
- * Force WAL checkpoint and truncate. Call after all inserts complete
- * and before long-running read transactions (e.g., HNSW build streaming).
- */
+/** Call after all inserts complete and before long-running read transactions (e.g., HNSW build streaming). */
 export function checkpointWal(db) {
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
@@ -72,10 +55,6 @@ export function checkpointWal(db) {
     // Not in WAL mode or checkpoint not possible — safe to ignore
   }
 }
-
-// =============================================================================
-// COLORS AND LOGGING (quiet-mode aware)
-// =============================================================================
 
 export const colors = {
   reset: '\x1b[0m',
@@ -109,9 +88,7 @@ export function isVerboseMode() {
   return verboseMode;
 }
 
-// ---------------------------------------------------------------------------
-// Progress rendering — a live region of animated, in-place bars.
-//
+// Progress rendering: a live region of animated, in-place bars.
 // On a TTY (verbose included), each phase's bar animates in place via cursor
 // moves + erase-to-EOL, with smooth 1/8-block fill. Multiple bars can run at
 // once (e.g. Embedding + Late Interaction in parallel) — they share one pinned
@@ -119,7 +96,6 @@ export function isVerboseMode() {
 // prints its line above the region and redraws the bars below, so diagnostics
 // never split a bar. The region "commits" (stays on screen) once every bar in
 // it has reached 100%. Non-TTY (pipes / CI) falls back to throttled newlines.
-// ---------------------------------------------------------------------------
 const BAR_WIDTH = 30;
 const LABEL_COL = 17;           // pad "Label:" to this width so every bar's [ ] aligns
 const SUB_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']; // eighth-block partial fills
@@ -193,10 +169,8 @@ export function logProgress(current, total, label) {
     }
     return;
   }
-  // Interactive TTY: update this bar in the live region and redraw in place.
   liveBars.set(label, { current, total });
   process.stdout.write(regionEscape());
-  // Once every live bar is complete, commit the region (leave it on screen).
   let allDone = true;
   for (const b of liveBars.values()) if (b.current < b.total) { allDone = false; break; }
   if (allDone) {
@@ -215,10 +189,6 @@ export function logProgress(current, total, label) {
 export function logError(message) {
   console.error(`[indexer] ${message}`);
 }
-
-// =============================================================================
-// ATOMIC DATABASE SWAP (Windows/WSL EBUSY Handling)
-// =============================================================================
 
 // SQLite keeps a WAL-mode database in three files; the -wal and -shm names
 // derive from the database path. They travel with their database: an old
@@ -326,10 +296,6 @@ export async function atomicSwapDatabase(tmpPath, finalPath) {
   return false;
 }
 
-// =============================================================================
-// STDIN FILE LIST READING (for --files-from-stdin)
-// =============================================================================
-
 export const WSL_UNC_PATTERN = /^\/\/wsl(?:\.localhost|\$)\/[^/]+/;
 
 export function stripWslUncPrefix(filePath) {
@@ -411,10 +377,6 @@ export async function readFilesFromStdin() {
   });
 }
 
-// =============================================================================
-// FILE DISCOVERY
-// =============================================================================
-
 export async function discoverFiles(options = {}) {
   const {
     projectRoot = PROJECT_ROOT,
@@ -425,16 +387,11 @@ export async function discoverFiles(options = {}) {
 
   writeLog('\n━━━ Discovering Files ━━━', 'bright');
 
-  // Single shared admission policy — the same include allowlist / deny-list /
-  // `.sweet-search-ignore` / `.gitignore` / size gates the incremental
-  // maintainer uses, so a fresh full index and an incrementally-maintained
-  // index admit exactly the same files.
+  // The same admission policy the incremental maintainer uses, so a fresh full
+  // index and an incrementally-maintained index admit exactly the same files.
   const policy = createAdmissionPolicy({ projectRoot });
   const maxFileSize = policy.maxFileSize;
 
-  // Enumerate via the include globs (with the exclude globs pruning big dirs
-  // during traversal), then apply the policy's shape gate so `.sweet-search-ignore`
-  // is honoured here too — the one rule full discovery did not previously apply.
   // followSymbolicLinks:false (admission rule 5): the walk never descends a
   // symlinked directory, and with onlyFiles a symlink to a file is not reported
   // either (its dirent is a link, not a file). So a symlink loop or a second
@@ -484,8 +441,7 @@ export async function discoverFiles(options = {}) {
 
   let files = [];
   let oversized = 0;
-  // Stat in batches (order-preserving) instead of one serialized await per
-  // file; results are consumed in the original allFiles order.
+  // Results are consumed in the original allFiles order.
   const STAT_BATCH = 200;
   for (let i = 0; i < allFiles.length; i += STAT_BATCH) {
     const batch = allFiles.slice(i, i + STAT_BATCH);
@@ -552,15 +508,9 @@ export async function discoverFiles(options = {}) {
   return files;
 }
 
-// =============================================================================
-// STREAMING-VECTORS GATE
-// =============================================================================
-
 /**
- * Sum on-disk sizes of `files` (relative to `projectRoot`), stopping as soon
- * as the running total crosses `stopAt`. The streaming gate only needs to
- * know whether the total crosses the threshold, not the exact figure, so on
- * large-byte repos this exits after a fraction of the stats.
+ * Stops as soon as the running total crosses `stopAt`: the streaming gate only
+ * needs to know whether the total crosses the threshold, not the exact figure.
  */
 export async function sumFileSizesUpTo(files, stopAt, projectRoot = PROJECT_ROOT) {
   let total = 0;

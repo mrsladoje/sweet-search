@@ -1,8 +1,5 @@
 /**
- * Document Chunker facade — compatibility layer.
- *
- * Exposes the same public API as before while delegating implementation to
- * split modules for smaller context windows and cleaner responsibilities.
+ * Document Chunker facade: dispatches to the chunker for the file extension.
  */
 
 import path from 'path';
@@ -10,14 +7,7 @@ import { MarkdownChunker } from './chunking/markdown-chunker.js';
 import { PlainTextChunker } from './chunking/plaintext-chunker.js';
 import { recursiveSplit, buildDocChunk, hashContent } from './chunking/chunk-builder.js';
 
-// =============================================================================
-// DOCUMENT CHUNKER FACADE
-// =============================================================================
-
-/**
- * Facade that dispatches to the appropriate chunker based on file extension.
- * Drop-in replacement for ASTChunker.parseGenericFile for document files.
- */
+/** Drop-in replacement for ASTChunker.parseGenericFile for document files. */
 export class DocumentChunker {
   constructor(options = {}) {
     this.projectRoot = options.projectRoot || process.cwd();
@@ -25,13 +15,6 @@ export class DocumentChunker {
     this.plaintext = new PlainTextChunker({ ...options, projectRoot: this.projectRoot });
   }
 
-  /**
-   * Parse a document file into chunks.
-   *
-   * @param {string} filePath
-   * @param {string} content
-   * @returns {Array<object>}
-   */
   parseFile(filePath, content) {
     const ext = path.extname(filePath).toLowerCase();
 
@@ -47,7 +30,6 @@ export class DocumentChunker {
         return this.plaintext.parseFile(filePath, content);
 
       default:
-        // Fallback: treat as plain text
         return this.plaintext.parseFile(filePath, content);
     }
   }

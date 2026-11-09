@@ -239,14 +239,8 @@ export function markBinaryStale(index, id) {
  * store was skipped (no fsync happened), which the persist-before-advance gate
  * treats as "no float artifact changed this tick".
  *
- * @param {object} args
- * @param {string} args.binaryHnswPath
  * @param {FloatVectorStore} [args.store]        resident store (loaded once at tick start)
  * @param {Array<{id:string, vector:Float32Array}>} args.upserts
- * @param {string[]} args.removeIds
- * @param {number} args.binaryVectorsBefore
- * @param {number} args.dimension
- * @returns {Promise<{saved: boolean}>}
  */
 export async function flushFloatStore({ binaryHnswPath, store = null, upserts = [], removeIds = [], binaryVectorsBefore = 0, dimension }) {
   if (!float512StoreEnabled()) return { saved: false };

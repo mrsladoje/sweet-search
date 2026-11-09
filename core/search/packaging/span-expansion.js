@@ -5,7 +5,6 @@
 import path from 'path';
 import { readFileRange } from '../search-pattern-chunks.js';
 
-/** Infer language from file extension. */
 export function inferLanguage(filePath) {
   if (!filePath) return 'unknown';
   const ext = path.extname(filePath).toLowerCase();
@@ -22,11 +21,6 @@ export function inferLanguage(filePath) {
 }
 
 /**
- * Find the enclosing entity for a given file:line range.
- *
- * DDD compliant: delegates to CodeGraphRepository infrastructure method.
- * Never queries SQLite directly.
- *
  * @param {import('../infrastructure/code-graph-repository.js').CodeGraphRepository} codeGraphRepo
  * @param {string} filePath - Relative file path
  * @param {number} startLine - Chunk start line
@@ -118,14 +112,12 @@ export function expandToSymbol(result, opts) {
     };
   }
 
-  // Try code graph entity lookup (via repository — DDD compliant)
   const filePath = meta.file || result.file;
   const entity = findEnclosingEntity(codeGraphRepo, filePath, origStart, origEnd);
   if (entity) {
     const entityLines = (entity.endLine - entity.startLine) + 1;
     const entityTokens = entityLines * 10; // rough estimate: ~10 tokens/line
 
-    // Only expand if it fits within the token cap
     if (entityTokens <= tokenCap) {
       // Absorb leading trivia (doc comments, decorators, attributes) above
       // the entity. This recovers context the judge keeps asking for —
@@ -169,7 +161,6 @@ export function expandToSymbol(result, opts) {
         };
       }
     }
-    // Sandwich infeasible (cap too tight). Fall back to bare chunk + entity name.
     return {
       startLine: origStart,
       endLine: origEnd,
@@ -195,7 +186,6 @@ export function expandToSymbol(result, opts) {
     } catch { firstContained = null; }
   }
 
-  // Try sibling chunk merge (contiguous chunks in the same file)
   const intervals = locationMap?.get(filePath);
   if (intervals && intervals.length > 1) {
     const merged = mergeSiblingChunks(intervals, origStart, origEnd, tokenCap);
@@ -220,9 +210,7 @@ export function expandToSymbol(result, opts) {
     }
   }
 
-  // Syntax-aware fallback: expand to enclosing block using brace/indent analysis.
-  // This catches cases where the code graph has no entity but the file is readable.
-  // Skipped when 'no-syntax-expansion' ablation is active.
+  // Catches cases where the code graph has no entity but the file is readable.
   if (opts.ablations?.has('no-syntax-expansion')) {
     return {
       startLine: origStart, endLine: origEnd,
@@ -258,7 +246,6 @@ export function expandToSymbol(result, opts) {
     };
   }
 
-  // Fallback: return as-is
   return {
     startLine: origStart,
     endLine: origEnd,
@@ -296,17 +283,14 @@ function buildSandwichExpansion(entity, origStart, origEnd, tokenCap) {
   const ELISION_TOKENS = 20;      // approx cost of one `// ... (not shown: lines A-B — ss-read <file> A B) ...` line
   const TOKENS_PER_LINE = 10;     // pessimistic estimate, matches `entityTokens` heuristic above
 
-  // Signature: from entity.startLine up to min(SIG_MAX_LINES, just before gold)
   const sigStart = entity.startLine;
   const sigEndCandidate = Math.min(entity.startLine + SIG_MAX_LINES - 1, origStart - 1);
   const hasSignatureCandidate = sigEndCandidate >= sigStart && origStart > entity.startLine;
   const sigEnd = hasSignatureCandidate ? sigEndCandidate : null;
   const sigLines = sigEnd != null ? (sigEnd - sigStart + 1) : 0;
 
-  // Gold: original chunk
   const goldLines = origEnd - origStart + 1;
 
-  // Closing: just the last line of the entity, only if it's strictly after gold
   const closeLineCandidate = entity.endLine > origEnd ? entity.endLine : null;
   const closingLines = closeLineCandidate != null ? 1 : 0;
 
@@ -316,7 +300,6 @@ function buildSandwichExpansion(entity, origStart, origEnd, tokenCap) {
     ? closeLineCandidate - origEnd - 1
     : 0;
 
-  // Token estimates
   const goldTokens = goldLines * TOKENS_PER_LINE;
   if (goldTokens > tokenCap) {
     // Even gold alone doesn't fit. Caller will fall back to bare-chunk + truncate.
@@ -411,7 +394,6 @@ function elisionMarker(filePath, start, end) {
  * Stops at the next non-contiguous gap or when token cap would be exceeded.
  */
 function mergeSiblingChunks(intervals, startLine, endLine, tokenCap) {
-  // Find the interval that contains our startLine
   let targetIdx = -1;
   for (let i = 0; i < intervals.length; i++) {
     if (intervals[i].startLine <= startLine && intervals[i].endLine >= startLine) {
@@ -425,7 +407,6 @@ function mergeSiblingChunks(intervals, startLine, endLine, tokenCap) {
   let mergedEnd = intervals[targetIdx].endLine;
   const GAP_THRESHOLD = 3; // max gap lines between "contiguous" chunks
 
-  // Expand backward
   for (let i = targetIdx - 1; i >= 0; i--) {
     const gap = mergedStart - intervals[i].endLine;
     if (gap > GAP_THRESHOLD) break;
@@ -434,7 +415,6 @@ function mergeSiblingChunks(intervals, startLine, endLine, tokenCap) {
     mergedStart = intervals[i].startLine;
   }
 
-  // Expand forward
   for (let i = targetIdx + 1; i < intervals.length; i++) {
     const gap = intervals[i].startLine - mergedEnd;
     if (gap > GAP_THRESHOLD) break;
@@ -443,7 +423,6 @@ function mergeSiblingChunks(intervals, startLine, endLine, tokenCap) {
     mergedEnd = intervals[i].endLine;
   }
 
-  // Only return if we actually expanded
   if (mergedStart === intervals[targetIdx].startLine &&
       mergedEnd === intervals[targetIdx].endLine) {
     return null;
@@ -463,14 +442,12 @@ function mergeSiblingChunks(intervals, startLine, endLine, tokenCap) {
  * Returns null if no meaningful expansion is found.
  */
 export function expandBySyntax(fileCache, filePath, startLine, endLine, tokenCap, projectRoot) {
-  // Read a generous window around the chunk (up to ±100 lines)
   const windowStart = Math.max(1, startLine - 100);
   const windowEnd = endLine + 100;
   const raw = readFileRange(fileCache, filePath, windowStart, windowEnd, projectRoot);
   if (!raw) return null;
 
   const lines = raw.split('\n');
-  // Convert absolute line numbers to 0-based window offsets
   const chunkStartIdx = startLine - windowStart;
   const chunkEndIdx = endLine - windowStart;
   if (chunkStartIdx < 0 || chunkEndIdx >= lines.length) return null;
@@ -481,7 +458,6 @@ export function expandBySyntax(fileCache, filePath, startLine, endLine, tokenCap
   let blockStart, blockEnd;
 
   if (isPython) {
-    // Python: find enclosing def/class by scanning up for lower indent
     const chunkIndent = getIndentLevel(lines[chunkStartIdx]);
     blockStart = chunkStartIdx;
     for (let i = chunkStartIdx - 1; i >= 0; i--) {
@@ -493,7 +469,6 @@ export function expandBySyntax(fileCache, filePath, startLine, endLine, tokenCap
         break;
       }
     }
-    // Scan down: continue while indent >= block body indent
     const bodyIndent = blockStart < chunkStartIdx ? getIndentLevel(lines[blockStart]) + 1 : chunkIndent;
     blockEnd = chunkEndIdx;
     for (let i = chunkEndIdx + 1; i < lines.length; i++) {
@@ -503,11 +478,9 @@ export function expandBySyntax(fileCache, filePath, startLine, endLine, tokenCap
       blockEnd = i;
     }
   } else {
-    // Brace languages: scan up for unmatched '{', down for matching '}'
     let braceDepth = 0;
     blockStart = chunkStartIdx;
 
-    // Count braces within the chunk first
     for (let i = chunkStartIdx; i <= chunkEndIdx && i < lines.length; i++) {
       for (const ch of lines[i]) {
         if (ch === '{') braceDepth++;
@@ -528,7 +501,6 @@ export function expandBySyntax(fileCache, filePath, startLine, endLine, tokenCap
       }
     }
 
-    // Scan downward for the matching closing brace
     let depth = 0;
     blockEnd = chunkEndIdx;
     for (let i = blockStart; i < lines.length; i++) {
@@ -543,14 +515,11 @@ export function expandBySyntax(fileCache, filePath, startLine, endLine, tokenCap
     }
   }
 
-  // Convert back to absolute line numbers
   const expandedStart = windowStart + blockStart;
   const expandedEnd = windowStart + blockEnd;
 
-  // Only expand if we actually found something bigger than the original
   if (expandedStart >= startLine && expandedEnd <= endLine) return null;
 
-  // Check token budget
   const expandedLines = expandedEnd - expandedStart + 1;
   if (expandedLines * 10 > tokenCap) return null;
 

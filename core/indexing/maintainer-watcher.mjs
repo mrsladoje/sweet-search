@@ -1,23 +1,21 @@
 /**
- * Event-driven maintainer file watcher (G6, Phase 3, gated).
+ * Event-driven maintainer file watcher.
  *
- * Plan: docs/INDEX_MAINTAINER_EFFICIENCY_IMPLEMENTATION_PLAN.md § "G6".
+ * Plan: docs/INDEX_MAINTAINER_EFFICIENCY_IMPLEMENTATION_PLAN.md.
  * Research: docs/INDEX_MAINTAINER_EFFICIENCY_RESEARCH.md (lever C — event-driven
  * watching + a rare reconcile backstop).
  *
  * This module replaces the per-tick full `stat()` walk as the PRIMARY dirty-set
  * producer with native filesystem events (`@parcel/watcher` — FSEvents on macOS,
  * inotify on Linux, ReadDirectoryChangesW on Windows; the watcher VS Code uses).
- * The full stat-walk is NOT removed: G4 demotes it to a periodic backstop so the
+ * The full stat-walk is NOT removed: it runs as a periodic backstop so the
  * correctness guarantee (eventual convergence — e.g. a dir becoming gitignored
  * with no file event still gets retired) is preserved exactly.
  *
- * Ownership boundary (single-writer rule): this file is owned by G6. The three
- * call sites in `index-maintainer.mjs` (start after the lock, early-wake in the
- * sleep loop, teardown in `finally`) are owned by G4 and are NOT edited here —
- * this module matches the exact `startWatcher({stateDir, projectRoot,
- * admissionPolicy, onEvent, onOverflow})` contract G4 wired (and returns a
- * handle with a `.close()` method G4's `finally` calls).
+ * The call sites in `index-maintainer.mjs` (start after the lock, early-wake in the
+ * sleep loop, teardown in `finally`) rely on the exact `startWatcher({stateDir,
+ * projectRoot, admissionPolicy, onEvent, onOverflow})` contract and on the
+ * returned handle's `.close()`.
  *
  * On by default (`SWEET_SEARCH_MAINTAINER_WATCH=0` turns it off). When
  * `@parcel/watcher` is unavailable or cannot subscribe, `startWatcher` returns
@@ -86,7 +84,6 @@ const PROJECT_CONFIG_FILE = '.sweet-search.config.json';
 // its files queued. Past this many files the full walk is cheaper and bounded.
 let maxDirWalkFiles = 20_000;
 
-
 // `.git` is denied as a watched subtree (above), but a branch switch / commit /
 // reset mutates these two files and must force a backstop walk (bursty churn is
 // handled by the bounded full walk, not unbounded per-file events). We poll them
@@ -100,9 +97,7 @@ const GIT_POLL_INTERVAL_MS = 2000;
  * path is not under `projectRoot`. macOS reports realpaths (`/private/tmp` for
  * `/tmp`), so both sides are compared after the caller resolves realpaths.
  *
- * @param {string} absPath
  * @param {string} rootAbs  Already resolved project root.
- * @returns {string|null}
  */
 function toRel(absPath, rootAbs) {
   const rel = path.relative(rootAbs, absPath);
@@ -112,12 +107,11 @@ function toRel(absPath, rootAbs) {
 
 /**
  * Append a batch of relative paths to the dirty queue using the EXACT line shape
- * the dirty-scan producer writes (`dirty-scan.mjs:230`):
+ * the dirty-scan producer writes (`dirty-scan.mjs`):
  *   {file_path, timestamp, queued_at, source}
  * The only difference is `source: 'watch'` (vs `'scan'`) so queue lines are
  * attributable to the event path in diagnostics. The consumer ignores `source`.
  *
- * @param {string} stateDir
  * @param {string[]} rels  Project-relative POSIX paths.
  */
 function appendQueueLines(stateDir, rels) {
@@ -137,10 +131,6 @@ function appendQueueLines(stateDir, rels) {
  * guard), then each default-deny dir name. @parcel/watcher accepts directory
  * paths and glob-ish names in `ignore`; we pass absolute stateDir + bare dir
  * names (matched at any depth by the native matcher).
- *
- * @param {string} rootAbs
- * @param {string} stateDirAbs
- * @returns {string[]}
  */
 function buildIgnore(rootAbs, stateDirAbs) {
   const ignore = [stateDirAbs];
@@ -169,14 +159,14 @@ async function loadParcelWatcher() {
 /**
  * Start the event-driven maintainer watcher.
  *
- * Contract (matched verbatim to G4's wiring in `index-maintainer.mjs`):
+ * Contract (as wired in `index-maintainer.mjs`):
  *   startWatcher({ stateDir, projectRoot, admissionPolicy, onEvent, onOverflow })
  *     -> Promise<{ close(): Promise<void> } | null>
  *
- * - `onEvent()`  — called after each batch that enqueued ≥1 candidate, so G4 sets
- *   `watcherState.pendingEvents = true` for early-wake out of the sleep loop.
+ * - `onEvent()`  — called after each batch that enqueued ≥1 candidate; the maintainer
+ *   sets `watcherState.pendingEvents = true` for early-wake out of the sleep loop.
  * - `onOverflow()` — called on (a) watcher overflow / native error, (b) a
- *   `.git/HEAD` or `.git/index` change. G4 maps this to
+ *   `.git/HEAD` or `.git/index` change. The maintainer maps this to
  *   `watcherState.forceBackstopWalk = true` (+ pendingEvents) so the next tick
  *   runs the bounded full walk.
  *
@@ -194,9 +184,8 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, cre
   const watcher = await loadParcelWatcher();
   if (!watcher) return null;
 
-  // Resolve realpaths so toRel() and the stateDir-prefix guard compare like with
-  // like on macOS (where /tmp -> /private/tmp). Fall back to resolve() if the
-  // path does not yet exist on disk.
+  // Realpaths, so toRel() and the stateDir-prefix guard compare like with
+  // like on macOS (where /tmp -> /private/tmp).
   const rootAbs = safeRealpath(path.resolve(projectRoot));
   const stateDirAbs = safeRealpath(path.resolve(stateDir));
   const stateDirPrefix = stateDirAbs.endsWith(path.sep) ? stateDirAbs : stateDirAbs + path.sep;
@@ -234,7 +223,7 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, cre
       handleEvents(sinceEvents, eventCtx());
     }
   } catch {
-    // A failed replay is non-fatal: force a backstop walk to cover the gap.
+    // Non-fatal: a backstop walk covers the gap.
     overflow();
   }
 
@@ -260,7 +249,6 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, cre
     return null;
   }
 
-  // `.git/HEAD` + `.git/index` poll → forceBackstopWalk on branch switch / commit.
   const gitDir = path.join(rootAbs, '.git');
   const gitMtimes = new Map();
   primeGitMtimes(gitDir, gitMtimes);
@@ -404,17 +392,14 @@ function handleEvents(events, ctx) {
   for (const ev of events) {
     const abs = ev && ev.path;
     if (typeof abs !== 'string' || abs.length === 0) continue;
-    // 1. Event-storm guard: never re-trigger on our own state writes.
+    // Never re-trigger on our own state writes.
     if (abs === stateDirPrefix.slice(0, -1) || abs.startsWith(stateDirPrefix)) continue;
-    // 2. Relativise; drop paths outside the project root.
     const rel = toRel(abs, rootAbs);
     if (!rel) continue;
-    // 3. Admission config.
     if (rel === PROJECT_CONFIG_FILE || ADMISSION_CONFIG_NAMES.includes(path.posix.basename(rel))) {
       fullWalk = true;
       continue;
     }
-    // 4. Directories.
     if (ev.type === 'delete') {
       const prefix = `${rel}/`;
       for (const key of indexedFilesUnder(stateDir, prefix)) push(key);
@@ -432,7 +417,6 @@ function handleEvents(events, ctx) {
         continue;
       }
     }
-    // 5. Candidate filter.
     if (keepRel(rel, admissionPolicy)) push(rel);
   }
   if (fullWalk && typeof ctx.onConfigChange === 'function') {
@@ -445,8 +429,6 @@ function handleEvents(events, ctx) {
 
 /**
  * Resolve a realpath, falling back to the resolved path if it does not exist.
- * @param {string} p
- * @returns {string}
  */
 function safeRealpath(p) {
   try {
@@ -458,7 +440,6 @@ function safeRealpath(p) {
 
 /**
  * Record current mtimes of the git backstop files (best-effort).
- * @param {string} gitDir
  * @param {Map<string, number>} store
  */
 function primeGitMtimes(gitDir, store) {
@@ -474,9 +455,7 @@ function primeGitMtimes(gitDir, store) {
 /**
  * Return true (and update `store`) if any git backstop file changed since the
  * last poll. A removed/added file (mtime 0 ↔ present) counts as a change.
- * @param {string} gitDir
  * @param {Map<string, number>} store
- * @returns {boolean}
  */
 function gitChanged(gitDir, store) {
   let changed = false;

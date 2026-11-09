@@ -1,6 +1,3 @@
-// core/onnx-session-utils.js
-// Shared ONNX Runtime session configuration utilities.
-
 import { execFileSync } from 'child_process';
 import crypto from 'crypto';
 import { existsSync, mkdirSync, readFileSync } from 'fs';
@@ -13,7 +10,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function getOnnxRuntimeVersion() {
   try {
-    // Try project root first, then traverse up from __dirname
     const candidates = [
       path.resolve('node_modules/onnxruntime-node/package.json'),
       path.resolve(__dirname, '../../node_modules/onnxruntime-node/package.json'),
@@ -65,7 +61,6 @@ export function getOptimizedGraphPath(modelId, suffix) {
 }
 
 /**
- * Detect performance-core count on Apple Silicon via sysctl.
  * Returns null on non-macOS or if detection fails.
  * Cached after first call.
  */
@@ -275,7 +270,7 @@ export function bestIntraOpThreads(options = {}) {
   const reserveCores = Number.isFinite(options.reserveCores)
     ? Math.max(0, options.reserveCores)
     : (effectiveCores >= 6 ? 2 : effectiveCores >= 4 ? 1 : 0);
-  // Caller can still cap via maxThreads if needed (e.g., for worker pool splits).
+  // maxThreads caps the result (e.g. for worker pool splits).
   const maxThreads = Number.isFinite(options.maxThreads)
     ? Math.max(1, options.maxThreads)
     : effectiveCores;

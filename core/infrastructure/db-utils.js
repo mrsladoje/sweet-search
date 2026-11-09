@@ -1,7 +1,3 @@
-/**
- * Database Utilities - Shared SQLite configuration helpers.
- */
-
 import Database from 'better-sqlite3';
 
 /**
@@ -27,10 +23,6 @@ const _stmtCaches = new WeakMap();
 /**
  * db.prepare with a per-connection cache — compiles each distinct SQL string
  * once per Database object instead of once per call.
- *
- * @param {import('better-sqlite3').Database} db
- * @param {string} sql
- * @returns {import('better-sqlite3').Statement}
  */
 export function prepareCached(db, sql) {
   let cache = _stmtCaches.get(db);
@@ -58,7 +50,6 @@ export function prepareCached(db, sql) {
  * These are best-effort optimizations. PRAGMA failures should not change the caller's
  * fallback behavior or make a readable database look unavailable.
  *
- * @param {import('better-sqlite3').Database} db
  * @param {{ tempStoreMemory?: boolean }} [options]
  */
 export function applyReadPragmas(db, options = {}) {
@@ -123,14 +114,8 @@ export function assertInClauseSize(n, siteLabel = 'IN clause') {
  * Callers that need globally monotonic output (e.g. ORDER BY rowid for
  * deterministic HNSW insertion) must sort the result themselves.
  *
- * This is the SQLite-variable-limit fix referenced in CLAUDE.md and the
- * indexer-ann.js handoff: the same helper is reused at every site that
- * needs to splat a potentially-large array into an IN clause.
- *
  * @template T
- * @param {import('better-sqlite3').Database} db - Open SQLite handle
  * @param {string} sqlTemplate - Must contain `__IN_PLACEHOLDERS__` once
- * @param {ReadonlyArray<unknown>} values - Values to bind in chunks
  * @returns {T[]} Concatenated rows from each batch
  */
 export function chunkedIn(db, sqlTemplate, values) {
@@ -160,9 +145,7 @@ export function chunkedIn(db, sqlTemplate, values) {
  * helper returns the total `changes` across batches and is executed inside
  * a single transaction so partial-batch failure rolls everything back.
  *
- * @param {import('better-sqlite3').Database} db
  * @param {string} sqlTemplate - Must contain `__IN_PLACEHOLDERS__` once
- * @param {ReadonlyArray<unknown>} values
  * @returns {{ changes: number }} Cumulative row-change count
  */
 export function chunkedInExec(db, sqlTemplate, values) {
@@ -195,7 +178,6 @@ export function chunkedInExec(db, sqlTemplate, values) {
  * Opens an ephemeral connection, touches FTS5/relationship/summary pages, closes.
  * Intentionally minimal — no heavy imports, no query infrastructure.
  *
- * @param {string} dbPath - Path to code_graph.db
  * @returns {{ summaries: number }}
  */
 export function warmGraphDbCache(dbPath) {

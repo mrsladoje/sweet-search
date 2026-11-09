@@ -82,7 +82,6 @@ export const DEFAULT_REPO_SIZE_WARN_FRAC = 0.5;
  * only support `glob`, `dir/`, `**`, `*`, and `#` comments. Returns
  * the array of normalised pattern strings.
  *
- * @param {string} filePath
  * @returns {string[]}
  */
 export function loadIgnoreFile(filePath) {
@@ -194,7 +193,6 @@ export function buildPathFilter(opts = {}) {
 /**
  * Apply the repo-size cap policy. Plan § 22.9.
  *
- * @param {number} fileCount
  * @param {{cap?:number, warnFrac?:number}} [opts]
  * @returns {{ok:boolean, warn:boolean, cap:number, fileCount:number}}
  */

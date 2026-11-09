@@ -1,16 +1,12 @@
 /**
  * Cerebras LLM Configuration — fast inference for HCGS and graph summary generation.
- * Split from core/config.js during DDD migration.
  */
 
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || '';
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 
-// =============================================================================
-// CEREBRAS GLM CONFIGURATION (Fast Standalone LLM)
 // Reference: https://inference-docs.cerebras.ai/models/zai-glm-46
-// =============================================================================
 
 export const CEREBRAS_CONFIG = {
   enabled: CEREBRAS_API_KEY.length > 0,

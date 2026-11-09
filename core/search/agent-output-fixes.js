@@ -15,7 +15,7 @@
  * Switches (read from the environment; on = 1/true/on/yes, off = 0/false/off/no):
  *   SS_FIX_A=1|0               bundle A umbrella (no information loss; default: ON unless
  *                              SWEET_SEARCH_COMPACT_OUTPUT=0):
- *                                A1 no query header (2026-10-04; it was one line), no
+ *                                A1 no query header, no
  *                                   budget/route header, no score / kind tag / confidence line /
  *                                   trailers, compact `# sufficient=YES` line (only when YES);
  *                                   results grouped by file (renderGroupedBlocks)
@@ -167,8 +167,6 @@ export function resultRenderFixActive(flags, { find = false, alreadyShownActive 
   return !!(flags.compact || flags.summaryCap != null || (!find && flags.onePerFile) || alreadyShownActive);
 }
 
-// --- thread key ----------------------------------------------------------------------
-
 /**
  * A3 keeps its receipts in its OWN ledger namespace, so the original ledger (which drives the
  * Codex ss-read omission text and the query-aware ss-read trailers) sees exactly the same calls
@@ -182,11 +180,9 @@ export function alreadyShownSessionId(threadKey) {
   return validAgentSessionId(id) ? id : null;
 }
 
-// --- test-file detection: core/infrastructure/test-paths.js (the code graph uses it too) ---
+// Test-file detection: core/infrastructure/test-paths.js (the code graph uses it too).
 
 export { isTestLikePath };
-
-// --- ss-search / ss-find entry selection ---------------------------------------------
 
 /** A summary-only entry: no code was packed for it. */
 export function isSummaryOnly(r) {
@@ -391,8 +387,6 @@ export function renderCompactSufficiency(response, sufficiencyText, { drop = fal
   return /^ sufficient=YES\b/.test(String(sufficiencyText ?? '')) ? '# sufficient=YES\n' : '';
 }
 
-// --- A7: imports block that the entry's code already shows -----------------------------
-
 function contentLines(text) {
   return String(text).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim().length > 0);
 }
@@ -411,14 +405,12 @@ export function dedupeImports(headerContext, code) {
   const body = contentLines(code);
   if (head.length === 0 || body.length === 0) return headerContext;
 
-  // Whole block inside the code, as one contiguous run.
   for (let i = 0; i + head.length <= body.length; i++) {
     let all = true;
     for (let j = 0; j < head.length; j++) if (body[i + j] !== head[j]) { all = false; break; }
     if (all) return '';
   }
 
-  // The tail of the imports is the head of the code: cut that tail.
   let overlap = 0;
   for (let m = Math.min(head.length - 1, body.length); m >= 1; m--) {
     let same = true;
@@ -437,8 +429,6 @@ export function dedupeImports(headerContext, code) {
   while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
   return kept.join('\n');
 }
-
-// --- imports the entry's code uses ---------------------------------------------------
 
 /**
  * The names an import statement binds in the file, or null when they cannot be told (a
@@ -522,8 +512,6 @@ export function usedImports(headerContext, code) {
     return !names || names.some((n) => words.has(n));
   }).join('\n');
 }
-
-// --- compact renderer (ss-search / ss-find agent output) -----------------------------
 
 /** `start-end`, or `start` for one line. */
 function lineRange(start, end) {
@@ -678,7 +666,7 @@ export function renderRelatedRows(rows, printed = new Set(), subject = null) {
 /**
  * The same-file neighbours of the entry (context-expander's span map) as sibling sites
  * `{name, kind, line}`, without those whose lines printed code shows. They print in the one
- * `not shown, same file:` line (before: a second `# same file: … — sweep: …` line).
+ * `not shown, same file:` line.
  */
 function sameFileMapSites(sameFile, spans) {
   if (!Array.isArray(sameFile?.neighbors)) return [];
@@ -854,8 +842,6 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
   return lines.length ? `${lines.join('\n')}\n` : '';
 }
 
-// --- fixed renderer -----------------------------------------------------------------
-
 /**
  * Renderer for ss-search / ss-find result blocks when a fix switch is on
  * (resultRenderFixActive).
@@ -923,8 +909,6 @@ export function renderFixedBlocks(results, plan, {
   }
   return parts.join('');
 }
-
-// --- A3: what to record, what to omit -------------------------------------------------
 
 /** A3 omits a block only when the thread saw it within this many A3-ledger calls. */
 export const ALREADY_SHOWN_WINDOW_CALLS = 8;
@@ -995,8 +979,6 @@ export function readSpansForAlreadyShown(spans, decisions, printedChars) {
   if (!(Number.isFinite(printedChars) && printedChars <= ALREADY_SHOWN_MAX_RECORD_CHARS)) return [];
   return spans.filter((_, i) => !decisions?.[i]?.omit);
 }
-
-// --- ss-trace ---------------------------------------------------------------------------
 
 // Rows of same-name calls the graph did not resolve, at most.
 const UNRESOLVED_CALLER_ROWS = 5;
@@ -1282,8 +1264,6 @@ export function alternativesAfterSwitch(original, chosenFile, chosenLine) {
   return [...first, ...rest];
 }
 
-// --- ss-grep: A5 regex repair -----------------------------------------------------------
-
 /** A regex the engine could not parse (ripgrep / Rust regex), as opposed to a real failure. */
 export function isRegexParseError(err) {
   const msg = String(err?.message || err || '');
@@ -1451,8 +1431,6 @@ export function repairRegexBranches(raw) {
     repairedBranches,
   };
 }
-
-// --- ss-grep: B7 ordering and flood rendering --------------------------------------------
 
 /** Share of the first k files reserved for test files when there are more files than k. */
 export const GREP_TEST_FILE_SHARE = 0.3;

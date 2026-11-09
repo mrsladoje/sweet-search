@@ -30,7 +30,6 @@ const TEST_PATH_CI_RE = new RegExp(
 );
 const TEST_PATH_CS_RES = TEST_FILE_RES.filter((re) => !re.flags.includes('i'));
 
-/** Test, spec, fixture or mock file by path shape only. */
 export function isTestLikePath(file) {
   let p = String(file || '');
   if (!p) return false;

@@ -75,9 +75,6 @@ function normalizeBatchOpts(opts) {
  * `rowid IN (… LIMIT ?)` delete is sufficient (works regardless of whether
  * SQLite was built with SQLITE_ENABLE_UPDATE_DELETE_LIMIT).
  *
- * @param {import('better-sqlite3').Database} db
- * @param {number} frontier
- * @param {{batchSize?:number, maxRows?:number}} [opts]
  * @returns {{deleted:number, batches:number, hitCap:boolean, skipped?:string}}
  */
 export function pruneRetiredRelationships(db, frontier, opts = {}) {
@@ -188,9 +185,6 @@ export function pruneRetiredFileNodes(db, frontier, opts = {}) {
  * unlinking the content row, inside one transaction per batch so cross-process
  * readers (WAL) observe an all-or-nothing change.
  *
- * @param {import('better-sqlite3').Database} db
- * @param {number} frontier
- * @param {{batchSize?:number, maxRows?:number}} [opts]
  * @returns {{deleted:number, batches:number, hitCap:boolean, ftsDeleted:number, skipped?:string}}
  */
 export function pruneRetiredEntities(db, frontier, opts = {}) {
@@ -256,9 +250,6 @@ export function pruneRetiredEntities(db, frontier, opts = {}) {
  * batches. The table is WITHOUT ROWID (PK `entity_id`), so we bound via an
  * `entity_id IN (… LIMIT ?)` subquery.
  *
- * @param {import('better-sqlite3').Database} db
- * @param {number} frontier
- * @param {{batchSize?:number, maxRows?:number}} [opts]
  * @returns {{deleted:number, batches:number, hitCap:boolean, skipped?:string}}
  */
 export function pruneRetiredGraphSummaries(db, frontier, opts = {}) {
@@ -302,7 +293,6 @@ export function pruneRetiredGraphSummaries(db, frontier, opts = {}) {
  * without ever blocking concurrent readers. Never throws on a missing DB /
  * table / column / heartbeat dir — returns `{ skipped }` instead.
  *
- * @param {string} stateDir
  * @param {{
  *   dbPath?:string, batchSize?:number, maxRows?:number,
  *   minLiveEpoch?:(dir:string)=>(number|null),

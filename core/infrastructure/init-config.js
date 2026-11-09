@@ -79,8 +79,7 @@ export function readPersistedLiPolicy(projectRoot) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Runtime LI model resolution (Phase 4 follow-up).
+// Runtime LI model resolution.
 //
 // Background: scripts/init.js writes the user's chosen LI variant into
 // `runtime.li.model` of `.sweet-search/config.json` (one of 'lateon-code',
@@ -107,7 +106,6 @@ export function readPersistedLiPolicy(projectRoot) {
 // indexer's `--no-late-interaction` flag uses (`model = false`), so
 // `LATE_INTERACTION_CONFIG.enabled` collapses to false everywhere LI is
 // consulted.
-// ---------------------------------------------------------------------------
 
 const VALID_RUNTIME_LI_MODEL_IDS = new Set([
   'lateon-code',
@@ -141,12 +139,10 @@ export function resolveRuntimeLiModel(
     if (fromEnv === 'false') return false;
     return fromEnv;
   }
-  // 2. Persisted choice from .sweet-search/config.json.
   if (typeof persistedModel === 'string' && VALID_RUNTIME_LI_MODEL_IDS.has(persistedModel)) {
     if (persistedModel === 'none') return false;
     return persistedModel;
   }
-  // 3. Default — preserves the historical 'lateon-code' fallback.
   return defaultModel;
 }
 
@@ -167,8 +163,6 @@ export function resolveRuntimeLiModel(
  *     changed:   boolean,
  *   }
  *
- * @param {string} projectRoot
- * @param {object} [opts]
  * @param {object} [opts.env=process.env]
  * @param {boolean} [opts.force=false] — when true, applies even if the
  *   active value already matches (used by tests resetting state).

@@ -15,7 +15,7 @@ export const DEFAULT_TOKEN_BUDGET = 4000;
 export const AGENT_FULL_TOKEN_BUDGET = 8000;
 
 // Stretch budget — opt-in only via subMode 'agent_full_xl'. Gated on top-1
-// dominance (>=2× top-2). Default remains compact 4k; this is for the
+// dominance (>=2× top-2). Default remains the compact preview tier; this is for the
 // "explicit, single dominant answer fits" case only.
 export const AGENT_FULL_XL_TOKEN_BUDGET = 12000;
 
@@ -30,13 +30,6 @@ const DEFAULT_PER_RESULT_CAPS = [2000, 800, 400];
  *   - In agent_full: only expand rank 2/3 to full if score gap < 2× from top-1
  *   - Unused top-1 cap is redistributed to top-2/3 when they are distinct
  *
- * Breadth signal generalization (for non-grep retrieval modes):
- *   - colgrep / pattern: uses `grepMatches` (existing behavior)
- *   - lexical / semantic / hybrid: uses `candidatePoolSize` if provided
- *   - falls back to 0 (no sharpening) if neither is set
- *
- * @param {number} totalBudget - Total token budget for all results
- * @param {number} numResults - Number of results
  * @param {string} subMode - 'agent_preview' | 'agent_full' | 'agent_full_xl'
  * @param {object} [context]
  * @param {number} [context.grepMatches] - Number of grep matches (colgrep)
@@ -76,10 +69,8 @@ function allocateBudgetShipped(totalBudget, numResults, subMode, context) {
   const breadthHint = context.grepMatches ?? context.candidatePoolSize ?? 0;
   const results = context.results || [];
 
-  // Adaptive split based on retrieval breadth
   let top1Share, top23Share;
   if (breadthHint > 200) {
-    // Broad retrieval: sharpen top-1, reduce previews
     top1Share = 0.70;
     top23Share = 0.15;
   } else if (isFullMode) {
@@ -115,8 +106,6 @@ function allocateBudgetShipped(totalBudget, numResults, subMode, context) {
       if (fuseTop) cap = Math.max(cap, 4000);
       allocations.push({ presentation: 'full', tokenCap: cap });
     } else if (i <= 2) {
-      // In agent_full: gate full expansion on score gap from top-1.
-      // Only expand to full if rank-N is competitive (score >= top-1 / 2).
       const top1Score = results[0]?.score || 0;
       const thisScore = results[i]?.score || 0;
       const isCompetitive = top1Score > 0 && thisScore >= top1Score / 2;
@@ -165,7 +154,6 @@ export function truncateToTokenCap(code, tokenCap) {
     return { code, truncated: false, originalTokens };
   }
 
-  // Truncate at approximately the right character count
   const maxChars = Math.floor(tokenCap * 3.5);
   const lines = code.split('\n');
   let charCount = 0;
@@ -273,18 +261,8 @@ export function compressToPreview(code, tokenCap) {
 }
 
 /**
- * Resolve the effective sub-mode from the format string.
- *
- * EXPLICIT TIERS (caller picks):
- *   'agent_preview' → 'agent_preview' (compact 4k budget)
- *   'agent_full'    → 'agent_full'    (8k budget)
- *   'agent_full_xl' → 'agent_full_xl' (12k budget, opt-in only;
- *                                      falls back to per-result baseline cap
- *                                      at allocation time when the top-1
- *                                      dominance gate fails)
- *
- * AUTO-PICK (default for the bare 'agent' format):
- *   'agent'         → tier chosen by selectAgentBudget(); see that fn.
+ * Resolve the effective sub-mode from the format string. 'agent_full_xl' falls back to the
+ * per-result baseline cap at allocation time when the top-1 dominance gate fails.
  *
  * Used as a fallback when caller bypasses the auto-pick path (e.g. unit tests
  * that call resolveSubMode directly). Production code goes through
@@ -293,14 +271,14 @@ export function compressToPreview(code, tokenCap) {
 export function resolveSubMode(format) {
   if (format === 'agent_full_xl') return 'agent_full_xl';
   if (format === 'agent_full') return 'agent_full';
-  return 'agent_preview'; // 'agent' and 'agent_preview' both map here
+  return 'agent_preview';
 }
 
 //
-// Picks the agent-mode budget tier (preview 4k / full 8k / xl 12k) from
+// Picks the agent-mode budget tier (preview 3k / full 8k / xl 12k) from
 // post-ranking signals when callers pass the bare format='agent'.
 //
-// DESIGN PRINCIPLE: 4k is enough for ~99% of queries.
+// DESIGN PRINCIPLE: the preview tier is enough for ~99% of queries.
 //
 // Lost-in-the-middle and RAG-vs-long-context studies (Liu et al., Xu et al.)
 // consistently show that smaller, focused context outperforms bigger context
@@ -313,7 +291,7 @@ export function resolveSubMode(format) {
 // When does extra budget STRICTLY beat preview?
 //
 //   XL: top-1 itself needs >2k tokens. The dominance gate at allocation
-//       (allocateBudget L1448-1454) raises top-1's per-result cap from 2k
+//       (allocateBudget, xlGateActive) raises top-1's per-result cap from 2k
 //       → 8k IFF top-1 >= 2 * top-2. Without the gate, XL caps top-1 at
 //       2k anyway — identical to preview for the top-1 case. So XL only
 //       pays off when BOTH conditions hold: chunk really is big, AND
@@ -459,7 +437,7 @@ export function computeBudgetSignals(rankedResults, searchStats = {}) {
  * tree using the signals above.
  *
  * Format-gating note: all return values keep `format='agent_*'` semantics,
- * so the `_isAgentFormat` ranking flag (file-kind-ranking.js:1443) remains
+ * so the `_isAgentFormat` ranking flag remains
  * TRUE regardless of which tier we land on. Ranking is unchanged.
  *
  * @param {string} format - 'agent' | 'agent_preview' | 'agent_full' | 'agent_full_xl'
@@ -482,7 +460,6 @@ export function selectAgentBudget(format, signals, opts = {}) {
     return { tier, subMode: BUDGET_TIERS[tier].subMode, tokenBudget: n, reason: 'explicit_budget' };
   }
 
-  // Explicit tier flags — caller is asking for a specific budget.
   if (format === 'agent_preview') {
     return { tier: 'preview', ...BUDGET_TIERS.preview, tokenBudget: BUDGET_TIERS.preview.budget, reason: 'explicit_preview' };
   }
@@ -512,7 +489,7 @@ export function selectAgentBudget(format, signals, opts = {}) {
   //                    inside the 2000-token per-result preview cap and XL
   //                    adds no usable budget.
   //   XL_DOMINANCE   = 2.5×. We need the dominance gate to FIRE at
-  //                    allocation time (allocateBudget L1448-1454 needs
+  //                    allocation time (allocateBudget's xlGateActive needs
   //                    top1 ≥ 2 × top2); we add headroom (2.5 vs 2.0) so
   //                    we don't pick XL on borderline cases that the gate
   //                    might miss.

@@ -5,14 +5,7 @@
  * The ranking pipeline is identical between benchmark and agent modes.
  * This module is a post-ranking presentation layer only.
  *
- * Phases:
- *   1. Basic code loading (readFileRange on ranked results)
- *   2. Symbol-complete expansion (code graph entity lookup via CodeGraphRepository)
- *   3. Token budget management (per-result caps, presentation tiers)
- *   4. Header context (minimal imports for top-1)
- *   5. Confidence signals (score gaps, recall, regex selectivity, sufficiency)
- *
- * DDD: All database access goes through infrastructure repositories.
+ * All database access goes through infrastructure repositories.
  * This module never queries SQLite directly.
  *
  * References: docs/USEFUL_ANSWER_COLGREP_PLAN.md
@@ -55,6 +48,34 @@ export function toAblationSet(ablations) {
   return new Set();
 }
 
+/**
+ * Package ranked results into agent-mode context blocks.
+ *
+ * Takes the ranked results from patternSearch (same order, same IDs)
+ * and transforms them into self-contained code packages with:
+ *   - Loaded code content
+ *   - Symbol-complete expansion (via CodeGraphRepository)
+ *   - Token budget management
+ *   - Header context (top-1 only)
+ *   - Confidence + sufficiency signals
+ *   - Staleness metadata
+ *
+ * @param {Array} rankedResults - Results from patternSearch ranking pipeline
+ * @param {object} searchStats - Stats from the search pipeline
+ * @param {object} opts
+ * @param {string} opts.query - Original search query
+ * @param {string} opts.regex - Regex pattern used
+ * @param {string} [opts.format='agent'] - 'agent' | 'agent_preview' | 'agent_full'
+ * @param {number} [opts.tokenBudget] - Total token budget (default depends on sub-mode)
+ * @param {number} [opts.k] - Final result cap. When set, rankedResults is cut to k
+ *   BEFORE budget signals are computed, so numResults never counts more than k.
+ * @param {object} [opts.codeGraphRepo] - CodeGraphRepository for entity lookup (DDD)
+ * @param {Map} [opts.locationMap] - Chunk location map
+ * @param {string} [opts.projectRoot] - Project root path
+ * @param {Set<string>} [opts.ablations] - Feature ablations for A/B testing:
+ *   'no-syntax-expansion', 'no-header', 'no-diversity', 'no-adaptive-budget'
+ * @returns {object} Agent mode response
+ */
 export function packageForAgent(rankedResultsIn, searchStats, opts) {
   // Final-k contract: budget-tier signals (numResults, dominance, top-1 size)
   // are computed on the final <= k list, never on an inflated candidate list.
@@ -74,8 +95,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
   // Auto-tier selection: pick preview / full / xl based on score-distribution
   // signals when format='agent'. Explicit format=='agent_preview|full|full_xl'
   // and explicit numeric tokenBudget remain as overrides. Mirrors trace's
-  // adaptive selectBudget (core/graph/structural-context.js:37). See
-  // selectAgentBudget() above for the decision tree.
+  // adaptive selectBudget (core/graph/structural-context.js:37).
   //
   // Disabled by 'no-auto-budget' ablation — falls back to the legacy
   // resolveSubMode mapping (which treats 'agent' as 'agent_preview').
@@ -139,7 +159,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
   }
 
   // Diversity: demote results that cluster in same file+region as a higher-ranked result.
-  // Skipped when 'no-diversity' ablation is active.
   // This prevents wasting preview/full budget on near-duplicate chunks from the same symbol.
   const diversityDemotions = new Set();
   if (ablations.has('no-diversity')) { /* skip diversity check */ }
@@ -162,8 +181,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     }
   }
 
-  // Allocate budget per result — adaptive based on regex breadth and score gaps
-  // When 'no-adaptive-budget' ablation is active, use fixed splits (no context param)
   const budgetContext = ablations.has('no-adaptive-budget')
     ? {}
     : {
@@ -175,11 +192,10 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
   const allocations = allocateBudget(tokenBudget, workingResults.length, subMode,
     opts.firstUnit ? { ...budgetContext, firstUnit: opts.firstUnit } : budgetContext);
 
-  // Compute confidence from ranked results (Fix #4: regex selectivity included)
   const confidenceInfo = computeConfidence(workingResults, searchStats);
 
   // Shared staleness cache — db mtime is the same for all results in one search.
-  // Avoids repeated statSync calls (Fix D: perf).
+  // Avoids repeated statSync calls.
   const stalenessCache = {};
 
   let tokensUsed = 0;
@@ -207,8 +223,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     const filePath = meta.file || result.file;
     const remainingBudget = Math.max(0, tokenBudget - tokensUsed);
 
-    // Enforce global budget + diversity: demote to summary if budget exhausted
-    // or result overlaps with a higher-ranked result in the same file region
     const budgetExhausted = remainingBudget <= 0;
     const diversityDemoted = diversityDemotions.has(i);
 
@@ -230,7 +244,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     });
 
     if (allocation.presentation === 'summary' || budgetExhausted || diversityDemoted) {
-      // One-line summary only — no code
       agentResults.push({
         rank: i + 1,
         file: filePath,
@@ -250,7 +263,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       continue;
     }
 
-    // Phase 2: Symbol-complete expansion (via repository — Fix #1)
     const expansion = expandToSymbol(result, {
       codeGraphRepo,
       locationMap,
@@ -268,7 +280,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       continue;
     }
 
-    // Phase 1: Load code via readFileRange.
     // For sandwich expansions, assemble from parts with explicit elision markers
     // so the gold chunk is preserved even when the enclosing entity is huge.
     let code;
@@ -287,18 +298,15 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     // The ±20-line fallback below prints other lines than the expansion: its header names them.
     let paddedRange = null;
     if (!code) {
-      // Fallback: try with ±20 lines padding (plan §13, step 3)
       const padStart = Math.max(1, (meta.startLine || result.startLine) - 20);
       const padEnd = (meta.endLine || result.endLine) + 20;
       code = readFileRange(fileCache, filePath, padStart, padEnd, projectRoot);
       if (code) paddedRange = { startLine: padStart, endLine: padStart + code.split('\n').length - 1 };
     }
 
-    // Fix #2: Staleness detection (uses shared cache for db mtime)
     const { stale, indexedAt } = checkStaleness(filePath, projectRoot, codeGraphRepo, stalenessCache);
 
     if (!code) {
-      // Final fallback: metadata only
       agentResults.push({
         rank: i + 1,
         file: filePath,
@@ -319,7 +327,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       continue;
     }
 
-    // Phase 3: Token budget — truncate or compress
     const resultTokenCap = Math.min(allocation.tokenCap, remainingBudget);
     let codeTokens;
     let boundaryTruncated = false;
@@ -354,7 +361,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       codeTokens = estimateTokens(code);
       boundaryTruncated = truncResult.truncated;
     } else {
-      // Preview mode — compress to signature + snippet
       // The marker is part of the fit (compressToPreview): no clamp after it.
       ({ code, start: leadTrimmedStart } = startAtNamedDefinition(code, expansion, resultTokenCap, codeGraphRepo, filePath, _isAgentFormat === true));
       code = compressToPreview(code, resultTokenCap);
@@ -426,7 +432,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
         : {}),
     };
 
-    // Phase 4: Header context (top-1 only). Skipped by 'no-header' ablation.
     if (i === 0 && !ablations.has('no-header')) {
       const remainingHeaderBudget = Math.min(
         MAX_HEADER_TOKENS,
@@ -446,7 +451,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       }
     }
 
-    // Phase 6: Graph-neighbour reservation (top-1 only). The pack reserves
+    // Graph-neighbour reservation (top-1 only). The pack reserves
     // up to 20% of the budget (capped at 1000 tokens, floored at 600 when
     // the budget allows) for a dedicated 1-hop neighbours tier. Surfaced
     // as `agentResult.neighbors`; rendered for the agent by the CLI shim.
@@ -574,7 +579,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
   // YES packs held a gold result at rank 2/3 (14 in another file; 8 under a wrong top-1), and YES
   // was right 58% of the time. The score-ratio trigger in allocateBudget stays.
 
-  // Phase 7: same-file span map (top-1 only). Emitted ONLY when the verdict
+  // Same-file span map (top-1 only). Emitted ONLY when the verdict
   // is not a clear YES (composes with the query-conditioned verdict: the map
   // supplies the "where to look next" exactly when the engine says "keep
   // looking") AND top-1 is a windowed view (kind != 'full' — fully-shown

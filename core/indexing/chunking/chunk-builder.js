@@ -11,15 +11,12 @@ import { embedTextCap } from '../chunk-embed-text.js';
 const MAX_CHUNK_SIZE = 2000;  // chars — matches ast-chunker.js
 const MIN_CHUNK_SIZE = 30;    // chars — matches ast-chunker.js threshold
 
-
-/** Default config for markdown chunker */
 const MD_DEFAULTS = {
   maxChunkSize: MAX_CHUNK_SIZE,
   minChunkSize: MIN_CHUNK_SIZE,
   overlapLines: 2,
 };
 
-/** Default config for plain text chunker */
 const TXT_DEFAULTS = {
   maxChunkSize: MAX_CHUNK_SIZE,
   minChunkSize: MIN_CHUNK_SIZE,
@@ -51,7 +48,6 @@ function buildDocChunk(content, filePath, language, chunkType, symbol, lineStart
   const relativePath = projectRoot ? path.relative(projectRoot, filePath) : filePath;
   const { name: projectTag } = detectProjectBoundary(filePath, projectRoot || process.cwd());
 
-  // Build contextualized embedding text for document chunks
   const embeddingParts = [];
   embeddingParts.push(`# ${relativePath}`);
   if (symbol && symbol !== 'unknown') {
@@ -62,15 +58,14 @@ function buildDocChunk(content, filePath, language, chunkType, symbol, lineStart
   }
   embeddingParts.push(trimmed);
 
-  // Build LI text via v6.2 — language-conditioned path strategy.
-  // Document chunks are typically markdown/text and fall under the
+  // v6.2 language-conditioned path strategy for LI text. Document chunks are typically markdown/text and fall under the
   // "other" branch (full raw path). Code-language chunks reuse the
   // shared JAVA_FAMILY set from ast-chunker.js so the path policy
   // here cannot drift from the AST chunker.
   const liParts = [];
   if (relativePath) {
     if (language === 'python') {
-      // skip path line for Python
+      // no path line for Python
     } else if (JAVA_FAMILY.has(language)) {
       liParts.push(`# ${normalizePathSlug(relativePath)}`);
     } else {
@@ -97,7 +92,7 @@ function buildDocChunk(content, filePath, language, chunkType, symbol, lineStart
       language,
       chunk_type: chunkType,
       symbol,
-      line_start: lineStart + 1,    // 1-indexed
+      line_start: lineStart + 1,
       line_end: lineEnd,
       hash,
       ...extraMeta,
@@ -119,7 +114,6 @@ function buildDocChunk(content, filePath, language, chunkType, symbol, lineStart
 function recursiveSplit(text, maxSize, sepIdx = 0) {
   if (text.length <= maxSize) return [text];
   if (sepIdx >= SEPARATOR_HIERARCHY.length) {
-    // Last resort: hard split at maxSize
     const pieces = [];
     for (let i = 0; i < text.length; i += maxSize) {
       pieces.push(text.slice(i, i + maxSize));
@@ -131,13 +125,11 @@ function recursiveSplit(text, maxSize, sepIdx = 0) {
   let parts;
 
   if (sep instanceof RegExp) {
-    // Split on regex but keep delimiters at end of preceding part
     parts = [];
     let lastIdx = 0;
     const globalRe = new RegExp(sep.source, 'g');
     let m;
     while ((m = globalRe.exec(text)) !== null) {
-      // Include the match in the preceding part
       parts.push(text.slice(lastIdx, m.index + m[0].length));
       lastIdx = m.index + m[0].length;
     }
@@ -146,19 +138,15 @@ function recursiveSplit(text, maxSize, sepIdx = 0) {
     }
   } else {
     parts = text.split(sep);
-    // Re-join with separator (except last)
     parts = parts.map((p, i) => i < parts.length - 1 ? p + sep : p);
   }
 
-  // Filter empty
   parts = parts.filter(p => p.length > 0);
 
-  // If we couldn't split (only one piece), try next separator
   if (parts.length <= 1) {
     return recursiveSplit(text, maxSize, sepIdx + 1);
   }
 
-  // Merge small consecutive parts, then recurse on oversized ones
   const merged = [];
   let buffer = '';
 
@@ -172,7 +160,6 @@ function recursiveSplit(text, maxSize, sepIdx = 0) {
   }
   if (buffer.length > 0) merged.push(buffer);
 
-  // Recurse on any oversized pieces
   const result = [];
   for (const piece of merged) {
     if (piece.length > maxSize) {

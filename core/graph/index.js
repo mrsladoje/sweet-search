@@ -1,4 +1,3 @@
-// Barrel — core/graph domain
 export * from './graph-extractor.js';
 export { default as GraphExtractor } from './graph-extractor.js';
 export * from './graph-search.js';

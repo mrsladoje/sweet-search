@@ -1,17 +1,7 @@
 /**
- * Search Format Module
- *
- * Extracted from sweet-search.js (SOLID refactor).
- * Contains all result formatting logic for display and output.
- *
  * Functions that use `this` are regular function declarations (not arrows)
  * so they work correctly when wired onto SweetSearch.prototype.
  */
-
-
-// =============================================================================
-// Result formatting
-// =============================================================================
 
 const ROUTE_META_MARKER = '<<SS_ROUTE_META>>';
 const COMPACT_ROUTE_RE = /^route=([A-Za-z0-9_.:-]+) confidence=([A-Za-z0-9_.:-]+) sufficient=(YES|no|unknown) reason=([A-Za-z0-9_.:-]+) repo=(ok|mismatch|unknown) results=(\d+)\s*$/gm;
@@ -109,10 +99,6 @@ export function parseRouteMetadata(text) {
   return meta;
 }
 
-/**
- * Format structural results for display
- * Uses `this` — calls this methods (none currently, but kept as regular fn).
- */
 export function formatStructuralResults(results, stats) {
   if (!results.length) return `No results found for ${stats.targetEntity || 'query'}`;
 
@@ -137,11 +123,9 @@ export function formatStructuralResults(results, stats) {
 }
 
 /**
- * Format results for display
  * Uses `this` — calls this.formatStructuralResults.
  */
 export function formatResults(results, stats = {}) {
-  // Check if this is structural results
   if (results.length > 0 && results[0].searchPath === 'structural') {
     return this.formatStructuralResults(results, stats);
   }
@@ -169,7 +153,6 @@ export function formatResults(results, stats = {}) {
     output += `   Path: ${r.searchPath}\n`;
 
     if (r.hybridScore !== undefined && r.rrfScore !== undefined) {
-      // RRF hybrid results - show rank contributions
       const rankInfo = [];
       if (r.lexicalRank) rankInfo.push(`L#${r.lexicalRank}`);
       if (r.semanticRank) rankInfo.push(`S#${r.semanticRank}`);
@@ -187,7 +170,6 @@ export function formatResults(results, stats = {}) {
       output += `   Score: ${r.score?.toFixed(4)}\n`;
     }
 
-    // HCGS Summary-first: show summary before content
     if (r.summary) {
       output += `   Summary: ${r.summary}\n`;
     }
@@ -292,7 +274,6 @@ export function formatSummaryFirst(results) {
     const line = r.startLine || r.metadata?.startLine || '';
     const location = `${file}${line ? `:${line}` : ''}`;
 
-    // Compact format with summary
     if (r.summary) {
       output += `${i + 1}. [${type}] ${name} @ ${location}\n`;
       output += `   ${r.summary}\n`;
@@ -302,7 +283,6 @@ export function formatSummaryFirst(results) {
       output += `\n`;
       totalTokens += Math.ceil(r.summary.length / 4); // Rough token estimate
     } else {
-      // Fallback to signature if no summary
       const sig = r.signature || r.content?.slice(0, 100) || '';
       output += `${i + 1}. [${type}] ${name} @ ${location}\n`;
       if (sig) output += `   ${sig.replace(/\n/g, ' ')}\n`;
@@ -346,14 +326,12 @@ export function formatMiddleRes(results) {
     output += `${i + 1}. [${type}] ${name}\n`;
     output += `   loc: ${location}\n`;
 
-    // Full signature
     const sig = r.signature || '';
     if (sig) {
       output += `   sig: ${sig}\n`;
       totalTokens += Math.ceil(sig.length / 4);
     }
 
-    // Docstring/comment (truncated)
     const doc = r.docComment || r.doc_comment || '';
     if (doc) {
       const truncDoc = doc.length > 200 ? doc.slice(0, 200) + '...' : doc;
@@ -361,7 +339,6 @@ export function formatMiddleRes(results) {
       totalTokens += Math.ceil(truncDoc.length / 4);
     }
 
-    // Summary if available
     if (r.summary) {
       output += `   sum: ${r.summary}\n`;
       totalTokens += Math.ceil(r.summary.length / 4);

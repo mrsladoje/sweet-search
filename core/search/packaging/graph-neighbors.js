@@ -41,6 +41,17 @@ export function graphNeighborsEnabled({ mode = null, ablations = new Set() } = {
 }
 
 /**
+ * A Go type whose name starts lowercase is unexported: only code of its own package (its
+ * directory) can name it. dgraph AssignIds (dgraph/cmd/zero) was linked to `struct
+ * rateLimiter` of package worker by name alone.
+ */
+function goUnexportedElsewhere(fromFile, t) {
+  if (!/\.go$/.test(String(fromFile || '')) || !/\.go$/.test(String(t?.filePath || ''))) return false;
+  if (!/^[a-z_]/.test(String(t.name || ''))) return false;
+  return path.posix.dirname(String(fromFile)) !== path.posix.dirname(String(t.filePath));
+}
+
+/**
  * Extract identifier candidates from a code body that look like type names
  * (struct / interface / class / enum / trait / type). Used by the
  * graph-neighbour tier to find type definitions that the relationships
@@ -65,17 +76,6 @@ export function graphNeighborsEnabled({ mode = null, ablations = new Set() } = {
  * @param {string|null} ownName - the symbol's own name, excluded from results
  * @returns {string[]}
  */
-/**
- * A Go type whose name starts lowercase is unexported: only code of its own package (its
- * directory) can name it. dgraph AssignIds (dgraph/cmd/zero) was linked to `struct
- * rateLimiter` of package worker by name alone.
- */
-function goUnexportedElsewhere(fromFile, t) {
-  if (!/\.go$/.test(String(fromFile || '')) || !/\.go$/.test(String(t?.filePath || ''))) return false;
-  if (!/^[a-z_]/.test(String(t.name || ''))) return false;
-  return path.posix.dirname(String(fromFile)) !== path.posix.dirname(String(t.filePath));
-}
-
 function extractTypeCandidates(code, ownName, { go = false } = {}) {
   if (!code) return [];
   const own = (ownName || '').toLowerCase();
@@ -229,7 +229,7 @@ export function renderGraphNeighbors(opts) {
     rows.push({ kind, name: target.name, file: target.filePath, startLine: target.startLine, endLine: target.endLine, entityType: target.type || null });
   };
 
-  // OUTGOING — resolved targets, then unresolved imports, in family order.
+  // Resolved targets, then unresolved imports, in family order.
   const grouped = new Map();
   for (const r of outgoing) {
     if (!grouped.has(r.type)) grouped.set(r.type, []);
@@ -260,24 +260,20 @@ export function renderGraphNeighbors(opts) {
       }
     }
   }
-  // INCOMING — callers / users.
   for (const r of incoming) {
     // Incoming extends / implements read the other way round: `X extends <entity>`.
     const inKind = { calls: 'caller', uses: 'user', extends: 'extendedBy', implements: 'implementedBy' }[r.type] || r.type;
     if (r.source) pushResolved(inKind, r.source);
   }
-  // TYPE-REFERENCES found by name in the body.
   for (const t of typeRefs) pushResolved('type', t);
 
   let selected = rows;
   if (typeof query === 'string') selected = selectRelatedRows(rows, query, candidates, maxRows);
   if (selected.length === 0) return null;
 
-  // The shortest path suffix that names one file in the repository.
   const index = typeof codeGraphRepo.fileBasenameIndex === 'function' ? safeCall(() => codeGraphRepo.fileBasenameIndex()) : null;
   for (const row of selected) if (row.file) row.shortPath = shortestUniquePath(row.file, index);
 
-  // Hard-cap to tokenCap. Drop tail rows until it fits.
   const lines = selected.map(renderRelatedRowLine);
   let combined = lines.join('\n');
   while (estimateTokens(combined) > tokenCap && lines.length > 1) {

@@ -62,7 +62,6 @@ export const FALLBACK_WEIGHTS_ID = DEFAULT_SPARSE_GRAM_WEIGHTS_ID;
 /**
  * Compute the canonical `file_id` for a path. Plan § 7.6 step 2.
  *
- * @param {string} canonicalPath
  * @returns {string}
  */
 export function fileIdFor(canonicalPath) {
@@ -87,7 +86,6 @@ function deltaSegmentPath(baseArtifactPath, epoch, seq) {
  * lists it, once per tick instead of once per file.
  *
  * @param {string} baseArtifactPath  Path to the immutable base sparse-gram artifact.
- * @param {number} epoch
  * @param {object} record    `{ fileId, filePath, contentHash, deleted, symbolMask, weightsId, grams }`
  * @param {{sync?: boolean}} [opts]
  * @returns {string} the segment file written to
@@ -133,7 +131,6 @@ export function syncDeltaSegments(segmentPaths) {
 /**
  * Enumerate delta segment files (sorted by epoch, then sequence).
  *
- * @param {string} baseArtifactPath
  * @param {{maxEpoch?:number}} [opts]
  * @returns {Array<{path:string, epoch:number, seq:number}>}
  */
@@ -220,7 +217,6 @@ export function sweepRetiredDeltaSegments(baseArtifactPath, { now = Date.now(), 
  * Plan § 7.6 step 4: writing the same `(fileId, contentHash)` twice is a
  * no-op at query merge time; the *last* record wins.
  *
- * @param {string} baseArtifactPath
  * @param {{maxEpoch?:number}} [opts]
  * @returns {Map<string, {record:object, segmentPath:string, epoch:number}>}
  */
@@ -249,7 +245,6 @@ export function resolveLatestRecords(baseArtifactPath, opts = {}) {
  *
  *   delta_size_ratio = sum(delta file sizes) / (base file size + sum)
  *
- * @param {string} baseArtifactPath
  * @returns {{ratio:number, deltaSegments:number, deltaBytes:number, baseBytes:number}}
  */
 export function deltaSizeStats(baseArtifactPath) {
@@ -283,7 +278,6 @@ export function deltaSizeStats(baseArtifactPath) {
  * time. `{ dropTombstones: true }` discards them (only when the base no longer holds the
  * file).
  *
- * @param {string} baseArtifactPath
  * @param {{dropTombstones?:boolean, now?:number}} [opts]
  * @returns {{
  *   compactedPath: string|null,
@@ -370,10 +364,6 @@ export function compactDeltaSegments(baseArtifactPath, opts = {}) {
 
 /**
  * Mark a file as deleted from the indexed corpus. Plan § 22.8.
- *
- * @param {string} baseArtifactPath
- * @param {number} epoch
- * @param {string} canonicalPath
  */
 export function recordFileDeletion(baseArtifactPath, epoch, canonicalPath, weightsId = FALLBACK_WEIGHTS_ID) {
   appendDeltaRecord(baseArtifactPath, epoch, {

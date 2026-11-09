@@ -3,10 +3,8 @@
  * Re-exports config, shared utilities, and platform services.
  */
 
-// Configuration
 export * from './config/index.js';
 
-// Database utilities
 export {
   applyReadPragmas,
   SAFE_IN_CLAUSE_BATCH,
@@ -15,15 +13,12 @@ export {
   chunkedInExec,
 } from './db-utils.js';
 
-// Repositories (DDD infrastructure layer)
 export { CodebaseRepository } from './codebase-repository.js';
 export { CodeGraphRepository } from './code-graph-repository.js';
 
-// Model management
 export { fetchModel, fetchModelFile, resolveModelFile, computeFileHash, getModelCacheDir, isCacheValid } from './model-fetcher.js';
 export { MODEL_REGISTRY, getModelEntry, getModelsForProfile, getSkippedOptInModels, isModelEnabled, isNativeAcceleratedModel } from './model-registry.js';
 
-// Native platform resolution
 export {
   getPlatformInfo,
   nativeBinarySupportsAgentTools,
@@ -31,10 +26,8 @@ export {
   resolveNativeBinary,
 } from './native-resolver.js';
 
-// Tokenization
 export { createTokenizer } from './native-tokenizer.js';
 
-// Dedup hashing (SimHash + MinHash-LSH NAPI wrapper)
 export {
   isAvailable as isDedupAvailable,
   getLoadError as getDedupLoadError,
@@ -42,7 +35,6 @@ export {
   clusterFingerprints,
 } from './dedup-hashing.js';
 
-// ONNX runtime
 export { initOrt, buildFeed, createOrtPipeline } from './ort-pipeline.js';
 export {
   getOnnxRuntimeVersion,
@@ -58,10 +50,8 @@ export { withOnnxMutex } from './onnx-mutex.js';
 // CoreML EP (ORT execution provider — separate from the native cascade)
 export { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLExecutionProviders, _resetCoreMLCache } from './coreml-provider.js';
 
-// Hardware capability (chip family / generation / accelerator viability)
 export { detectHardwareCapability, parseAppleChipBrandString, _resetHardwareCapabilityCache } from './hardware-capability.js';
 
-// CoreML variant cascade (M3+ Apple Silicon fast path used by the native addon)
 export {
   getCascadeSpec,
   getCoremlCascadeRoot,
@@ -96,7 +86,6 @@ export {
   applyPersistedLiModel,
 } from './init-config.js';
 
-// Language analysis
 export {
   getLanguageByPath, getLanguageByExtension, LANGUAGES, EXTENSION_MAP, FILENAME_MAP,
   getChunkerPatterns, getGraphPatterns, getLanguageMeta, getSupportedExtensions,
@@ -105,13 +94,10 @@ export {
 export { getTreeSitterProvider, TAGS_QUERIES, CAPTURE_TO_ENTITY_TYPE } from './tree-sitter-provider.js';
 export { detectProjectBoundary, clearBoundaryCache } from './project-detector.js';
 
-// Constants
 export { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from './constants.js';
 
-// LLM provider
 export { generateWithRetry } from './llm-provider.js';
 
-// Quantization (explicit named exports)
 export {
   floatToBinary, floatToInt8, normalizedFloatToInt8,
   computeCentroid, generateSignVector,
@@ -121,7 +107,6 @@ export {
   asymmetricQueryEncode, asymmetricDocEncode,
 } from './quantization.js';
 
-// SIMD / WASM distance functions
 export {
   wasmHammingDistance, wasmInt8Cosine, wasmInt8BatchDot, wasmInt8Dot,
   wasmAsymmetricDistance, wasmMaxSimF32, wasmMaxSimDequant,
@@ -131,8 +116,7 @@ export {
 } from './simd-distance.js';
 
 // Code-graph schema vocabulary shared by graph, search, indexing and the
-// structural repository (moved down from core/graph so infrastructure never
-// imports the graph domain).
+// structural repository (infrastructure never imports the graph domain).
 export * from './relationship-types.js';
 export * from './file-nodes.js';
 export * from './import-path-prefixes.js';

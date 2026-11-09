@@ -1,8 +1,3 @@
-/**
- * Indexer Phases - Phase runner helper and all phase wrappers.
- * Extracted from index-codebase-v21.js for file size compliance (<500 lines).
- */
-
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
@@ -68,13 +63,11 @@ function stagedLateInteractionSegmentDir(stagedStubPath) {
 async function cleanupStagedLateInteractionIndex(stagedPath, finalPath = DB_PATHS.lateInteraction) {
   await unlinkIfExists(stagedPath);
   await unlinkIfExists(stagedPath + '.bak');
-  // Also remove the staged segments directory — a failed rebuild must leave
-  // no orphan segment files on disk.
+  // A failed rebuild must leave no orphan segment files on disk.
   await rmDirIfExists(stagedLateInteractionSegmentDir(stagedPath));
   // And remove the .segments.bak sidecar that `atomicSwapLateInteractionIndex`
-  // leaves behind on a failed swap (2026-04-15 fix for leak spotted in review).
-  // Guarded by finalPath so callers who use a non-default final location
-  // get their own cleanup.
+  // leaves behind on a failed swap.
+  // Keyed on finalPath so callers with a non-default final location clean their own.
   await rmDirIfExists(finalPath + '.segments.bak');
 }
 
@@ -97,18 +90,16 @@ async function invalidateLateInteractionIndex() {
  * self-heal via the `.tmp.segments` migration path in late-interaction-index.js.
  * This window is narrow (two filesystem renames) and the self-heal is idempotent.
  *
- * Rollback sequence when the stub swap at line 106 throws AFTER the new
- * segments have already landed in finalSegDir:
- *   1. Move the new segments out of the way to `.failed-swap`
- *   2. Restore the original segments from `.bak`
- *   3. Propagate the original error
- *
  * The prior revision had a broken rollback: its catch predicate
  * `!existsSync(finalSegDir)` was always false after a successful segments
  * rename, so no restoration ran and the live index was left in a torn state
  * (OLD stub pointing at NEW segments, ORIGINAL segments stranded in .bak).
- * That's the same severity class as the C1 bug the whole helper was meant
- * to replace. See docs/reviews/INDEXING_OPT_2026-04-15/correctness.md §N1.
+ *
+ * Rollback sequence when the stub swap throws AFTER the new
+ * segments have already landed in finalSegDir:
+ *   1. Move the new segments out of the way to `.failed-swap`
+ *   2. Restore the original segments from `.bak`
+ *   3. Propagate the original error
  */
 async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
   const stagedSegDir = stagedLateInteractionSegmentDir(stagedStubPath);
@@ -121,7 +112,6 @@ async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
   await rmDirIfExists(bakSegDir);
   await rmDirIfExists(failedSegDir);
 
-  // Back up existing live segments before promoting new ones
   let hadOriginalSeg = false;
   if (existsSync(finalSegDir)) {
     await fs.rename(finalSegDir, bakSegDir);
@@ -135,10 +125,9 @@ async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
       newSegMoved = true;
     }
     await atomicSwapDatabase(stagedStubPath, finalStubPath);
-    // Promote the alias sidecar with the stub. It is written as
-    // `<stagedStub>.aliases.json` (2026-09-03: every shipped index left it
-    // under the staged name, so the reader found no sidecar and loaded ZERO
-    // aliases; the reader now also falls back to that name for old indexes).
+    // The alias sidecar is written as `<stagedStub>.aliases.json` and must be
+    // promoted with the stub, or the reader finds no sidecar and loads ZERO
+    // aliases (the reader also falls back to the staged name for old indexes).
     const stagedAliases = stagedStubPath + '.aliases.json';
     if (existsSync(stagedAliases)) {
       await unlinkIfExists(finalStubPath + '.aliases.json');
@@ -167,21 +156,16 @@ async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
 }
 
 /**
- * Internal helpers exposed for direct testing. NOT re-exported via the
- * `core/indexing/index.js` barrel — callers outside the domain should go
- * through `buildVectorsAndArtifactsPhase`. Keeps N1 regression tests able
- * to monkey-patch `atomicSwapDatabase` without needing to set up the full
- * phase runner.
+ * Exposed for direct testing. NOT re-exported via the `core/indexing/index.js`
+ * barrel: callers outside the domain go through `buildVectorsAndArtifactsPhase`.
+ * Keeps regression tests able to monkey-patch `atomicSwapDatabase` without
+ * needing to set up the full phase runner.
  */
 export const _testInternals = {
   atomicSwapLateInteractionIndex,
   stagedLateInteractionSegmentDir,
   cleanupStagedLateInteractionIndex,
 };
-
-// =============================================================================
-// PHASE RUNNER HELPER
-// =============================================================================
 
 export async function runPhase(phaseName, phaseFn, options = {}) {
   const startTime = Date.now();
@@ -198,10 +182,6 @@ export async function runPhase(phaseName, phaseFn, options = {}) {
     return { success: false, error: err, duration };
   }
 }
-
-// =============================================================================
-// EXTRACTED PHASES
-// =============================================================================
 
 export async function discoverFilesPhase(options = {}) {
   const { filesFromStdin = false, quiet = false } = options;
@@ -426,8 +406,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     if (noLateInteraction && fullReindex) await invalidateLateInteractionIndex();
   }
 
-  // ── Bounded-memory streaming path for large full rebuilds ──
-  //
+  // Bounded-memory streaming path for large full rebuilds.
   // The in-memory path below materialises the WHOLE chunk corpus (chunkFiles →
   // allChunks/texts) plus all exemplar embeddings, all alias rows, and every
   // LI per-token slab — peak heap O(repo). On big repos (libsql ≈ 431k chunks,
@@ -456,15 +435,14 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   }
 
   // The in-memory path pre-chunks up front so both vector + LI encoders share
-  // one chunk list. The streaming path does its own windowed chunking + dedup,
-  // so skip this for it (this is the O(repo) allocation we're avoiding).
+  // one chunk list. The streaming path does its own windowed chunking + dedup, so it skips
+  // this O(repo) allocation.
   let preChunked = null;
   if (!dryRun && !useStreaming && filesToIndex.length > 0) {
     preChunked = await chunkFiles(filesToIndex);
 
-    // Near-duplicate dedup: annotates chunks in place with {simhash, clusterId,
-    // exemplarId, isExemplar}. Downstream embedding / LI paths see the
-    // annotations and skip encoding work for aliases.
+    // Annotates chunks in place with {simhash, clusterId, exemplarId, isExemplar};
+    // the embedding / LI paths skip encoding work for aliases.
     const dedupResult = await runDedupPhase(preChunked.allChunks, DEDUP_CONFIG);
     log(formatDedupSummary(dedupResult), dedupResult.skipped ? 'dim' : 'cyan');
   }
@@ -494,8 +472,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   // a real accelerator) we lift the gate and let the pool run alongside
   // parallel LI. On a no-accelerator host LI is also on ORT CPU, so the gate
   // stays in force and pool + parallel LI take turns rather than contend.
-  // ── Index device: accelerator or ORT INT8 CPU, by a measured speed test ──
-  //
+  // Index device (accelerator or ORT INT8 CPU) is chosen by a measured speed test.
   // Must run before the pool / parallel-LI decisions below: they read
   // isIndexAcceleratorAvailable(), which honours this choice. The test runs
   // once per machine + setup (cached), and only on a run that would arm the
@@ -506,7 +483,6 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     const deviceChoice = await ensureIndexDeviceChoice({
       allowMeasure: wouldArmAccelerator,
       includeLi: !noLateInteraction,
-      // The schedule and CPU worker pools this run will really use.
       ...indexDeviceRunShape({
         shouldParallelLI, useStreaming, resourcePlan, lateInteractionWorkers, lateInteractionWorkerThreads,
       }),
@@ -595,8 +571,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     ...(preChunked ? { preChunked } : {}),
   };
 
-  // ── GPU model lifecycle: kill CPU → arm GPU → prewarm ──
-  //
+  // GPU model lifecycle: kill CPU → arm GPU → prewarm.
   // CPU and GPU models must never be active simultaneously (memory
   // contention). For large changesets, kill all resident models first,
   // then arm the best GPU backend detected by hardware-capability.js and
@@ -656,7 +631,6 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   }
 
   try {
-    // ── Streaming path: bounded-memory vectors + LI for large full rebuilds ──
     if (useStreaming) {
       const { getModelInfo } = await import('../embedding/embedding-service.js');
       const { buildVectorsAndLiStreaming } = await import('./streaming-vectors.js');
@@ -683,7 +657,6 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
         },
       });
 
-      // HCGS (off by default) runs independently of vectors — drain it if armed.
       let hcgsResult = null;
       if (hcgsPromise) {
         try { hcgsResult = await hcgsPromise; } catch (e) { hcgsResult = { error: e.message }; }
@@ -695,8 +668,6 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
       const vectorStats = streamed.vectorStats || { chunks: 0, embeddings: 0 };
       if (vectorStats.embeddings > 0) await markPhaseComplete('vectors');
 
-      // Promote the staged LI index (built bounded), or invalidate on failure —
-      // same contract as the in-memory path's swap/invalidate below.
       let lateInteractionResult = streamed.lateInteractionResult;
       if (!noLateInteraction) {
         if (streamed.liBuilt && lateInteractionResult && !lateInteractionResult.error) {
@@ -734,7 +705,6 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
 
     const vectorPromise = buildVectorIndex(filesToIndex, dryRun, vectorOptions);
 
-    // Compute LI file removal list (used by both parallel and sequential paths)
     const filesToRemoveFromLI = incrementalInfo && !fullReindex
       ? [...incrementalInfo.toIndex, ...(incrementalInfo.toRemove || [])]
       : [];
@@ -756,11 +726,9 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
       batchSizeUpperCap: resourcePlan.lateInteractionBatchSizeUpperCap,
       tokenBudget: resourcePlan.lateInteractionTokenBudget,
       attentionBudget: resourcePlan.lateInteractionAttentionBudget,
-      // Thread PROJECT_ROOT through so LI skip policy loads the same
-      // .sweet-search.config.json excludes the embed indexer uses. Without
-      // this, a non-cwd invocation (CI cd elsewhere, MCP tool, future daemon)
-      // would silently diverge — embed and LI would apply different skip
-      // lists and the bde9b26 unification refactor would be incomplete.
+      // So the LI skip policy loads the same .sweet-search.config.json excludes
+      // the embed indexer uses. Without it, a non-cwd invocation (CI, MCP tool,
+      // daemon) would apply different skip lists to embed and LI.
       projectRoot: PROJECT_ROOT,
     });
 
@@ -853,11 +821,8 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     resetLocalModelRuntime();
     resetLateInteractionRuntime();
 
-    // ── Post-index: tear down GPU models (if armed), warm CPU for queries ──
-    //
-    // Only runs the swap if we actually armed GPU for this run. Small
-    // changesets that stayed on ORT CPU skip this entirely — the CPU
-    // models are still loaded and warm from session-warmup.
+    // Small changesets that stayed on ORT CPU skip this: the CPU models are
+    // still loaded and warm from session-warmup.
     if (shouldArmGpu) {
       try {
         teardownIndexGpuPool();
@@ -918,7 +883,7 @@ export async function updateIncrementalStatePhase(options = {}) {
             inode: stat ? stat.ino.toString() : null,
           };
         } catch (e) {
-          return null; // skip
+          return null;
         }
       }));
       for (let j = 0; j < batch.length; j++) {

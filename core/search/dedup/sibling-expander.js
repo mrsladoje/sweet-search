@@ -11,7 +11,7 @@
  * cannot distinguish.
  *
  * Reads only from the `vectors` table via codebase-repository; no imports
- * from the indexing domain, per DDD_ARCHITECTURE.md.
+ * from the indexing domain, per docs/DDD_ARCHITECTURE.md.
  */
 
 function safeParse(s) {
@@ -156,7 +156,6 @@ export function expandAliases(results, codebaseRepo, query = '') {
   }
   if (!siblings || siblings.length === 0) return { results, stats };
 
-  // Group siblings by clusterId for O(1) lookup during expansion.
   const siblingsByCluster = new Map();
   for (const row of siblings) {
     const parsed = safeParse(row.metadata);
@@ -199,7 +198,6 @@ export function expandAliases(results, codebaseRepo, query = '') {
 
     stats.exemplarsExpanded++;
 
-    // Candidate list: exemplar + siblings. Re-rank by query-text lexical match.
     const exemplarCandidate = {
       id: r.id,
       file: r.file ?? parseMeta(r).file ?? null,
@@ -219,7 +217,6 @@ export function expandAliases(results, codebaseRepo, query = '') {
 
     if (ordered[0] !== exemplarCandidate) stats.reranked++;
 
-    // Attach full alias list to the WINNING result (for UI).
     const winner = ordered[0];
     const winnerIsAlias = !winner.isExemplarCandidate;
     const exemplarScore = scoreOf(r);
@@ -236,7 +233,6 @@ export function expandAliases(results, codebaseRepo, query = '') {
         text: c.text,
       }));
 
-    // Emit the winner at the exemplar's slot.
     let winnerResult;
     if (winnerIsAlias) {
       winnerResult = {
@@ -275,7 +271,6 @@ export function expandAliases(results, codebaseRepo, query = '') {
     if (winnerResult.id) seen.add(winnerResult.id);
     expanded.push(winnerResult);
 
-    // Emit remaining cluster members after the winner.
     for (const sib of ordered) {
       if (sib === winner) continue;
       if (sib.id && seen.has(sib.id)) continue;

@@ -1,25 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * Incremental Indexing Tracker v2.4
+ * Incremental Indexing Tracker
  *
  * Tracks file changes using content hashes to enable incremental reindexing.
  * Only files that have changed since last index are reprocessed.
  *
- * Sweet Search v2.3: Config-aware cache invalidation
- * - Detects embedding provider/model/dimension changes
- * - Forces full reindex when config fingerprint mismatches
- * - Prevents silent dimension mismatch corruption
- *
- * Sweet Search v2.3: mtime/size/inode fast-path optimization (Phase 0.3)
- *
- * Sweet Search v2.4: xxHash3 content hashes
- * - Uses the shared incremental hashing wrapper and records the hash
- *   algorithm in the config fingerprint.
- * - SHA/xxHash state mismatches force a controlled full reindex.
- * - Stores { hash, size, mtime_ns, inode } per file instead of just hash
- * - Fast-path: skip content read if (size, mtime_ns, inode) match stored values
- * - 10-50x speedup for typical incremental checks when few/no files changed
+ * - Config-aware invalidation: a config fingerprint mismatch (provider, model,
+ *   dimension, hash algorithm, ...) forces a full reindex, which prevents silent
+ *   dimension-mismatch corruption.
+ * - Content hashes come from the shared incremental hashing wrapper.
+ * - Per file it stores { hash, size, mtime_ns, inode }. Fast path: skip the
+ *   content read if (size, mtime_ns, inode) match the stored values (10-50x
+ *   speedup when few or no files changed).
  *
  * Storage: .sweet-search/merkle-state.json holds the header (version, config fingerprint,
  * lastIndex, stats); the per-file map lives in file-state.db (file-state-store.mjs), so
@@ -36,27 +29,14 @@ import { STATE_VERSION, buildConfigFingerprint, validateConfigFingerprint, diffC
 
 const STATE_PATH = DB_PATHS.merkle;
 
-// =============================================================================
-// CONFIG FINGERPRINT — see config-fingerprint.js. Detects index-format changes
-// (encoders, chunker, enrichment, sparse weights) that require a full re-embed.
-// =============================================================================
-
-/**
- * Compute the configured content hash of file content.
- */
 function hashContent(content) {
   return contentHashSync(content);
 }
 
-// =============================================================================
-// MTIME/SIZE FAST-PATH (Sweet Search v2.3)
-// Skip content reads when file metadata hasn't changed
-// =============================================================================
-
 /**
  * Get file metadata (size, mtime in nanoseconds, inode) via fs.stat().
  *
- * Per INCREMENTAL_INDEXING_PLAN.md § 9.1, the dirty-detection tuple is
+ * Per docs/INCREMENTAL_INDEXING_PLAN.md § 9.1, the dirty-detection tuple is
  * `(mtime_ns, size, inode)`. The naive `mtime > recorded` check misses a
  * second write within the same FS resolution tick; the equality-on-tuple
  * check plus inode detects atomic-rename-over-existing-path (vim swap
@@ -68,7 +48,6 @@ function hashContent(content) {
  * cast back via `BigInt(stored.inode)` for comparison. `mtime_ns` and `size`
  * are stored the same way so the tuple has one type policy end to end.
  *
- * @param {string} filePath - Absolute path to file
  * @returns {Promise<{size: string, mtime_ns: string, inode: string}>}
  */
 async function getFileMetadata(filePath) {
@@ -90,17 +69,13 @@ function statFieldToBigIntString(value) {
 }
 
 /**
- * Check if file metadata matches stored values (fast-path).
- *
- * Per INCREMENTAL_INDEXING_PLAN.md § 9.1 the comparison is the full
+ * Per docs/INCREMENTAL_INDEXING_PLAN.md § 9.1 the comparison is the full
  * `(mtime_ns, size, inode)` tuple. A stored entry without an inode is
  * deliberately not fast-path eligible: the next run pays one content read
  * and rewrites the complete tuple, which closes the atomic-rename hole for
  * state files produced before inode persistence landed.
  *
  * @param {Object} stored - Stored entry {hash, size, mtime_ns, inode?}
- * @param {Object} current - Current metadata {size, mtime_ns, inode}
- * @returns {boolean} - True if metadata matches (file unchanged)
  */
 function metadataMatches(stored, current) {
   if (stored.size == null || stored.mtime_ns == null) return false;
@@ -110,10 +85,6 @@ function metadataMatches(stored, current) {
   return statFieldToBigIntString(stored.inode) === statFieldToBigIntString(current.inode);
 }
 
-/**
- * Create empty state object for fresh start
- * @returns {Object} Empty state structure
- */
 function createEmptyState() {
   return {
     version: STATE_VERSION,
@@ -125,12 +96,11 @@ function createEmptyState() {
 }
 
 /**
- * Load previous indexing state with config validation
- * E3 FIX: Differentiate missing vs corrupt state file
+ * Load previous indexing state with config validation. A missing, corrupt and
+ * unreadable state file are told apart.
  * @returns {Object} { state, configValidation }
  */
 async function loadState(silent = false) {
-  // E3 FIX: Check if file exists first (separate from parse errors)
   if (!existsSync(STATE_PATH)) {
     if (!silent) {
       console.log('[incremental-tracker] State file not found, starting fresh');
@@ -143,12 +113,11 @@ async function loadState(silent = false) {
     const state = JSON.parse(data);
     state.files = readFileStateObject(path.dirname(STATE_PATH));
 
-    // Validate config fingerprint
     const configValidation = validateConfigFingerprint(state.config_fingerprint);
 
     return { state, configValidation };
   } catch (err) {
-    // E3 FIX: Handle race condition where file deleted between exists check and read
+    // File deleted between the exists check and the read
     if (err.code === 'ENOENT') {
       if (!silent) {
         console.log('[incremental-tracker] State file removed, starting fresh');
@@ -156,7 +125,6 @@ async function loadState(silent = false) {
       return { state: createEmptyState(), configValidation: { valid: true, reason: 'removed' } };
     }
 
-    // E3 FIX: Handle corrupt JSON specifically
     if (err instanceof SyntaxError) {
       if (!silent) {
         console.error('[incremental-tracker] CORRUPT state file detected, backing up and starting fresh');
@@ -167,7 +135,6 @@ async function loadState(silent = false) {
       return { state: createEmptyState(), configValidation: { valid: false, reason: 'corrupt' } };
     }
 
-    // E3 FIX: Handle other errors (permission, etc.)
     if (!silent) {
       console.error(`[incremental-tracker] Error reading state: ${err.message}`);
     }
@@ -175,59 +142,44 @@ async function loadState(silent = false) {
   }
 }
 
-/**
- * Save current indexing state with config fingerprint
- * Uses atomic temp+rename pattern for crash safety (C4 fix)
- * No pretty-printing for smaller files and faster writes (M7 fix)
- */
+/** Atomic temp+rename for crash safety; no pretty-printing, for smaller files and faster writes. */
 async function saveState(state) {
-  // Always include current config fingerprint
   state.version = STATE_VERSION;
   state.config_fingerprint = buildConfigFingerprint();
 
   const tempPath = STATE_PATH + '.tmp';
   const { files, ...header } = state;
-  const content = JSON.stringify(header); // No pretty-printing (M7)
+  const content = JSON.stringify(header);
 
   try {
     await fs.mkdir(path.dirname(STATE_PATH), { recursive: true });
     // Rows first: the header (with its fingerprint) is what marks the state complete.
     writeFileStateObject(path.dirname(STATE_PATH), files || {});
 
-    // Write to temp file first
     await fs.writeFile(tempPath, content);
 
-    // Atomic rename (POSIX guarantees atomicity)
+    // POSIX guarantees rename atomicity
     await fs.rename(tempPath, STATE_PATH);
   } catch (err) {
-    // Clean up temp file on failure
     try {
       await fs.unlink(tempPath);
     } catch {
-      // Ignore cleanup errors
     }
 
     if (err.code === 'ENOSPC') {
       console.error('[incremental-tracker] CRITICAL: Disk full, cannot save merkle state');
       console.error('[incremental-tracker] Free up disk space and run /index-codebase');
     }
-    throw err; // Propagate to caller
+    throw err;
   }
 }
 
 /**
- * Determine which files need reindexing
+ * Determine which files need reindexing.
+ * fs.stat() first (one syscall, ~0.1ms); if (size, mtime_ns, inode) match the stored
+ * values the content read is skipped, else the content is read and hashed.
+ * Stats run in parallel batches of 100 (2-4x faster than sequential).
  *
- * Sweet Search v2.3: mtime/size/inode fast-path optimization
- * - First: fs.stat() to get size and mtime (single syscall, ~0.1ms)
- * - If metadata matches stored values: skip content read (fast-path)
- * - If metadata differs: read content and compute hash (slow-path)
- * - Result: 10-50x speedup when few/no files changed
- *
- * H6 fix: Batched parallel fs.stat calls (BATCH_SIZE=100) for 2-4x speedup
- *
- * @param {string[]} allFiles - All discovered files
- * @param {string} projectRoot - Project root path
  * @returns {Promise<Object>} Result object with:
  *   - toIndex {string[]} - Files that need indexing (new or changed)
  *   - toRemove {string[]} - Files that were deleted
@@ -239,14 +191,12 @@ async function saveState(state) {
  *   - fastPathStats {Object} - Fast-path hit/miss statistics { hits, misses, contentReads }
  */
 export async function getChangedFiles(allFiles, projectRoot) {
-  const BATCH_SIZE = 100; // H6: Process files in parallel batches
+  const BATCH_SIZE = 100;
   const { state, configValidation } = await loadState();
   const currentHashes = {};
 
-  // Track fast-path stats for performance monitoring
   const fastPathStats = { hits: 0, misses: 0, contentReads: 0 };
 
-  // Check if config changed - force full reindex
   if (!configValidation.valid) {
     console.warn(`\n[Sweet Search] CONFIG CHANGE DETECTED - Full reindex required`);
     console.warn(`  Reason: ${configValidation.reason}`);
@@ -255,7 +205,6 @@ export async function getChangedFiles(allFiles, projectRoot) {
     }
     console.warn('');
 
-    // Compute hashes and metadata for all files in batches (all need reindexing)
     for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
       const batch = allFiles.slice(i, i + BATCH_SIZE);
 
@@ -292,12 +241,11 @@ export async function getChangedFiles(allFiles, projectRoot) {
       }
     }
 
-    // Find removed files (extract hash for comparison if needed)
     const currentFiles = new Set(Object.keys(currentHashes));
     const toRemove = Object.keys(state.files).filter((f) => !currentFiles.has(f));
 
     return {
-      toIndex: allFiles.filter((f) => currentHashes[f]), // Only files we could read
+      toIndex: allFiles.filter((f) => currentHashes[f]), // only files we could read
       toRemove,
       unchanged: [],
       currentHashes,
@@ -308,7 +256,6 @@ export async function getChangedFiles(allFiles, projectRoot) {
     };
   }
 
-  // Log migration if applicable
   if (configValidation.migrated) {
     console.log(`[Sweet Search] ${configValidation.details?.message || 'State migrated'}`);
   }
@@ -317,11 +264,9 @@ export async function getChangedFiles(allFiles, projectRoot) {
   const unchanged = [];
   const toRemove = [];
 
-  // H6: Process files in parallel batches instead of sequentially
   for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
     const batch = allFiles.slice(i, i + BATCH_SIZE);
 
-    // Parallel metadata fetch for batch
     const metadataResults = await Promise.all(
       batch.map(async (file) => {
         const filePath = path.join(projectRoot, file);
@@ -334,11 +279,9 @@ export async function getChangedFiles(allFiles, projectRoot) {
       }),
     );
 
-    // Process results - determine which need content reads
     const needsContentRead = [];
     for (const { file, filePath, metadata, error } of metadataResults) {
       if (error || !metadata) {
-        // File doesn't exist or error - mark for removal if was in state
         if (state.files[file]) {
           toRemove.push(file);
         }
@@ -348,9 +291,7 @@ export async function getChangedFiles(allFiles, projectRoot) {
       const stored = state.files[file];
       const storedEntry = stored && typeof stored === 'object' && stored.hash ? stored : null;
 
-      // Fast-path check - if metadata matches, skip content read
       if (storedEntry && metadataMatches(storedEntry, metadata)) {
-        // Fast-path: file unchanged (size and mtime match)
         currentHashes[file] = {
           hash: storedEntry.hash,
           size: metadata.size,
@@ -360,13 +301,11 @@ export async function getChangedFiles(allFiles, projectRoot) {
         unchanged.push(file);
         fastPathStats.hits++;
       } else {
-        // Slow-path needed: queue for content read
         fastPathStats.misses++;
         needsContentRead.push({ file, filePath, metadata, storedEntry });
       }
     }
 
-    // Batch content reads for files that need hash computation
     if (needsContentRead.length > 0) {
       const contentResults = await Promise.all(
         needsContentRead.map(async ({ file, filePath, metadata, storedEntry }) => {
@@ -394,25 +333,22 @@ export async function getChangedFiles(allFiles, projectRoot) {
           inode: metadata.inode,
         };
 
-        // Check if file actually changed (compare hashes)
         if (!storedEntry || storedEntry.hash !== hash) {
           toIndex.push(file);
         } else {
-          // Hash matches but metadata didn't - file was touched but not modified
+          // Touched, not modified
           unchanged.push(file);
         }
       }
     }
   }
 
-  // Detect removed files (in state but not in current)
   for (const file of Object.keys(state.files)) {
     if (!currentHashes[file] && !toRemove.includes(file)) {
       toRemove.push(file);
     }
   }
 
-  // Log fast-path performance (only if we had files to check)
   if (allFiles.length > 0) {
     const fastPathRatio = ((fastPathStats.hits / allFiles.length) * 100).toFixed(1);
     console.log(
@@ -433,9 +369,6 @@ export async function getChangedFiles(allFiles, projectRoot) {
   };
 }
 
-/**
- * Update state after successful indexing
- */
 export async function updateState(currentHashes, stats = {}) {
   const state = {
     version: STATE_VERSION,
@@ -451,22 +384,15 @@ export async function updateState(currentHashes, stats = {}) {
   return state;
 }
 
-/**
- * Clear state (force full reindex)
- */
 export async function clearState() {
   try {
     for (const suffix of ['', '-wal', '-shm']) await fs.rm(fileStatePath(path.dirname(STATE_PATH)) + suffix, { force: true });
     await fs.unlink(STATE_PATH);
     console.log('State cleared, next index will be full');
   } catch (err) {
-    // File doesn't exist, that's fine
   }
 }
 
-/**
- * Get indexing statistics including config fingerprint
- */
 export async function getStats() {
   const { state, configValidation } = await loadState();
   return {
@@ -480,17 +406,10 @@ export async function getStats() {
   };
 }
 
-/**
- * Get current config fingerprint (for external tools)
- */
 export function getCurrentConfigFingerprint() {
   return buildConfigFingerprint();
 }
 
-/**
- * Validate current state without loading files
- * Useful for quick config check before indexing
- */
 export async function validateCurrentState() {
   const { state, configValidation } = await loadState();
   return {
@@ -518,10 +437,7 @@ export async function getStateSnapshot() {
   };
 }
 
-// =============================================================================
-// PHASE PROGRESS TRACKING (Phase H — crash-resume via per-phase markers)
-// =============================================================================
-
+// Per-phase progress markers for crash-resume.
 const PROGRESS_PATH = DB_PATHS.merkle.replace('merkle-state.json', 'phase-progress.json');
 
 /**
@@ -535,7 +451,6 @@ export async function updatePhaseProgress(progress) {
     timestamp: new Date().toISOString(),
   };
   await fs.writeFile(PROGRESS_PATH, JSON.stringify(data, null, 2));
-  // Best-effort fsync for durability
   try {
     const fd = openSync(PROGRESS_PATH, 'r');
     try { fsyncSync(fd); } finally { closeSync(fd); }
@@ -548,7 +463,7 @@ export async function updatePhaseProgress(progress) {
 export async function getPhaseProgress() {
   try {
     const data = JSON.parse(await fs.readFile(PROGRESS_PATH, 'utf-8'));
-    // Validate config fingerprint — discard stale progress if config changed
+    // Stale progress (config changed) is discarded
     if (!data.configFingerprint ||
         diffConfigFingerprint(data.configFingerprint).length > 0 ||
         data.configFingerprint.version !== STATE_VERSION) {
@@ -560,25 +475,17 @@ export async function getPhaseProgress() {
   }
 }
 
-/**
- * Mark a phase as complete. Clears the progress file when all phases are done.
- */
 export async function markPhaseComplete(phase) {
   await updatePhaseProgress({ phase, status: 'complete' });
 }
 
-/**
- * Clear phase progress (called after successful full pipeline completion).
- */
 export async function clearPhaseProgress() {
   try {
     await fs.unlink(PROGRESS_PATH);
   } catch (_err) {
-    // File doesn't exist
   }
 }
 
-// CLI interface
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
 

@@ -1,13 +1,10 @@
 /**
- * Vocabulary Warmup Orchestrator (Step 4e / 5 of Vocabulary Prewarm)
+ * Vocabulary Warmup Orchestrator
  *
  * Full warmup pipeline: mine -> detect communities -> rank -> warm -> persist.
- * Extracted from vocab-warmer.js for SOLID single-responsibility.
  *
  * Constants (ARTIFACT_PATHS, DATA_DIR) live in vocab-constants.js — a
  * dependency-free module shared by both this file and vocab-warmer.js.
- * This eliminates the previous circular import between this module and
- * vocab-warmer.js.
  *
  * Two entry points share the steps:
  *   - runFullWarmup: the full build's post-index warmup (and the MCP tool), in process.
@@ -40,13 +37,7 @@ function resolveDirs(options) {
   return { projectRoot, stateDir, paths: vocabArtifactPaths(stateDir), dbPath: path.join(stateDir, 'code-graph.db') };
 }
 
-// ---------------------------------------------------------------------------
-// 4e. Full Warmup Orchestrator (Heavy Tier)
-// ---------------------------------------------------------------------------
-
 /**
- * Full warmup pipeline: mine -> detect communities -> rank -> warm -> persist.
- *
  * @param {object} [options]
  * @param {'light'|'medium'|'deep'} [options.depth='medium']
  * @param {number} [options.top=1000]
@@ -62,7 +53,7 @@ function resolveDirs(options) {
  */
 export async function runFullWarmup(options = {}) {
   const start = performance.now();
-  // P1.2 FIX: Compute effective provider without mutating global EMBEDDING_CONFIG.
+  // Compute effective provider without mutating global EMBEDDING_CONFIG.
   // Provider is passed explicitly through the call chain to generateEmbeddings().
   const effectiveProvider = options.provider || (options.localWarmup ? 'local' : null);
   const modes = options.modes || ['lexical', 'semantic'];
@@ -73,7 +64,6 @@ export async function runFullWarmup(options = {}) {
   });
   const { ranked, communityCount, timing } = computed;
 
-  // Dry run: return stats without warming
   if (options.dryRun) {
     return {
       terms: ranked.identifiers.length,
@@ -85,14 +75,10 @@ export async function runFullWarmup(options = {}) {
     };
   }
 
-  // -----------------------------------------------------------------------
-  // Step 4: Warm each requested mode
-  // -----------------------------------------------------------------------
   const lexicalTerms = ranked.identifiers.filter(
     i => i.warm_mode === 'lexical' || i.warm_mode === 'both'
   );
 
-  // 4a. Lexical warmup
   if (modes.includes('lexical')) {
     const lexStart = performance.now();
     try {
@@ -103,7 +89,6 @@ export async function runFullWarmup(options = {}) {
     timing.lexical = Math.round(performance.now() - lexStart);
   }
 
-  // 4b. Semantic warmup
   let semanticEmbeddings = new Map();
   if (modes.includes('semantic')) {
     const semStart = performance.now();
@@ -115,7 +100,6 @@ export async function runFullWarmup(options = {}) {
     timing.semantic = Math.round(performance.now() - semStart);
   }
 
-  // 4c. Hybrid warmup (select representative queries weighted by community size -- F6)
   if (modes.includes('hybrid') && options.searcher) {
     const hybStart = performance.now();
     try {
@@ -126,9 +110,6 @@ export async function runFullWarmup(options = {}) {
     timing.hybrid = Math.round(performance.now() - hybStart);
   }
 
-  // -----------------------------------------------------------------------
-  // Step 5: Persist artifacts
-  // -----------------------------------------------------------------------
   const persistStart = performance.now();
   try {
     await persistVocabulary(paths, computed, semanticEmbeddings, { graphEpoch: 0 });
@@ -218,7 +199,6 @@ export function computeVocabulary(options = {}) {
     try { cached = JSON.parse(readFileSync(paths.communities, 'utf-8')); } catch (err) { debugCatch(err); }
   }
 
-  // Step 1: Detect communities (or load cached if incremental + unchanged)
   let communities = [];
   let graphHash = '';
   let relationshipCount = null;
@@ -244,7 +224,6 @@ export function computeVocabulary(options = {}) {
   }
   timing.communities = Math.round(performance.now() - commStart);
 
-  // Step 2: Mine terms
   const mineStart = performance.now();
   let minedResult;
   try {
@@ -255,7 +234,6 @@ export function computeVocabulary(options = {}) {
   }
   timing.mining = Math.round(performance.now() - mineStart);
 
-  // Step 3: Rank
   const rankStart = performance.now();
   let ranked;
   try {
@@ -277,7 +255,6 @@ export function computeVocabulary(options = {}) {
 
   // F5: communities.json with phrases[] and topEntities[]
   const enrichedCommunities = communities.map(comm => {
-    // Find matching ranked phrases for this community
     const commPhrases = (ranked.phrases || [])
       .filter(p => p.communityId === comm.id)
       .slice(0, 20)
@@ -361,7 +338,6 @@ function representativeQueries(ranked, communitySizes) {
   }));
   weightedPhrases.sort((a, b) => b.weightedScore - a.weightedScore);
 
-  // Select top-1 phrase per community, then fill remaining slots
   const seenCommunities = new Set();
   const repQueries = [];
   for (const p of weightedPhrases) {
@@ -371,7 +347,6 @@ function representativeQueries(ranked, communitySizes) {
       repQueries.push({ query: p.phrase, communityId: p.communityId });
     }
   }
-  // Fill remaining slots with cross-community phrases
   for (const p of weightedPhrases) {
     if (repQueries.length >= 20) break;
     if (!repQueries.some(r => r.query === p.phrase)) {
@@ -429,10 +404,6 @@ async function persistVocabulary(paths, computed, semanticEmbeddings, { graphEpo
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Binary Artifact Persistence
-// ---------------------------------------------------------------------------
-
 /**
  * Save embeddings as a binary artifact + JSON metadata sidecar.
  *
@@ -443,8 +414,6 @@ async function persistVocabulary(paths, computed, semanticEmbeddings, { graphEpo
  * Meta JSON: { version, dimension, termCount, terms: [...], texts?: [...], createdAt }
  * `texts[i]` is the text embedded for `terms[i]` when the two differ (hub entities).
  *
- * @param {string} binPath
- * @param {string} metaPath
  * @param {Map<string, Array<number>|Float32Array>} embeddingMap
  * @param {{texts?: string[]}} [options]
  */
@@ -452,11 +421,9 @@ export async function saveBinaryArtifact(binPath, metaPath, embeddingMap, { text
   const terms = [...embeddingMap.keys()];
   if (terms.length === 0) return;
 
-  // Determine dimension from first embedding
   const firstEmb = embeddingMap.get(terms[0]);
   const dimension = Math.min(firstEmb.length, EMBEDDING_CONFIG.hnswDimension || 512);
 
-  // Header: 32 bytes
   const header = Buffer.alloc(32);
   Buffer.from('SSWV').copy(header, 0);       // magic
   header.writeUInt32LE(1, 4);                 // version
@@ -464,7 +431,6 @@ export async function saveBinaryArtifact(binPath, metaPath, embeddingMap, { text
   header.writeUInt32LE(terms.length, 12);     // count
   // bytes 16-31: padding (zeros)
 
-  // Body: embeddings
   const body = Buffer.alloc(terms.length * dimension * 4);
   for (let i = 0; i < terms.length; i++) {
     const emb = embeddingMap.get(terms[i]);
@@ -478,7 +444,6 @@ export async function saveBinaryArtifact(binPath, metaPath, embeddingMap, { text
   await fs.mkdir(path.dirname(binPath), { recursive: true });
   await writeFileAtomic(binPath, fullBuffer);
 
-  // Write metadata sidecar
   await writeFileAtomic(metaPath, JSON.stringify({
     version: 1,
     dimension,

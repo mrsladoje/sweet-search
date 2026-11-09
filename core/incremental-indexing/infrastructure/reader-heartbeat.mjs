@@ -79,8 +79,6 @@ export function bootIdStub() {
 /**
  * Record a reader heartbeat. Idempotent; safe to call before every query.
  *
- * @param {string} stateDir
- * @param {number} epoch
  * @param {object} [meta]   Optional caller-supplied metadata (mcp-session-id,
  *                           query, etc.) — stored verbatim for diagnostics.
  * @returns {{pid:number, bootId:string, readId:string, path:string}}
@@ -112,7 +110,6 @@ export function beginRead(stateDir, epoch, meta = {}) {
  * Drop the heartbeat. Plan § 8.1.1 step 2 requires every reader process
  * to delete its file when the query completes.
  *
- * @param {string} stateDir
  * @param {{pid:number, bootId:string, readId?:string, path?:string}|undefined} record
  *        Return value of beginRead.
  */
@@ -132,9 +129,6 @@ export function endRead(stateDir, record) {
 /**
  * Best-effort liveness check. Returns true when the process is still
  * running and matches the recorded boot id.
- *
- * @param {number} pid
- * @param {string} bootId
  */
 export function isReaderAlive(pid, bootId, procStartMs = null) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -176,7 +170,6 @@ export function processStartMs(pid) {
  * Sweep stale heartbeats. Returns the surviving records sorted by
  * pinned epoch.
  *
- * @param {string} stateDir
  * @returns {Array<{epoch:number, pid:number, bootId:string, readId?:string, startedAt:string, meta:object}>}
  */
 export function liveReaders(stateDir) {
@@ -221,7 +214,6 @@ function tryUnlinkAfterGrace(p) {
  * Returns `null` when no live readers exist, meaning all retired rows
  * older than the current epoch are eligible for prune.
  *
- * @param {string} stateDir
  * @returns {number|null}
  */
 export function minLiveEpoch(stateDir) {

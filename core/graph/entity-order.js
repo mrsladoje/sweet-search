@@ -19,7 +19,6 @@ export function compareEntitiesForResolution(a, b) {
     || cmpText(String(a.id ?? ''), String(b.id ?? ''));
 }
 
-/** Relationship rows (source, target, line) in a fixed order. */
 export function compareEdgeRows(a, b) {
   return cmpText(String(a.source_id ?? ''), String(b.source_id ?? ''))
     || cmpText(String(a.target_id ?? ''), String(b.target_id ?? ''))

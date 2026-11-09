@@ -1,11 +1,8 @@
 /**
  * Persistence helpers for structural graph importance signals.
  *
- * Extracted from structural-context-repository.js so the repository stays
- * under the 500-line ceiling. These functions all consume an open
- * better-sqlite3 handle plus a list of entity IDs and return primitive
- * values; they hold no state and live in infrastructure/ alongside the
- * repository they support.
+ * These functions consume an open better-sqlite3 handle plus a list of
+ * entity IDs and return primitive values; they hold no state.
  */
 
 function placeholders(values) {

@@ -145,7 +145,6 @@ export function detectOutputPolicy(opts = {}) {
   }
 
   if (decorationMode === 'never') {
-    // Explicit global opt-out.
     policy.reason = 'decoration-never';
   } else if (decorationMode === 'always') {
     // Explicit global opt-in: decorate on stdout regardless of capture. The

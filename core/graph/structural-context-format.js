@@ -1,11 +1,6 @@
-/** The three sections a caller may restrict the render to. */
 export const TRACE_MODES = ['callers', 'callees', 'impact'];
 
 /**
- * Render a structural-context result.
- *
- * @param {object} result
- * @param {object} [options]
  * @param {'callers'|'callees'|'impact'|null} [options.mode]
  *   Restrict the body to one section. The guide has taught
  *   `ss-trace <symbol> [callers|callees|impact]` since p7, but the wrapper read only the

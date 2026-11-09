@@ -45,7 +45,6 @@ function payloadByteLength(capacityBits) {
  * Create or open a tombstone bitmap. Returns an in-memory bitmap object;
  * callers persist with `saveBitmap`.
  *
- * @param {number} capacityBits
  * @returns {{capacity:number, payload:Buffer}}
  */
 export function createBitmap(capacityBits) {
@@ -62,7 +61,6 @@ export function createBitmap(capacityBits) {
  * Load a tombstone bitmap from disk. Returns `null` if the file does not
  * exist (caller treats every key as live).
  *
- * @param {string} filePath
  * @returns {{capacity:number, payload:Buffer}|null}
  */
 export function loadBitmap(filePath) {
@@ -93,7 +91,6 @@ export function loadBitmap(filePath) {
 /**
  * Persist the bitmap atomically (`*.tmp` + fsync + rename).
  *
- * @param {string} filePath
  * @param {{capacity:number, payload:Buffer}} bitmap
  */
 export function saveBitmap(filePath, bitmap) {
@@ -126,7 +123,6 @@ export function saveBitmap(filePath, bitmap) {
  * Preserves existing bits.
  *
  * @param {{capacity:number, payload:Buffer}} bitmap
- * @param {number} newCapacityBits
  */
 export function resizeBitmap(bitmap, newCapacityBits) {
   if (newCapacityBits <= bitmap.capacity) return bitmap;

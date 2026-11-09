@@ -1,10 +1,5 @@
 /**
- * Model Pool — GPU/CPU model lifecycle manager for the indexing pipeline.
- *
- * Lives in `core/indexing/` because indexing is the only domain that arms
- * GPU models; queries always use ORT CPU. Per the DDD dependency matrix,
- * `indexing → embedding/ranking/infrastructure` is allowed, so the imports
- * here stay static.
+ * Indexing is the only domain that arms GPU models; queries always use ORT CPU.
  *
  * Enforces the invariant that CPU (ORT) and GPU (native candle/CoreML)
  * models are never active simultaneously. The lifecycle:
@@ -428,10 +423,7 @@ export async function ensureIndexDeviceChoice({
 let _gpuDiag = null;
 let _cpuDiag = null;
 
-/**
- * Kill ALL resident models — ORT CPU and native GPU.
- * MUST be called before arming GPU to enforce no-coexistence.
- */
+/** MUST be called before arming GPU to enforce no-coexistence of CPU and GPU models. */
 export async function teardownAllModels() {
   await unloadLocalModel();
   await unloadLateInteractionModel();
@@ -442,9 +434,6 @@ export async function teardownAllModels() {
 }
 
 /**
- * Load native GPU models (embedding + LI) using hardware-auto-detected
- * device, then run a warmup forward pass on each.
- *
  * @param {object} [opts]
  * @param {boolean} [opts.includeLi=true] - Also load the LI model
  * @returns {{ backend: string, embedLoadMs: number, embedWarmMs: number, liLoadMs: number, liWarmMs: number }}
@@ -513,20 +502,13 @@ export async function initIndexGpuPool({ includeLi = true } = {}) {
   return _gpuDiag;
 }
 
-/**
- * Tear down GPU models after indexing. Does NOT load CPU models —
- * call warmupQueryCpuModels() separately.
- */
+/** Does NOT load CPU models: call warmupQueryCpuModels() separately. */
 export function teardownIndexGpuPool() {
   unloadNativeModels();
   _gpuDiag = null;
 }
 
-/**
- * Load ORT CPU models (embedding INT8 + LI ORT session) and run a single
- * dummy forward pass on each to warm BLAS thread pools. Both models are
- * warmed so the first query pays no cold-start cost on either path.
- */
+/** Both models are warmed so the first query pays no cold-start cost on either path. */
 export async function warmupQueryCpuModels() {
   const t0 = Date.now();
   await Promise.all([getLocalPipeline(), getLateInteractionPipeline()]);

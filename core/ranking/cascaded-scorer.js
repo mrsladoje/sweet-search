@@ -1,11 +1,6 @@
 /**
- * Cascaded Scorer (Section 26 — Semantic Pipeline Restructuring)
- *
- * Streamlined scoring cascade: MaxSim → confidence gate → conditional cross-encoder.
+ * Scoring cascade: MaxSim → confidence gate → conditional cross-encoder.
  * Runs after graph expansion so expanded entities also get real scores.
- *
- * Designed as a standalone module with explicit dependency injection —
- * no `this` binding, no prototype wiring, fully testable in isolation.
  */
 
 /**
@@ -14,11 +9,6 @@
  * than margin alone.
  *
  * @param {number[]} scores - MaxSim scores (higher = better)
- * @param {number} marginThreshold - Gap threshold for primary signal
- * @param {Object} [context] - Optional context signals
- * @param {boolean} [context.lexicalConfident] - Lexical path was confident
- * @param {number} [context.withTokens] - How many candidates had LI tokens
- * @param {number} [context.totalCandidates] - Total candidate count
  * @returns {{ decisive: boolean, reason: string, signals: Object }}
  */
 export function isDecisive(scores, marginThreshold = 0.08, context = {}) {
@@ -29,19 +19,17 @@ export function isDecisive(scores, marginThreshold = 0.08, context = {}) {
   const sorted = [...scores].sort((a, b) => b - a);
   const gap = sorted[0] - sorted[1];
 
-  // Signal 1: Margin (primary) — large gap = clear winner
   const marginDecisive = gap > marginThreshold;
 
-  // Signal 2: Top-K flatness — low std = model can't discriminate
+  // Low std over the top 10 = model can't discriminate
   const topK = sorted.slice(0, Math.min(10, sorted.length));
   const mean = topK.reduce((a, b) => a + b, 0) / topK.length;
   const std = Math.sqrt(topK.reduce((s, v) => s + (v - mean) ** 2, 0) / topK.length);
   const flat = std < 0.02;
 
-  // Signal 3: Lexical confidence — if lexical path was already confident, skip CE
   const lexicalConfident = context.lexicalConfident || false;
 
-  // Signal 4: Token coverage — if most candidates lack LI tokens, CE is more valuable
+  // If most candidates lack LI tokens, CE is more valuable
   const lowCoverage = context.withTokens !== undefined
     && context.totalCandidates > 0
     && (context.withTokens / context.totalCandidates) < 0.5;
@@ -79,16 +67,12 @@ export function isDecisive(scores, marginThreshold = 0.08, context = {}) {
  * - Flat scores (no significant gap) → send kMax (CE needs to see more)
  *
  * @param {number[]} scores - Sorted MaxSim scores (descending)
- * @param {number} kMax - Maximum candidates to send (cap)
- * @param {number} kMin - Minimum candidates to send (floor)
- * @returns {number}
  */
 export function computeAdaptiveK(scores, kMax = 20, kMin = 3) {
   if (scores.length <= kMin) return scores.length;
 
   const limit = Math.min(scores.length - 1, kMax);
 
-  // Find the largest gap and the overall score range
   let maxGap = -1;
   let cutoff = limit;
 
@@ -110,13 +94,6 @@ export function computeAdaptiveK(scores, kMax = 20, kMin = 3) {
   return Math.max(kMin, Math.min(cutoff, kMax));
 }
 
-/**
- * Partition candidates into those with pre-indexed LI tokens and those without.
- *
- * @param {Array} candidates
- * @param {Object|null} liIndex - LateInteractionIndex or null
- * @returns {{ withTokens: Array, withoutTokens: Array }}
- */
 function partitionByTokenAvailability(candidates, liIndex) {
   if (!liIndex) {
     return { withTokens: [], withoutTokens: [...candidates] };
@@ -146,9 +123,7 @@ function extractCeScore(r) {
 /**
  * Cascaded scoring: MaxSim → confidence gate → conditional cross-encoder.
  *
- * @param {string} query - Search query
  * @param {Array} candidates - Candidates with optional pre-indexed LI tokens
- * @param {Object} options
  * @param {Object|null} options.lateInteractionIndex - LI index for MaxSim, or null for CE-only
  * @param {Object} options.crossEncoder - Reranker instance with rerankDirect()
  * @param {number} [options.ceTopK=20] - K_max for adaptive-K candidate selection
@@ -189,21 +164,19 @@ export async function cascadedScore(query, candidates, options = {}) {
     return { results: [], stats };
   }
 
-  // Single candidate — decisive by default
   if (candidates.length === 1) {
     stats.decisive = true;
     stats.gateReason = 'single_candidate';
     return { results: [...candidates], stats };
   }
 
-  // Step 1: Partition candidates by LI token availability
   const { withTokens, withoutTokens } = partitionByTokenAvailability(
     candidates, lateInteractionIndex,
   );
   stats.withTokens = withTokens.length;
   stats.withoutTokens = withoutTokens.length;
 
-  // Step 2: If no LI index, all go to CE (CE-only fallback)
+  // No LI index: CE-only fallback
   if (!lateInteractionIndex) {
     stats.gateReason = 'no_li_index';
     return runCrossEncoder(query, candidates, candidates, stats, {
@@ -218,7 +191,6 @@ export async function cascadedScore(query, candidates, options = {}) {
     });
   }
 
-  // Step 3: Score candidates that have LI tokens via MaxSim
   let scoredWithTokens = withTokens;
   if (withTokens.length > 0) {
     try {
@@ -241,7 +213,6 @@ export async function cascadedScore(query, candidates, options = {}) {
     }
   }
 
-  // Step 4: Score assignment + margin gate
   for (const c of scoredWithTokens) {
     c.preLateInteractionScore = c.score ?? c.int8Score ?? 0;
     const liScore = c.lateInteractionScore;
@@ -261,7 +232,6 @@ export async function cascadedScore(query, candidates, options = {}) {
 
   const allRanked = [...scoredWithTokens, ...withoutTokens];
 
-  // Shadow mode: compute CE in shadow, log results, return MaxSim ranking unchanged
   if (shadowMode && !forceFullCrossEncoder) {
     try {
       const adaptiveK = computeAdaptiveK(maxsimScores, ceTopK);
@@ -298,24 +268,20 @@ export async function cascadedScore(query, candidates, options = {}) {
       }));
     }
 
-    // Return pure MaxSim ranking unchanged (shadow does not affect results)
     stats.gateReason = `shadow:${reason}`;
     return { results: allRanked, stats };
   }
 
-  // Normal path: decisive → return MaxSim ranking (skip CE)
   if (decisive && !forceFullCrossEncoder) {
     return { results: allRanked, stats };
   }
 
-  // forceFullCrossEncoder: send ALL candidates to CE (bypass adaptive-K)
   if (forceFullCrossEncoder) {
     return runCrossEncoder(query, allRanked, allRanked, stats, {
       crossEncoder, ceTopK: allRanked.length, loadDocumentContent, forceFullCrossEncoder,
     });
   }
 
-  // CE rescue with adaptive-K
   const adaptiveK = computeAdaptiveK(maxsimScores, ceTopK);
   stats.adaptiveK = adaptiveK;
   const ceCandidates = allRanked.slice(0, adaptiveK);
@@ -324,9 +290,6 @@ export async function cascadedScore(query, candidates, options = {}) {
   });
 }
 
-/**
- * Run cross-encoder on selected candidates, merge results back into the full list.
- */
 async function runCrossEncoder(query, allRanked, ceCandidates, stats, options) {
   const { crossEncoder, loadDocumentContent } = options;
 
@@ -341,7 +304,6 @@ async function runCrossEncoder(query, allRanked, ceCandidates, stats, options) {
     stats.ceTokens = Math.ceil(query.length / 4) + (ceCandidates.length * 150);
     stats.ceLatencyMs = ceResult.latency_ms;
 
-    // Build a map from CE result originalIndex → CE score
     const ceScoreMap = new Map();
     for (const r of ceResult.results) {
       const origCandidate = ceCandidates[r.originalIndex];
@@ -368,7 +330,6 @@ async function runCrossEncoder(query, allRanked, ceCandidates, stats, options) {
         });
       }
     }
-    // CE results are already sorted by score descending from rerankDirect
     const nonCeCandidates = allRanked.slice(ceWindow);
     const merged = [...ceScoredList, ...nonCeCandidates];
 

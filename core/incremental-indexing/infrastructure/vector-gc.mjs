@@ -86,7 +86,6 @@ export function pruneRetiredVectors(db, frontier, opts = {}) {
  * growing without ever blocking concurrent readers. Never throws on a
  * missing DB / column / heartbeat dir — returns `{ skipped }` instead.
  *
- * @param {string} stateDir
  * @param {{
  *   dbPath?:string, batchSize?:number, maxRows?:number,
  *   minLiveEpoch?:(dir:string)=>(number|null),

@@ -3,17 +3,8 @@
 /**
  * Local Reranker - Alibaba-NLP/gte-reranker-modernbert-base INT8
  *
- * Uses the EXACT model specified in LOCAL_RERANKER_PLAN.md:
- * - Model: Alibaba-NLP/gte-reranker-modernbert-base
- * - Quantization: INT8 (dtype: "q8")
- * - Inference: Direct onnxruntime-node session + native-tokenizer.js
- *
- * No Python, no subprocess - direct ONNX inference in Node.js.
- *
+ * Direct onnxruntime-node session + native-tokenizer.js; no Python, no subprocess.
  * Model loads once at init (~15s cold, cached after), subsequent calls are fast (~15-20ms per doc).
- *
- * Cross-encoder reranking: scores query-document pairs directly using
- * a transformer that sees both query and document together.
  */
 
 import { join } from 'path';
@@ -24,16 +15,11 @@ import { fetchModel, getModelCacheDir } from '../infrastructure/model-fetcher.js
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
 import { initOrt, buildFeed } from '../infrastructure/ort-pipeline.js';
 
-// EXACT model as specified in LOCAL_RERANKER_PLAN.md
 const MODEL_ID = 'Alibaba-NLP/gte-reranker-modernbert-base';
 const MODEL_DTYPE = 'q8';  // INT8 quantization
 
-// Global singleton for reuse across session
 let _globalInstance = null;
 
-/**
- * Sigmoid activation for converting logits to probability scores
- */
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
@@ -45,13 +31,9 @@ export class LocalReranker {
     this.ready = false;
     this.maxLength = 512;
     this.initPromise = null;
-    // Note: Uses global ONNX mutex (onnx-mutex.js) for cross-model serialization
   }
 
-  /**
-   * Get or create global singleton instance.
-   * Used by session-preheat to keep model warm.
-   */
+  /** Used by session-preheat to keep the model warm. */
   static getGlobalInstance() {
     if (!_globalInstance) {
       _globalInstance = new LocalReranker();
@@ -59,23 +41,15 @@ export class LocalReranker {
     return _globalInstance;
   }
 
-  /**
-   * Check if local reranker is available.
-   * Returns true — model files are fetched on init from managed cache.
-   * @returns {boolean}
-   */
+  /** Always true: model files are fetched on init from the managed cache. */
   isAvailable() {
     return true;
   }
 
-  /**
-   * Initialize model via direct ORT session (idempotent)
-   * @returns {Promise<void>}
-   */
+  /** Idempotent. */
   async init() {
     if (this.ready) return;
 
-    // Ensure only one init runs at a time
     if (this.initPromise) {
       await this.initPromise;
       return;
@@ -97,11 +71,9 @@ export class LocalReranker {
       console.log(`LocalReranker: Loading ${MODEL_ID} with dtype=${MODEL_DTYPE}...`);
       const startLoad = Date.now();
 
-      // Load tokenizer from managed cache
       const cacheDir = getModelCacheDir(MODEL_ID);
       this.tokenizer = await createTokenizer(join(cacheDir, 'tokenizer.json'));
 
-      // Load ORT session directly from managed cache ONNX file
       const ort = await initOrt();
       const onnxPath = join(cacheDir, 'onnx', 'model_quantized.onnx');
 
@@ -130,14 +102,9 @@ export class LocalReranker {
   }
 
   /**
-   * Rerank documents using gte-reranker-modernbert-base INT8
+   * Raw logits through sigmoid give the relevance score.
    *
-   * Cross-encoder format: (query, document) pair scored for relevance.
-   * Uses raw logits with sigmoid for accurate relevance scores.
-   *
-   * @param {string} query - Search query
    * @param {Array} documents - Documents to rerank (max 50)
-   * @param {number} topK - Number of results to return
    * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
    */
   async rerank(query, documents, topK = 10) {
@@ -149,15 +116,12 @@ export class LocalReranker {
       await this.init();
     }
 
-    // Use global ONNX mutex to serialize ALL transformer inference across server
-    // This prevents crashes when FlashRank and LocalReranker run concurrently
+    // Global ONNX mutex serializes all transformer inference: FlashRank and
+    // LocalReranker running concurrently crash.
     return await withOnnxMutex(() => this._doRerank(query, documents, topK));
   }
 
-  /**
-   * Internal reranking implementation (called within mutex).
-   * Sequential scoring: one query-doc pair per forward pass.
-   */
+  /** Called within the mutex. One query-doc pair per forward pass. */
   async _doRerank(query, documents, topK) {
     const start = Date.now();
 
@@ -207,17 +171,7 @@ export class LocalReranker {
     };
   }
 
-  /**
-   * Batched reranking — sequential scoring within ONNX mutex.
-   *
-   * ORT sessions are not safe for concurrent inference from JS.
-   * All scoring is serialized via withOnnxMutex, same as _doRerank.
-   *
-   * @param {string} query - Search query
-   * @param {Array} documents - Documents to rerank
-   * @param {number} topK - Number of results to return
-   * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
-   */
+  /** ORT sessions are not safe for concurrent inference from JS, so scoring is sequential like _doRerank. */
   async rerankBatched(query, documents, topK = 10) {
     if (!documents || documents.length === 0) {
       return { results: [], latency_ms: 0, model: 'gte-reranker-modernbert-base-int8' };
@@ -227,13 +181,9 @@ export class LocalReranker {
       await this.init();
     }
 
-    // Serialize all inference through the global ONNX mutex
     return await withOnnxMutex(() => this._doRerank(query, documents, topK));
   }
 
-  /**
-   * Shutdown and release resources
-   */
   async shutdown() {
     if (this.session) {
       try { await this.session.release(); } catch { /* ORT release can throw */ }
@@ -245,14 +195,9 @@ export class LocalReranker {
   }
 }
 
-// Export helper for getting global instance
 export function getGlobalLocalReranker() {
   return LocalReranker.getGlobalInstance();
 }
-
-// =============================================================================
-// CLI
-// =============================================================================
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
@@ -292,7 +237,6 @@ Usage:
       } else if (command === 'test') {
         console.log('\nRunning LocalReranker performance test...\n');
 
-        // Sample documents
         const documents = [
           'AuthService handles user authentication and login with JWT tokens',
           'The database connection pool manages MySQL connections efficiently',
@@ -311,13 +255,11 @@ Usage:
         console.log(`Query: "${query}"`);
         console.log(`Documents: ${documents.length}`);
 
-        // Cold start (includes model loading)
         console.log('\n--- Cold Start ---');
         const coldStart = Date.now();
         const coldResult = await reranker.rerank(query, documents, 5);
         console.log(`Cold latency: ${Date.now() - coldStart}ms (includes model load)`);
 
-        // Warm run
         console.log('\n--- Warm Run ---');
         const warmStart = Date.now();
         const warmResult = await reranker.rerank(query, documents, 5);
@@ -329,7 +271,6 @@ Usage:
           console.log(`  ${i + 1}. [${r.localRerankerScore.toFixed(4)}] ${text.slice(0, 60)}...`);
         });
 
-        // Multiple runs for average
         console.log('\n--- Average over 5 runs ---');
         const latencies = [];
         for (let i = 0; i < 5; i++) {
@@ -344,7 +285,6 @@ Usage:
       } else if (command === 'rerank' && args[1]) {
         const query = args[1];
 
-        // Sample documents for testing
         const documents = [
           'User authentication is handled by AuthService with JWT',
           'Database queries are optimized for performance with indexes',

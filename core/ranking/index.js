@@ -1,5 +1,3 @@
-// core/ranking – barrel export (Phase 2C DDD migration)
-
 // cascaded-scorer.js (no default export)
 export { isDecisive, computeAdaptiveK, cascadedScore } from './cascaded-scorer.js';
 

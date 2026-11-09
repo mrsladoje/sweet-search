@@ -36,10 +36,7 @@ import { takeProvenance } from '../infrastructure/inference-provenance.js';
 import { updateState } from './incremental-tracker.js';
 import { log } from './indexer-utils.js';
 
-/**
- * Create `dbPath` with `createSchema` only when it does not already exist.
- * Returns true when a fresh DB was created, false when one was already present.
- */
+/** True when a fresh DB was created, false when one was already present. */
 function ensureSchema(dbPath, createSchema) {
   if (existsSync(dbPath)) return false;
   mkdirSync(path.dirname(dbPath), { recursive: true });

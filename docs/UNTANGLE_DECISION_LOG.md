@@ -311,3 +311,25 @@ Each fix lists the main problems it solves. The per-area files hold the rest.
   maintainer and an encoder that ran on this repository); `tests/init/harness-prompts.test.js` loaded the opencode
   plugin with the system temp folder as worktree, which ran the real `sweet-search-hook` and left a daemon. Both now
   use a temp fixture project. A full run leaves no process.
+
+## Done: Comments step (JavaScript product code)
+
+- Scope: `core/` (except `vector-store/`, the MaxSim and distance kernels, `prompt-optimization/`, `training/`) and `mcp/`:
+  222 files. Not done: `scripts/`, Rust (`crates/`), because no token checker exists for Rust here.
+- Rule: a comment stays only if it changes for a reason of its own (outside fact, measured result, reason for a value,
+  contract between files or languages, crash-safety / concurrency reasoning, anything a tool reads).
+- Result: 5,026 lines removed net. Proof per file: the token stream without comments is equal to the previous commit
+  (`verify-comments.mjs`: 222 files, 0 problems). The check caught two real slips (help-text strings edited as if they
+  were comments) before they landed.
+- Second review: 342 removed blocks that contained a reason marker were read again by separate reviewers against the
+  original file; 48 came back fully or in part (V8 string limit notes, validation evidence, WAL durability, rollback after
+  a failed swap, GPU batch sizes, scoring formulas of the vocabulary miner, the per-language syntax notes of the import scanner).
+- About 30 false comments were corrected (names of files, functions and documents that do not exist; a "DEFAULT: TRUE" on
+  a default that is false; `v45` where the import is `v46`; "runs sequentially" on code that runs in parallel).
+- Doc blocks that sat above the wrong function were moved to their function.
+- Found in code, not changed: `indexer-ann.js` logs "3-stage retrieval will fall back to float HNSW" (float HNSW is gone).
+
+## Test time
+
+- Full suite on a quiet machine: 60 s and 62 s wall in two runs (9,464 tests). Before: one test
+  (`boundary-enforcement`) spawned a 201 s script and starved the others.

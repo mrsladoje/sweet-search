@@ -10,13 +10,6 @@
  *
  * Based on Code-Craft paper (April 2025) showing 82% improvement in retrieval precision.
  *
- * Features:
- * - Parallel generation within hierarchy levels (p-limit concurrency control)
- * - Provider fallback chain (Cerebras -> Ollama -> Transformers.js -> Static)
- * - Transactional batch storage
- * - Progress reporting
- * - O(1) parent->child lookup via childrenByParent index
- *
  * Storage Format:
  * - `summary` column: Plain text summary string
  * - `summary_embedding` column: Binary embedding (Uint8Array via floatToBinary)
@@ -46,10 +39,6 @@ import {
   getSummaryStats,
 } from './summary-manager.js';
 
-// =============================================================================
-// CONSTANTS
-// =============================================================================
-
 const HIERARCHY_LEVELS = {
   'method': 2,
   'field': 2,
@@ -65,7 +54,6 @@ const HIERARCHY_LEVELS = {
   'package': 0,
 };
 
-// Parallel processing configuration
 const DEFAULT_CONCURRENCY = 5;  // Max concurrent LLM calls
 const PROGRESS_INTERVAL = 20;   // Log progress every N entities
 const BATCH_STORAGE_SIZE = 50;  // Store summaries in batches of N
@@ -79,16 +67,6 @@ function getTokenLimitForType(type) {
   return limits[type] || HCGS_CONFIG.defaultTokenLimit || 100;
 }
 
-// =============================================================================
-// PROMPT BUILDING
-// =============================================================================
-
-/**
- * Build prompt for summary generation with adaptive token limits
- * @param {object} entity - The entity to summarize
- * @param {array} childSummaries - Summaries of child entities for context
- * @param {number} tokenLimit - Adaptive token limit based on entity type
- */
 function buildSummaryPrompt(entity, childSummaries = [], tokenLimit = 100) {
   const type = entity.type;
   const name = entity.name;
@@ -134,14 +112,7 @@ function buildSummaryPrompt(entity, childSummaries = [], tokenLimit = 100) {
   return prompt;
 }
 
-// =============================================================================
-// SUMMARY GENERATION
-// =============================================================================
-
 /**
- * Generate summary for a single entity using the provider fallback chain
- * @param {object} entity - Entity to summarize
- * @param {array} childSummaries - Summaries of child entities
  * @returns {Promise<{summary: string, provider: string}>}
  */
 async function generateEntitySummary(entity, childSummaries = []) {
@@ -150,7 +121,6 @@ async function generateEntitySummary(entity, childSummaries = []) {
   const prompt = buildSummaryPrompt(entity, childSummaries, tokenLimit);
 
   try {
-    // Use the provider fallback chain from llm-provider.js
     const result = await generateSummary(prompt, {
       entity,
       maxTokens: tokenLimit,
@@ -166,20 +136,10 @@ async function generateEntitySummary(entity, childSummaries = []) {
   }
 }
 
-// =============================================================================
-// PARALLEL BATCH PROCESSING
-// =============================================================================
-
 /**
- * Generate summaries for all entities bottom-up with parallel processing
- * @param {object} options - Processing options
- * @param {number} options.concurrency - Max concurrent LLM calls (default: 5)
- * @param {boolean} options.verbose - Enable verbose logging
- * @param {boolean} options.dryRun - Preview without making changes
  * @param {boolean} options.skipEmbeddings - Skip embedding generation (default: true)
  *   Note: Summary embeddings are NOT used in search (see file header comment).
  *   Set to false only if future hybrid search over summaries is implemented.
- * @param {string} options.dbPath - Database path (defaults to DB_PATHS.codeGraph)
  * @returns {Promise<{generated: number, skipped: number, duration: number}>}
  */
 async function generateAllSummaries(options = {}) {
@@ -195,16 +155,13 @@ async function generateAllSummaries(options = {}) {
   const startTime = Date.now();
   console.log('HCGS: Starting hierarchical summary generation...');
 
-  // Detect available provider
   const provider = await getSummaryProvider();
   console.log(`HCGS: Using provider: ${provider.name} (concurrency: ${concurrency})`);
 
-  // Log embedding skip status
   if (skipEmbeddings) {
     console.log('HCGS: Skipping summary embeddings (not used in search, saves API calls)');
   }
 
-  // Get entities ordered by hierarchy level (deepest first)
   const entities = await getEntitiesNeedingSummary(dbPath);
 
   if (entities.length === 0) {
@@ -214,7 +171,6 @@ async function generateAllSummaries(options = {}) {
 
   console.log(`HCGS: Found ${entities.length} entities to summarize`);
 
-  // Group entities by hierarchy level
   const byLevel = new Map();
   for (const entity of entities) {
     const level = entity.hierarchy_level ?? HIERARCHY_LEVELS[entity.type] ?? 1;
@@ -222,7 +178,6 @@ async function generateAllSummaries(options = {}) {
     byLevel.get(level).push(entity);
   }
 
-  // Process levels in order (deepest first = highest number first)
   const levels = [...byLevel.keys()].sort((a, b) => b - a);
 
   // Cache for child summaries (for parent aggregation)
@@ -233,26 +188,21 @@ async function generateAllSummaries(options = {}) {
   // Maps parentId -> [childId1, childId2, ...]
   const childrenByParent = new Map();
 
-  // Pending summaries to batch-store
   let pendingBatch = [];
 
-  // Statistics
   let generated = 0;
   let skipped = 0;
   let totalProcessed = 0;
 
-  // Create concurrency limiter
   const limit = pLimit(concurrency);
 
   for (const level of levels) {
     const entitiesAtLevel = byLevel.get(level);
     console.log(`HCGS: Processing level ${level} (${entitiesAtLevel.length} entities)...`);
 
-    // Process all entities at this level in parallel (within concurrency limit)
     const results = await Promise.all(
       entitiesAtLevel.map((entity) =>
         limit(async () => {
-          // Get child summaries from index (O(1) lookup via childrenByParent map)
           const childSummaries = [];
           if (entity.id) {
             const childIds = childrenByParent.get(entity.id) || [];
@@ -272,7 +222,6 @@ async function generateAllSummaries(options = {}) {
             console.log(`  Summarizing ${entity.type}: ${entity.name}`);
           }
 
-          // Generate summary
           let result;
           if (dryRun) {
             result = {
@@ -287,7 +236,6 @@ async function generateAllSummaries(options = {}) {
             return { entity, success: false };
           }
 
-          // Cache for parent aggregation
           summaryCache.set(entity.id, {
             name: entity.name,
             type: entity.type,
@@ -295,7 +243,6 @@ async function generateAllSummaries(options = {}) {
             parentId: entity.parent_id,
           });
 
-          // Index this entity under its parent for O(1) child lookup
           if (entity.parent_id) {
             if (!childrenByParent.has(entity.parent_id)) {
               childrenByParent.set(entity.parent_id, []);
@@ -315,7 +262,6 @@ async function generateAllSummaries(options = {}) {
                 embedding = floatToBinary(embeddingResult.embedding);
               }
             } catch (embErr) {
-              // Skip embedding if it fails
               if (verbose) {
                 console.log(`    Warning: Embedding failed for ${entity.name}: ${embErr.message}`);
               }
@@ -333,7 +279,6 @@ async function generateAllSummaries(options = {}) {
       )
     );
 
-    // Process results and batch-store
     for (const result of results) {
       totalProcessed++;
 
@@ -351,7 +296,6 @@ async function generateAllSummaries(options = {}) {
           embedding: result.embedding,
         });
 
-        // Store in batches
         if (pendingBatch.length >= BATCH_STORAGE_SIZE) {
           try {
             await storeSummariesBatch(dbPath, pendingBatch);
@@ -362,7 +306,6 @@ async function generateAllSummaries(options = {}) {
         }
       }
 
-      // Progress reporting
       if (totalProcessed % PROGRESS_INTERVAL === 0) {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
         const rate = (totalProcessed / (Date.now() - startTime) * 1000).toFixed(1);
@@ -371,7 +314,6 @@ async function generateAllSummaries(options = {}) {
     }
   }
 
-  // Store any remaining pending summaries
   if (!dryRun && pendingBatch.length > 0) {
     try {
       await storeSummariesBatch(dbPath, pendingBatch);
@@ -386,11 +328,6 @@ async function generateAllSummaries(options = {}) {
   return { generated, skipped, duration };
 }
 
-/**
- * Generate summaries for specific entities by ID
- * @param {number[]} entityIds - Entity IDs to summarize
- * @param {object} options - Processing options
- */
 async function generateSummariesForEntities(entityIds, options = {}) {
   const {
     concurrency = DEFAULT_CONCURRENCY,
@@ -404,7 +341,6 @@ async function generateSummariesForEntities(entityIds, options = {}) {
   applyReadPragmas(db);
 
   try {
-    // Fetch entities by IDs
     assertInClauseSize(entityIds.length, 'hcgs-generator.fetchEntitiesByIds');
     const placeholders = entityIds.map(() => '?').join(',');
     const entities = db.prepare(`
@@ -443,20 +379,9 @@ async function generateSummariesForEntities(entityIds, options = {}) {
 }
 
 /**
- * Generate summaries for entities in specific files.
  * This is the targeted entry point for incremental indexing.
  *
- * Workflow:
- * 1. Mark entities in specified files for regeneration (summary = NULL)
- * 2. Run generateAllSummaries which will only process NULL-summary entities
- * 3. Unchanged files' entities retain their existing summaries
- *
- * @param {string[]} filePaths - File paths whose entities need regeneration
- * @param {object} options - Processing options
  * @param {string} [options.dbPath] - Database path (defaults to DB_PATHS.codeGraph)
- * @param {number} [options.concurrency] - Max concurrent LLM calls
- * @param {boolean} [options.skipEmbeddings] - Skip embedding generation
- * @param {boolean} [options.verbose] - Enable verbose logging
  * @returns {Promise<{generated: number, skipped: number, marked: number, duration: number}>}
  */
 async function generateSummariesForFiles(filePaths, options = {}) {
@@ -475,7 +400,6 @@ async function generateSummariesForFiles(filePaths, options = {}) {
   const startTime = Date.now();
   console.log(`HCGS: Regenerating summaries for ${filePaths.length} files...`);
 
-  // Step 1: Mark entities in specified files for regeneration
   const { markForRegeneration } = await import('./summary-manager.js');  // intra-graph
   const markResult = await markForRegeneration(dbPath, filePaths);
 
@@ -486,7 +410,6 @@ async function generateSummariesForFiles(filePaths, options = {}) {
 
   console.log(`HCGS: Marked ${markResult.marked} entities for regeneration`);
 
-  // Step 2: Run summary generation (only processes NULL-summary entities)
   const result = await generateAllSummaries({
     dbPath,
     concurrency,
@@ -500,33 +423,22 @@ async function generateSummariesForFiles(filePaths, options = {}) {
   };
 }
 
-// =============================================================================
-// STATISTICS
-// =============================================================================
-
 /**
  * Get summary statistics (delegates to summary-manager)
- * @param {string} dbPath - Database path
  * @returns {Promise<object>}
  */
 async function getStats(dbPath = DB_PATHS.codeGraph) {
   return getSummaryStats(dbPath);
 }
 
-// =============================================================================
-// CLI
-// =============================================================================
-
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'generate';
 
-  // Parse options
   const dryRun = args.includes('--dry-run');
   const verbose = args.includes('--verbose') || args.includes('-v');
   const skipEmbeddings = args.includes('--no-embeddings');
 
-  // Parse concurrency
   let concurrency = DEFAULT_CONCURRENCY;
   const concurrencyArg = args.find(a => a.startsWith('--concurrency='));
   if (concurrencyArg) {
@@ -587,7 +499,6 @@ async function main() {
       }
 
       case 'test': {
-        // Test summary generation on a single entity
         const Database = (await import('better-sqlite3')).default;
         const { applyReadPragmas: applyRP } = await import('../infrastructure/db-utils.js');
         const db = new Database(dbPath, { readonly: true });

@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
 /**
- * Graph-Expanded Search
- *
  * Fast lexical search with code graph expansion:
  * - FTS5/BM25 for initial matches (with trigram fuzzy search)
  * - Graph traversal to find related entities
@@ -54,7 +52,6 @@ function usesDocComments(format) {
   return isAgentFormat(format);
 }
 
-// Fix 9: Abbreviation expansion dictionary for common software abbreviations
 const ABBREVIATION_EXPANSIONS = {
   auth: ['authentication', 'authorize'],
   cfg: ['config', 'configuration'],
@@ -72,10 +69,6 @@ const ABBREVIATION_EXPANSIONS = {
   mgr: ['manager'],
   svc: ['service'],
 };
-
-// =============================================================================
-// GRAPH SEARCH CLASS
-// =============================================================================
 
 export class GraphSearch {
   constructor(dbPath = DB_PATHS.codeGraph, options = {}) {
@@ -129,7 +122,6 @@ export class GraphSearch {
       throw new Error(`Code graph database not found at ${this.dbPath}. Run graph indexing first.`);
     }
 
-    // Use better-sqlite3 for native FTS5 with trigram support
     const Database = (await import('better-sqlite3')).default;
     const db = new Database(this.dbPath, { readonly: true });
     // An index from another schema version fails here with the rebuild instruction.
@@ -138,7 +130,6 @@ export class GraphSearch {
     try {
       applyReadPragmas(db, { tempStoreMemory: true });
 
-      // Check if FTS5 tables exist
       try {
         const ftsCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entities_fts'").get();
         this.hasFts5 = !!ftsCheck;
@@ -290,9 +281,6 @@ export class GraphSearch {
     return relationshipVisibilityParams({ manifestEpoch: this._manifestEpoch });
   }
 
-  /**
-   * Map a raw FTS5/trigram/LIKE row to a search result object.
-   */
   _mapRow(row, source, scoreMultiplier = 1.0, format) {
     return {
       id: row.id,
@@ -310,9 +298,6 @@ export class GraphSearch {
     };
   }
 
-  /**
-   * Merge new rows into results, deduplicating by id.
-   */
   _mergeRows(results, rows, source, scoreMultiplier = 1.0, format) {
     const existingIds = new Set(results.map(r => r.id));
     for (const row of rows) {
@@ -380,9 +365,6 @@ export class GraphSearch {
     }
   }
 
-  /**
-   * Fix 11: Compute lexical path observability metadata.
-   */
   _computeLexicalMeta(results, query, options = {}) {
     const {
       restrictedAttempted = false,
@@ -469,7 +451,6 @@ export class GraphSearch {
     const byName = new Map();
     const byLocation = new Map();
 
-    // Collect unique names
     const names = new Set();
     const locations = [];
     for (const r of results) {
@@ -480,7 +461,6 @@ export class GraphSearch {
       if (file && line) locations.push({ file, line });
     }
 
-    // Batch name lookup
     if (names.size > 0) {
       if (!this._stmtEntityByName) {
         this._stmtEntityByName = this.db.prepare(`
@@ -527,7 +507,6 @@ export class GraphSearch {
   }
 
   /**
-   * Get IDs of all stale entities.
    * @returns {Set<string>}
    */
   async getStaleEntityIds() {
@@ -566,9 +545,6 @@ export class GraphSearch {
     return { summaries };
   }
 
-  /**
-   * Close database connection
-   */
   close() {
     this._stmtFts5 = null;
     this._stmtCodeFts = null;
@@ -585,8 +561,6 @@ export class GraphSearch {
   }
 
   /**
-   * Fast text search (FTS5 with trigram fuzzy + LIKE fallback)
-   *
    * @param {string} query - Search query
    * @param {Object|number} options - Options object or limit (for backwards compat)
    * @param {number} [options.limit=20] - Maximum results to return
@@ -594,7 +568,6 @@ export class GraphSearch {
    * @returns {Promise<{results: Array, latency: number}>}
    */
   async bm25Search(query, options = {}) {
-    // Support legacy signature: bm25Search(query, limit)
     const opts = typeof options === 'number' ? { limit: options } : options;
     const { limit = 20, skipBoosts = false, format } = opts;
     await this.init();
@@ -621,7 +594,6 @@ export class GraphSearch {
         }
       }
 
-      // Fall back to unrestricted FTS5 if name-restricted returned nothing
       if (rows.length === 0) {
         restrictedFallback = restrictedAttempted;
         try {
@@ -641,7 +613,6 @@ export class GraphSearch {
     // This enables "Auth" → "AuthenticationService" matching
     if (this.hasTrigram && results.length < 3 && query.length >= 3) {
       try {
-        // Trigram search - just use the raw query (trigram handles substrings)
         const escaped = query.replace(/"/g, '""');
         const trigramRows = this._stmtTrigram.all(
           `"${escaped}"`,
@@ -691,7 +662,6 @@ export class GraphSearch {
     // Skip boosts if skipBoosts=true (for fair hybrid fusion - boosts applied post-fusion)
     const finalResults = skipBoosts ? results : this.applyRankingBoosts(results, query);
 
-    // Fix 11: Lexical path observability
     const { searchQuality, lexicalMeta } = this._computeLexicalMeta(finalResults, query, {
       restrictedAttempted,
       restrictedFallback,
@@ -703,8 +673,6 @@ export class GraphSearch {
   }
 
   /**
-   * Raw BM25 search for hybrid fusion (PHASE_1_FIXES Change 1)
-   *
    * Returns raw FTS5/BM25 scores WITHOUT post-FTS5 boosts or flood control.
    * Used by hybrid search to ensure fair CC fusion between lexical and semantic paths.
    *
@@ -751,7 +719,6 @@ export class GraphSearch {
       }
     }
 
-    // Try trigram fuzzy search if standard FTS5 returned few results
     if (this.hasTrigram && results.length < 3 && query.length >= 3) {
       try {
         const escapedRaw = query.replace(/"/g, '""');
@@ -766,7 +733,6 @@ export class GraphSearch {
       }
     }
 
-    // LIKE fallback for no FTS5
     if (!this.hasFts5 || results.length === 0) {
       this._likeFallback(results, query, limit, 'like_raw', format);
     }
@@ -777,15 +743,7 @@ export class GraphSearch {
     return { results, latency };
   }
 
-  // =============================================================================
-  // POST-FTS5 RANKING BOOST STRATEGIES (#1, #19, #4, #20)
-  // =============================================================================
-
-  // SYMBOL_KIND_WEIGHTS and DEFINITION_TYPES imported from constants.js
-
   /**
-   * Apply all post-FTS5 ranking boosts to search results.
-   *
    * Implements 4 strategies:
    * - Strategy #1: Definition Boost - prioritize files that DEFINE the queried entity
    * - Strategy #19: Definition Syntax Boost - detect definition patterns in signatures
@@ -813,7 +771,6 @@ export class GraphSearch {
     const queryTokens = this.extractQueryTokens(query);
     const debugMode = process.env.DEBUG_GRAPH_SEARCH;
 
-    // Strategy #5: Detect query intent once for all results
     const { intent, confidence } = detectIntent(query);
     const applyIntentBoost = intent !== 'general' && confidence >= 0.7;
 
@@ -825,21 +782,18 @@ export class GraphSearch {
       let totalBoost = 1.0;
       const boostDetails = [];
 
-      // Strategy #1: Post-FTS5 Definition Boost
       const defBoost = this.applyDefinitionBoost(result, queryLower, queryTokens);
       if (defBoost > 1.0) {
         totalBoost *= defBoost;
         boostDetails.push(`def:${defBoost.toFixed(2)}`);
       }
 
-      // Strategy #19: Definition Syntax Boost
       const syntaxBoost = this.applyDefinitionSyntaxBoost(result, queryTokens);
       if (syntaxBoost > 1.0) {
         totalBoost *= syntaxBoost;
         boostDetails.push(`syntax:${syntaxBoost.toFixed(2)}`);
       }
 
-      // Strategy #4: Symbol Kind Hierarchy
       const kindWeight = this.applySymbolKindWeight(result);
       // Apply as soft boost: score *= (0.5 + 0.5 * kindWeight) to avoid crushing low types
       const kindBoost = 0.5 + 0.5 * kindWeight;
@@ -848,14 +802,12 @@ export class GraphSearch {
         boostDetails.push(`kind:${kindBoost.toFixed(2)}`);
       }
 
-      // Strategy #20: Structural Position Boost
       const posBoost = this.applyPositionBoost(result);
       if (posBoost > 1.0) {
         totalBoost *= posBoost;
         boostDetails.push(`pos:${posBoost.toFixed(2)}`);
       }
 
-      // Strategy #5: Intent-based Boost
       if (applyIntentBoost) {
         const intentBoost = getIntentBoost(intent, result.type);
         if (intentBoost > 1.0) {
@@ -864,7 +816,6 @@ export class GraphSearch {
         }
       }
 
-      // Fix 6: Path-aware lexical signal boost
       const pathBoost = this.applyPathBoost(result, queryTokens);
       if (pathBoost > 1.0) {
         totalBoost *= pathBoost;
@@ -885,10 +836,8 @@ export class GraphSearch {
       };
     });
 
-    // Re-sort by boosted score descending
     boostedResults.sort((a, b) => b.score - a.score);
 
-    // Apply MMR diversification if needed (replaces Strategy #21 flood control)
     if (shouldApplyMMR(boostedResults)) {
       const { results: diversified, stats } = applyMMR(boostedResults, { k: boostedResults.length, lambda: 0.9 });
       if (debugMode) {
@@ -901,11 +850,7 @@ export class GraphSearch {
   }
 
   /**
-   * Extract normalized tokens from query for matching.
    * Handles PascalCase, camelCase, and space-separated terms.
-   *
-   * @param {string} query - Search query
-   * @returns {string[]} Lowercase tokens
    *
    * @example
    * extractQueryTokens("AuthService") // ["auth", "service", "authservice"]
@@ -919,7 +864,6 @@ export class GraphSearch {
       return [];
     }
 
-    // Add full query as token
     tokens.add(trimmed.toLowerCase());
 
     // Split on identifier boundaries and path-like separators.
@@ -946,53 +890,35 @@ export class GraphSearch {
   }
 
   /**
-   * Strategy #1: Post-FTS5 Definition Boost
-   *
    * Prioritizes results that DEFINE the queried entity over results that merely
    * reference or use it. A search for "AuthService" should rank AuthService.java
    * (the definition) above LoginController.java (a caller).
    *
-   * @param {Object} result - Search result with file, name, type properties
-   * @param {string} queryLower - Lowercase query string
-   * @param {string[]} queryTokens - Query tokens for matching
    * @returns {number} Boost multiplier (1.0 = no boost, 2.0 = strong boost)
-   *
-   * Boost logic:
-   * - Filename matches query AND is definition type -> 2.0x
-   * - Entity name matches exactly AND is definition type -> 1.5x
-   * - Any definition type -> 1.2x
-   * - Otherwise -> 1.0x (no boost)
    */
   applyDefinitionBoost(result, queryLower, queryTokens) {
     const isDefinitionType = DEFINITION_TYPES.has(result.type);
     const resultNameLower = (result.name || '').toLowerCase();
 
-    // Extract filename without extension
     const filePath = result.file || '';
     const fileName = filePath.split('/').pop() || '';
     const fileNameNoExt = fileName.replace(/\.[^.]+$/, '').toLowerCase();
 
-    // Check if filename matches query (e.g., query="AuthService", file="AuthService.java")
     const filenameMatchesQuery = queryTokens.some(token =>
       fileNameNoExt === token || fileNameNoExt.includes(token)
     );
 
-    // Check if entity name exactly matches query
     const exactNameMatch = queryTokens.some(token => resultNameLower === token);
 
-    // Apply boost based on match strength
     if (filenameMatchesQuery && isDefinitionType) {
-      // Strongest signal: file is named after query and contains definition
       return 2.0;
     }
 
     if (exactNameMatch && isDefinitionType) {
-      // Strong signal: entity name matches and is a definition
       return 1.5;
     }
 
     if (isDefinitionType) {
-      // Weak signal: at least it's a definition type
       return 1.2;
     }
 
@@ -1000,13 +926,9 @@ export class GraphSearch {
   }
 
   /**
-   * Strategy #19: Definition Syntax Boost
-   *
    * Detects language-specific definition patterns in entity signatures/content.
    * Boosts entities whose signatures explicitly define the queried symbol.
    *
-   * @param {Object} result - Search result with signature, name, type properties
-   * @param {string[]} queryTokens - Query tokens for pattern matching
    * @returns {number} Boost multiplier (1.0 = no boost, 1.8 = strong boost)
    *
    * Patterns detected:
@@ -1020,13 +942,11 @@ export class GraphSearch {
 
     // Definition syntax patterns (order matters - check strongest first)
     const definitionPatterns = [
-      // Java patterns
       /\b(?:public|private|protected)?\s*(?:abstract|final)?\s*class\s+(\w+)/,
       /\b(?:public|private|protected)?\s*interface\s+(\w+)/,
       /\b(?:public|private|protected)?\s*enum\s+(\w+)/,
       /\b(?:public|private|protected)?\s*(?:static)?\s*(?:abstract)?\s*(?:final)?\s*\w+\s+(\w+)\s*\(/,
 
-      // JavaScript/TypeScript patterns
       /\bclass\s+(\w+)/,
       /\bfunction\s+(\w+)/,
       /\bexport\s+(?:default\s+)?class\s+(\w+)/,
@@ -1034,7 +954,6 @@ export class GraphSearch {
       /\bconst\s+(\w+)\s*=/,
       /\bexport\s+const\s+(\w+)\s*=/,
 
-      // TypeScript specific
       /\binterface\s+(\w+)/,
       /\btype\s+(\w+)\s*=/,
       /\benum\s+(\w+)/,
@@ -1044,7 +963,6 @@ export class GraphSearch {
       const match = signature.match(pattern);
       if (match && match[1]) {
         const definedName = match[1].toLowerCase();
-        // Check if the defined name matches any query token
         if (queryTokens.some(token => definedName === token || definedName.includes(token))) {
           return 1.8;
         }
@@ -1055,12 +973,9 @@ export class GraphSearch {
   }
 
   /**
-   * Strategy #4: Symbol Kind Hierarchy Weight
-   *
    * Applies importance weights based on entity type. Classes and interfaces
    * are generally more important than variables or imports.
    *
-   * @param {Object} result - Search result with type property
    * @returns {number} Weight multiplier (0.1 - 1.0)
    *
    * Hierarchy (highest to lowest):
@@ -1076,13 +991,10 @@ export class GraphSearch {
   }
 
   /**
-   * Strategy #20: Structural Position Boost
-   *
    * Boosts entities that appear early in files, as definitions typically
    * appear near the top (after imports). This helps prioritize class declarations
    * over method implementations deep in the file.
    *
-   * @param {Object} result - Search result with startLine and type properties
    * @returns {number} Boost multiplier (1.0 - 1.3 for definitions)
    *
    * Formula:
@@ -1094,7 +1006,6 @@ export class GraphSearch {
     const startLine = result.startLine;
     if (startLine == null || startLine < 0) return 1.0;
 
-    // Only apply position boost to definition types
     if (!DEFINITION_TYPES.has(result.type)) {
       return 1.0;
     }
@@ -1127,13 +1038,10 @@ export class GraphSearch {
       if (token.length < 2) continue;
 
       if (basename === token) {
-        // Exact basename match: highest boost
         boost = Math.max(boost, 1.5);
       } else if (basename.includes(token)) {
-        // Basename contains token
         boost = Math.max(boost, 1.25);
       } else if (parts.some(seg => seg.includes(token))) {
-        // Directory segment contains token
         boost = Math.max(boost, 1.1);
       }
     }
@@ -1141,9 +1049,6 @@ export class GraphSearch {
     return boost;
   }
 
-  /**
-   * Search by entity name (exact match)
-   */
   async searchByName(name, type = null) {
     await this.init();
 
@@ -1162,9 +1067,6 @@ export class GraphSearch {
     return stmt.all(...params, ...this._entityVisibilityParams());
   }
 
-  /**
-   * Search by file path pattern
-   */
   async searchByFile(pathPattern) {
     await this.init();
 
@@ -1179,13 +1081,6 @@ export class GraphSearch {
     return stmt.all(`%${pathPattern}%`, ...this._entityVisibilityParams());
   }
 
-  /**
-   * Graph expansion - find related entities
-   *
-   * P2 FIX: Batched queries to eliminate N+1 problem
-   * Before: O(n) queries for n entities (getEntity + getRelated in loop)
-   * After: O(1) batched queries per hop (single query for all entities + relationships)
-   */
   async expandGraph(entityIds, maxHops = GRAPH_CONFIG.expansion.maxHops) {
     await this.init();
 
@@ -1195,11 +1090,9 @@ export class GraphSearch {
     for (let hop = 0; hop < maxHops; hop++) {
       const nextFrontier = new Set();
 
-      // P2 FIX: Batch fetch all entities in frontier at once
       const frontierIds = Array.from(frontier).filter(id => !expanded.has(id));
       if (frontierIds.length === 0) break;
 
-      // Single query for all entities in this hop
       assertInClauseSize(frontierIds.length, 'graph-search.frontier-fetch');
       const placeholders = frontierIds.map(() => '?').join(',');
       const entities = this.db.prepare(`
@@ -1208,10 +1101,8 @@ export class GraphSearch {
         AND ${this._entityVisibilitySql('')}
       `).all(...frontierIds, ...this._entityVisibilityParams());
 
-      // Create lookup map for fast access
       const entityMap = new Map(entities.map(e => [e.id, e]));
 
-      // P2 FIX: Batch fetch all relationships (outgoing + incoming) in single query.
       // The UNION ALL binds `frontierIds` twice in one prepared statement, so the
       // SQLite-parameter ceiling is reached at half the array length — guard the
       // actual bind count, not the array length.
@@ -1239,7 +1130,6 @@ export class GraphSearch {
         ...this._relationshipVisibilityParams(),
       );
 
-      // Group relationships by their origin entity
       const relMap = new Map();
       for (const rel of relationships) {
         const key = rel.origin_id;
@@ -1247,7 +1137,6 @@ export class GraphSearch {
         relMap.get(key).push(rel);
       }
 
-      // Process all entities without additional queries
       for (const entityId of frontierIds) {
         const entity = entityMap.get(entityId);
         if (entity) {
@@ -1258,7 +1147,6 @@ export class GraphSearch {
           });
         }
 
-        // Get related entities from pre-fetched relationships
         const related = relMap.get(entityId) || [];
         for (const rel of related) {
           const relatedId = rel.direction === 'out' ? rel.target_id : rel.source_id;
@@ -1275,23 +1163,16 @@ export class GraphSearch {
     return Array.from(expanded.values());
   }
 
-  /**
-   * Get single entity by ID
-   */
   async getEntity(entityId) {
     await this.init();
     return this._stmtEntityById.get(entityId, ...this._entityVisibilityParams()) || null;
   }
 
-  /**
-   * Get entities related to given entity
-   */
   async getRelated(entityId) {
     await this.init();
 
     const results = [];
 
-    // Find outgoing relationships (cached prepared statement)
     const outRows = this._stmtOutRels.all(
       entityId,
       ...this._entityVisibilityParams(),
@@ -1304,7 +1185,6 @@ export class GraphSearch {
       });
     }
 
-    // Find incoming relationships (cached prepared statement)
     const inRows = this._stmtInRels.all(
       entityId,
       entityId,
@@ -1324,10 +1204,6 @@ export class GraphSearch {
   /**
    * Check if query is an exact match for top result (used for adaptive expansion).
    * Skips expensive graph traversal when we have a clear winner.
-   * D4 FIX: Added JSDoc documentation
-   *
-   * @param {string} query - The search query
-   * @param {Object} topResult - The top search result
    * @param {Object} [secondResult] - Optional second result for score gap comparison
    * @returns {boolean} True if top result is an exact/near-exact match
    */
@@ -1337,7 +1213,6 @@ export class GraphSearch {
     const queryLower = query.toLowerCase().trim();
     const nameLower = (topResult.name || '').toLowerCase();
 
-    // Criterion 1: Name exactly matches query (case-insensitive)
     if (nameLower === queryLower) {
       return true;
     }
@@ -1347,7 +1222,6 @@ export class GraphSearch {
       return true;
     }
 
-    // Criterion 3: Score significantly higher than #2 (2x or more)
     if (secondResult && topResult.score >= secondResult.score * 2) {
       return true;
     }
@@ -1361,9 +1235,6 @@ export class GraphSearch {
     return false;
   }
 
-  /**
-   * Log helper (can be overridden for testing)
-   */
   log(message) {
     if (process.env.DEBUG_GRAPH_SEARCH) {
       console.error(`[GraphSearch] ${message}`);
@@ -1371,8 +1242,6 @@ export class GraphSearch {
   }
 
   /**
-   * Graph-expanded search: BM25 + graph traversal
-   *
    * ADAPTIVE EXPANSION: Skips expensive graph expansion when BM25 returns
    * a high-confidence exact match, making "hits" as fast as "misses" (<10ms).
    *
@@ -1401,10 +1270,8 @@ export class GraphSearch {
     if (shouldUseDefinitionFirst) {
       this.log(`Using definition-first search for identifier query: "${query}"`);
 
-      // Two-pass search: definitions in parallel with BM25
       const { results: definitionResults, stats: defStats } = await this.hybridDefinitionSearch(query, { k, limit: 20, skipBoosts, format });
 
-      // If we got definition results, optionally expand graph from them
       if (definitionResults.length > 0 && expand) {
         const topResult = definitionResults[0];
         const secondResult = definitionResults[1] || null;
@@ -1451,7 +1318,6 @@ export class GraphSearch {
           };
         }
 
-        // Internal expansion (used by hybrid and direct callers)
         const graphStart = Date.now();
         const expanded = new Map();
 
@@ -1511,7 +1377,6 @@ export class GraphSearch {
         };
       }
 
-      // No expansion needed or no results - return definition results
       return {
         results: definitionResults.slice(0, k),
         stats: {
@@ -1529,8 +1394,6 @@ export class GraphSearch {
       };
     }
 
-    // Standard BM25 path for non-identifier queries
-    // Step 1: BM25 search for initial matches
     // Pass skipBoosts for fair hybrid fusion
     const { results: bm25Results, latency: bm25Latency } = await this.bm25Search(query, { limit: 20, skipBoosts, format });
 
@@ -1600,7 +1463,6 @@ export class GraphSearch {
       };
     }
 
-    // Internal expansion (used by hybrid and direct callers)
     const graphStart = Date.now();
     const expanded = new Map();
 
@@ -1660,9 +1522,7 @@ export class GraphSearch {
   }
 
   /**
-   * Get score multiplier for relationship type in graph expansion.
    * Higher values = more important relationships to follow.
-   * D5 FIX: Added JSDoc documentation
    *
    * @param {string} relType - Relationship type ('calls', 'implements', 'extends', etc.)
    * @returns {number} Score multiplier (0.0 - 1.0)
@@ -1689,14 +1549,11 @@ export class GraphSearch {
    * Sanitize query for FTS5 (escape special characters)
    */
   sanitizeFtsQuery(query) {
-    // Remove FTS5 special characters
     let sanitized = query.replace(/[":*^~()+\-]/g, ' ');
 
-    // Convert to prefix match if single word
     const words = sanitized.trim().split(/\s+/).filter(w => w.length > 0);
 
     if (words.length === 1) {
-      // Single word: use prefix matching
       return `"${words[0]}"*`;
     }
 
@@ -1769,16 +1626,10 @@ export class GraphSearch {
     return changed ? groups.join(' ') : null;
   }
 
-  // =============================================================================
-  // STRATEGY #2: TWO-PASS DEFINITION-FIRST SEARCH
-  // =============================================================================
-
   /**
    * Check if query looks like an identifier (PascalCase, camelCase, or snake_case).
    * Used to decide whether to prioritize definition-first search.
    *
-   * @param {string} query - The search query
-   * @returns {boolean} True if query matches identifier patterns
    *
    * @example
    * isIdentifierQuery('AuthService')     // true (PascalCase)
@@ -1788,7 +1639,6 @@ export class GraphSearch {
    */
   isIdentifierQuery(query) {
     const trimmed = query.trim();
-    // Skip multi-word queries (likely natural language)
     if (/\s/.test(trimmed)) return false;
 
     // PascalCase: starts with uppercase, alphanumeric (AuthService, EmployeeDTO)
@@ -1839,8 +1689,6 @@ export class GraphSearch {
   }
 
   /**
-   * Two-Pass Definition-First Search (Strategy #2)
-   *
    * Runs two searches in parallel:
    * 1. Definition search: Find files where filename == query OR entity is class/interface with exact name
    * 2. Normal FTS5/BM25: Standard ranking
@@ -1864,7 +1712,6 @@ export class GraphSearch {
     const queryLower = query.toLowerCase();
     const start = Date.now();
 
-    // Pass 1: Definition-first search (parallel with Pass 2)
     const definitionPromise = new Promise((resolve) => {
       try {
         // Search for entities where:
@@ -1919,17 +1766,14 @@ export class GraphSearch {
       }
     });
 
-    // Pass 2: Normal BM25/FTS5 search (parallel)
     // Pass skipBoosts through for fair hybrid fusion
     const fts5Promise = this.bm25Search(query, { limit, skipBoosts, format });
 
-    // Wait for both searches
     const [definitionResults, fts5Result] = await Promise.all([definitionPromise, fts5Promise]);
 
     const latency = Date.now() - start;
     this.log(`hybridDefinitionSearch: ${definitionResults.length} definitions, ${fts5Result.results.length} FTS5 in ${latency}ms`);
 
-    // Merge: definitions first, then FTS5 (deduplicated)
     const merged = this.mergeWithDefinitionPriority(definitionResults, fts5Result.results, k, format);
 
     return {
@@ -1944,12 +1788,8 @@ export class GraphSearch {
   }
 
   /**
-   * Merge definition search results with FTS5 results, prioritizing definitions.
    * Definitions are guaranteed in top positions, followed by deduplicated FTS5 results.
    *
-   * @param {Array} definitions - Results from definition-first search
-   * @param {Array} fts5Results - Results from BM25/FTS5 search
-   * @param {number} [k=10] - Maximum results to return
    * @param {string} [format] - Output format (agent formats keep doc comments)
    * @returns {Array} Merged and deduplicated results
    */
@@ -1957,7 +1797,6 @@ export class GraphSearch {
     const seen = new Set();
     const merged = [];
 
-    // Add definitions first (guaranteed top positions)
     for (const def of definitions) {
       const key = `${def.file_path}:${def.name}`;
       if (!seen.has(key)) {
@@ -1980,7 +1819,6 @@ export class GraphSearch {
       }
     }
 
-    // Add remaining FTS5 results (deduplicated)
     for (const result of fts5Results) {
       const key = `${result.file}:${result.name}`;
       if (!seen.has(key) && merged.length < k * 2) {
@@ -2023,9 +1861,6 @@ export class GraphSearch {
     `).get(entityName, `%${entityName}%`, ...this._entityVisibilityParams(), entityName);
   }
 
-  /**
-   * Find all callers of a given entity
-   */
   async findCallers(entityName, options = {}) {
     await this.init();
     const { maxDepth = 2, limit = 50 } = options;
@@ -2034,12 +1869,10 @@ export class GraphSearch {
 
     if (!target) return { results: [], stats: { found: false, query: entityName } };
 
-    // Create lowercase camelCase pattern for target_name matching
     // e.g., "EmployeeService" -> "employeeService.%" to match "employeeService.getEmployee"
     const lowerCamelCase = target.name.charAt(0).toLowerCase() + target.name.slice(1);
     const targetNamePattern = `${lowerCamelCase}.%`;
 
-    // Find callers (reverse 'calls' relationship)
     // Match by target_id (resolved) OR target_name pattern (unresolved)
     const callersFrom = (source) => this.db.prepare(`
       SELECT DISTINCT
@@ -2084,9 +1917,6 @@ export class GraphSearch {
     };
   }
 
-  /**
-   * Find all callees of a given entity
-   */
   async findCallees(entityName, options = {}) {
     await this.init();
     const { limit = 50 } = options;
@@ -2130,9 +1960,6 @@ export class GraphSearch {
     };
   }
 
-  /**
-   * Find implementations of an interface
-   */
   async findImplementations(interfaceName, options = {}) {
     await this.init();
     const { limit = 50 } = options;
@@ -2255,9 +2082,6 @@ export class GraphSearch {
     };
   }
 
-  /**
-   * Get database statistics
-   */
   async getStats() {
     await this.init();
 
@@ -2286,10 +2110,6 @@ export class GraphSearch {
     };
   }
 }
-
-// =============================================================================
-// CLI
-// =============================================================================
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);

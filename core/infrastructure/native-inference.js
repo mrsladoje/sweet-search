@@ -56,8 +56,6 @@ import { getCoremlCascadeResolvedDirs } from './coreml-cascade.js';
 import { detectHardwareCapability } from './hardware-capability.js';
 import { LATE_INTERACTION_CONFIG } from './config/ranking.js';
 
-// ─── State ───
-
 let _addon = null;
 let _embeddingModel = null;
 let _embeddingModelLoadPromise = null; // race-gate for concurrent first calls
@@ -79,8 +77,6 @@ const _liTokenizers = new Map();
 let _available = null;
 let _coremlCascadeLogged = false;
 
-// ─── Cascade-dir selection (pure helper, unit-tested) ───
-
 /**
  * Decide whether the Rust addon should load a CoreML cascade for this
  * deviceKind. Only `'metal'` triggers cascade resolution; `'cuda'`, `'cpu'`,
@@ -98,8 +94,6 @@ export function pickCascadeDirForDevice(deviceKind, cascadeDirOverride, resolveC
   if (deviceKind !== 'metal') return undefined;
   return resolveCascadeDir() || undefined;
 }
-
-// ─── CoreML cascade resolution ───
 
 /**
  * Resolve which CoreML cascade dirs the Rust addon should try to load.
@@ -142,8 +136,6 @@ function resolveCoremlCascadeForAddon() {
   return resolved;
 }
 
-// ─── Addon Loading ───
-
 function loadAddon() {
   if (_addon) return _addon;
   // CUDA-preferred with CPU fallback (see loadNativeAddon): a CUDA addon that
@@ -153,8 +145,6 @@ function loadAddon() {
   _addon = res ? res.mod : null;
   return _addon;
 }
-
-// ─── Detection ───
 
 /**
  * Check if native inference is available and not disabled via env var.
@@ -173,8 +163,6 @@ export function isNativeInferenceAvailable() {
   _available = typeof addon?.NativeEmbeddingModel?.load === 'function';
   return _available;
 }
-
-// ─── Embedding Model ───
 
 /**
  * Load the native embedding model (CodeRankEmbed FP32 safetensors).
@@ -269,8 +257,6 @@ function tokenizedToNapi(tokenized, batchSize, seqLen) {
 /**
  * Native embedding inference — drop-in replacement for callLocalModel().
  *
- * @param {string[]} texts - Array of texts to embed
- * @param {object} [options]
  * @param {number} [options.maxLength=512] - Max sequence length
  * @returns {Float32Array[]} Array of L2-normalized embedding vectors (768d)
  */
@@ -309,8 +295,6 @@ export async function nativeEmbed(texts, options = {}) {
   }
   return embeddings;
 }
-
-// ─── Late Interaction Model ───
 
 /**
  * Resolve the active LI variant from `LATE_INTERACTION_CONFIG`. Returns
@@ -432,7 +416,6 @@ async function getLiTokenizer() {
  * input_ids for skiplist filtering). Accepts the object returned by the
  * native tokenizer: `{ input_ids: { data, dims }, attention_mask: { data, dims } }`.
  *
- * @param {object} tokenized - Pre-tokenized batch from native tokenizer
  * @returns {Float32Array[][]} Per-document arrays of Float32Array token vectors
  */
 export async function nativeLiEncodeTokenized(tokenized) {
@@ -496,8 +479,6 @@ export async function nativeLiEncode(texts, options = {}) {
   return nativeLiEncodeTokenized(tokenized);
 }
 
-// ─── Model state queries ───
-
 export function isNativeEmbeddingModelLoaded() {
   return _embeddingModel != null;
 }
@@ -524,8 +505,6 @@ export function getNativeLiBackend() {
   return typeof model?.backend === 'string' ? model.backend : null;
 }
 
-// ─── Device-explicit loading ───
-
 /**
  * Load the native embedding model on a specific device ("cpu" | "metal" | "auto").
  * Used by model-pool.js to arm GPU models for indexing. Sets the module-scope
@@ -538,9 +517,6 @@ export async function loadNativeEmbeddingModelWithDevice(deviceKind, cascadeDirO
   _embeddingModelLoadPromise = (async () => {
     const addon = loadAddon();
     if (!addon?.NativeEmbeddingModel?.loadWithDevice) return null;
-
-    // CUDA needs the compute-capability env set BEFORE the Rust load
-    // path picks a dtype. No-op on non-CUDA kinds and already-set envs.
 
     await fetchModel('coderankembed-fp32');
 
@@ -594,8 +570,6 @@ export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride
     const addon = loadAddon();
     if (!addon?.NativeLateInteractionModel?.loadWithDevice) return null;
 
-    // See loadNativeEmbeddingModelWithDevice for why this is CUDA-only.
-
     await fetchModel(variant.fp32RegistryKey);
 
     const entry = getModelEntry(variant.fp32RegistryKey);
@@ -638,8 +612,6 @@ export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride
   return promise;
 }
 
-// ─── Warmup primitives ───
-
 export async function warmupNativeEmbeddingModel() {
   if (!_embeddingModel?.warmupForward) return;
   const t0 = Date.now();
@@ -657,8 +629,6 @@ export async function warmupNativeLiModel() {
   await model.warmupForward();
   console.log(`[NativeInference] LI warmup forward (${variant.cfgKey}) in ${Date.now() - t0}ms`);
 }
-
-// ─── Cleanup ───
 
 export function unloadNativeModels() {
   _embeddingModel = null;

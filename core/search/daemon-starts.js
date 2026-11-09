@@ -7,7 +7,6 @@ import { appendFileSync, readFileSync, renameSync, writeFileSync } from 'node:fs
 import path from 'node:path';
 
 export const DAEMON_STARTS_FILE = 'daemon-starts.jsonl';
-/** The file keeps the last KEEP_STARTS lines. */
 export const KEEP_STARTS = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
 

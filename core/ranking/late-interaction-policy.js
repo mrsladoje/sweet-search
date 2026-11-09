@@ -16,13 +16,9 @@
  *   edge `lateon-code-edge` + LI on : 80.65 % MRR  ← auto resolves OFF
  *   edge      + LI off              : 82.91 % MRR  (best edge config)
  *   standard  + LI off              : 82.91 % MRR  (index-independent floor)
- * See docs/BENCH_TODO.md "Phase 3 — Honest sweep before v2.5.0 (post-fix re-run)".
  */
 
-// ---------------------------------------------------------------------------
-// Public model identifiers — kept in lockstep with
-// `core/infrastructure/config/ranking.js::LATE_INTERACTION_CONFIG.models`.
-// ---------------------------------------------------------------------------
+// Kept in lockstep with `core/infrastructure/config/ranking.js::LATE_INTERACTION_CONFIG.models`.
 
 export const LI_MODEL_STANDARD = 'lateon-code';
 export const LI_MODEL_EDGE = 'lateon-code-edge';
@@ -36,11 +32,6 @@ export const VALID_LI_MODELS = Object.freeze([
 
 export const VALID_RERANK_POLICIES = Object.freeze(['auto', 'on', 'off']);
 
-// ---------------------------------------------------------------------------
-// Env-var coercion (same shape as other env opt-outs in the repo —
-// SWEET_SEARCH_COREML_CASCADE, SWEET_SEARCH_NATIVE_INFERENCE, etc.)
-// ---------------------------------------------------------------------------
-
 function isEnvOff(value) {
   if (value == null) return false;
   const v = String(value).trim().toLowerCase();
@@ -52,10 +43,6 @@ function isEnvOn(value) {
   const v = String(value).trim().toLowerCase();
   return v === '1' || v === 'true' || v === 'on' || v === 'yes';
 }
-
-// ---------------------------------------------------------------------------
-// Resolver
-// ---------------------------------------------------------------------------
 
 /**
  * Resolve effective search-side LI rerank state.
@@ -76,7 +63,7 @@ function isEnvOn(value) {
  *   resolver and wins over everything else.
  * @param {string} [input.activeConfigModel]       - LATE_INTERACTION_CONFIG.model fallback
  *   (used when the index hasn't been loaded yet so we can still emit a sensible
- *   default — preserves back-compat with the pre-Phase-4 behaviour).
+ *   default).
  *
  * @returns {{
  *   effective: boolean,
@@ -91,7 +78,7 @@ export function resolveSearchRerankPolicy(input = {}) {
   const manifest = input.indexManifest ?? null;
   const declaredPolicy = normalizePolicy(persisted.searchReranking);
 
-  // 1. Per-call explicit override (existing API, highest precedence).
+  // Precedence: per-call override > env var > persisted policy > index manifest > active config.
   if (typeof input.optionOverride === 'boolean') {
     return {
       effective: input.optionOverride,
@@ -110,8 +97,7 @@ export function resolveSearchRerankPolicy(input = {}) {
     };
   }
   if (isEnvOn(env.SWEET_SEARCH_LI_RERANK)) {
-    // Env-on still goes through the safety check below — we never silently
-    // rerank with a missing or mismatched index.
+    // Never silently rerank with a missing or mismatched index.
     if (!manifestUsable(manifest)) {
       return {
         effective: false,
@@ -128,7 +114,6 @@ export function resolveSearchRerankPolicy(input = {}) {
     };
   }
 
-  // 3. Persisted explicit ON / OFF (init wizard / --search-reranking).
   if (declaredPolicy === 'off') {
     return {
       effective: false,
@@ -153,10 +138,7 @@ export function resolveSearchRerankPolicy(input = {}) {
     };
   }
 
-  // 4. Auto (the default): consult the index manifest.
-  //    - missing/mismatched → off (with diagnostic)
-  //    - edge modelId       → off (Phase 3 shows edge LI rerank is net-negative)
-  //    - any standard model → on
+  // Auto: edge LI rerank is net-negative on the Phase 3 bench (see header), so edge -> off.
   if (manifest != null && (manifest.exists === false)) {
     return {
       effective: false,
@@ -186,10 +168,7 @@ export function resolveSearchRerankPolicy(input = {}) {
     };
   }
 
-  // 5. Fallback — manifest not yet loaded (early call path) OR no manifest
-  //    info at all. Defer to the active config model so existing flows that
-  //    constructed SweetSearch before init() still get the historical
-  //    behaviour. Edge model active → off; anything else → on.
+  // Manifest not yet loaded: flows that constructed SweetSearch before init() defer to the active config model.
   if (input.activeConfigModel === LI_MODEL_EDGE) {
     return {
       effective: false,
@@ -203,10 +182,6 @@ export function resolveSearchRerankPolicy(input = {}) {
     reason: 'auto: standard LI active in config (manifest not yet loaded)',
   };
 }
-
-// ---------------------------------------------------------------------------
-// Helpers (also exported for test reuse)
-// ---------------------------------------------------------------------------
 
 export function normalizePolicy(value) {
   if (typeof value !== 'string') return 'auto';
@@ -250,10 +225,6 @@ function edgeOnWarning() {
     + 'read-semantic and ColGrep without participating in search rerank.'
   );
 }
-
-// ---------------------------------------------------------------------------
-// Init-side hardware-aware default
-// ---------------------------------------------------------------------------
 
 /**
  * Recommend an LI model + rerank policy from a hardware capability snapshot.

@@ -9,21 +9,16 @@ import { statSync } from 'fs';
 /**
  * Check whether a file has been modified since it was last indexed.
  *
- * Uses CodeGraphRepository public methods only (no private field access).
  * Caches the db mtime per search (same for all results) to avoid repeated syscalls.
  *
  * @param {string} filePath - Relative file path
- * @param {string} projectRoot - Project root
- * @param {object} codeGraphRepo - CodeGraphRepository instance
  * @param {{ dbMtime: Date|null|undefined }} cache - Shared cache for db mtime across results
  * @returns {{ stale: boolean, indexedAt: string|null }}
  */
 export function checkStaleness(filePath, projectRoot, codeGraphRepo, cache = {}) {
   try {
-    // Get index info from the code graph repository
     const indexInfo = codeGraphRepo?.getFileIndexInfo(filePath);
 
-    // If stale_since is set in the code graph, the file is definitively stale
     if (indexInfo?.staleSince) {
       return { stale: true, indexedAt: null };
     }
@@ -40,8 +35,6 @@ export function checkStaleness(filePath, projectRoot, codeGraphRepo, cache = {})
       return { stale: true, indexedAt: null };
     }
 
-    // Check file mtime against the index database mtime (via public method)
-    // Cache the db mtime — it's the same for all results in one search.
     if (cache.dbMtime === undefined) {
       cache.dbMtime = codeGraphRepo?.getDbMtime?.() ?? null;
     }

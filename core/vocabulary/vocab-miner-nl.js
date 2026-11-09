@@ -10,11 +10,6 @@ import { join, extname } from 'path';
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { STOP_WORDS, splitIdentifier } from './vocab-miner-utils.js';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// Secret patterns to redact from NL content
 export const SECRET_PATTERNS = [
   /(?=[A-Za-z0-9+/]*[+/=])[A-Za-z0-9+/]{40,}={0,2}/,   // base64 > 40 chars with at least one +, /, or =
   /sk-[A-Za-z0-9]{20,}/,          // OpenAI keys
@@ -28,16 +23,11 @@ export const SECRET_PATTERNS = [
 
 export const NL_MINING_TIMEOUT_MS = 6000;
 
-// ---------------------------------------------------------------------------
-// Community-Aware NL Mining
-// ---------------------------------------------------------------------------
-
 /**
  * Mine natural language terms from comments and docstrings,
  * weighted by community distinctiveness using c-TF-IDF.
  *
  * @param {Array<{id: number, entityIds: Array, fileIds: string[]}>} communities
- * @param {string} [projectRoot]
  * @param {object} [options]
  * @param {number} [options.timeoutMs=6000] - Max wall-clock time
  * @param {number} [options.maxFileSize=100000] - Max bytes per file
@@ -93,7 +83,6 @@ export function mineNLContent(communities, projectRoot, options = {}) {
     communityTexts.push({ communityId, text: texts.join(' ') });
   }
 
-  // Phase 2: TF-IDF per community
   const totalDocs = communityTexts.length;
   const dfMap = new Map(); // term -> number of communities containing it
 
@@ -109,7 +98,6 @@ export function mineNLContent(communities, projectRoot, options = {}) {
     return { communityId, tf, totalTokens: tokens.length, tokens, bigrams, trigrams };
   });
 
-  // Document frequency (unigrams)
   for (const { tf } of communityTermFreqs) {
     for (const term of tf.keys()) {
       dfMap.set(term, (dfMap.get(term) || 0) + 1);
@@ -125,7 +113,6 @@ export function mineNLContent(communities, projectRoot, options = {}) {
     for (const tg of trigrams.keys()) trigramDfMap.set(tg, (trigramDfMap.get(tg) || 0) + 1);
   }
 
-  // Phase 3: c-TF-IDF scoring
   const communityPhrases = [];
 
   for (let ci = 0; ci < communityTermFreqs.length; ci++) {
@@ -148,7 +135,6 @@ export function mineNLContent(communities, projectRoot, options = {}) {
       scored.push({ text: term, score: ctfIdf, type: 'unigram' });
     }
 
-    // Bigrams and trigrams using their own DF maps
     const { bigrams, trigrams } = communityTermFreqs[ci];
     for (const [bigram, count] of bigrams) {
       const termFreq = count / Math.max(totalTokens - 1, 1);
@@ -161,7 +147,6 @@ export function mineNLContent(communities, projectRoot, options = {}) {
       scored.push({ text: trigram, score: termFreq * idf * 1.8, type: 'trigram' });
     }
 
-    // Sort by score descending, take top 50
     scored.sort((a, b) => b.score - a.score);
     communityPhrases.push({
       communityId,
@@ -172,14 +157,7 @@ export function mineNLContent(communities, projectRoot, options = {}) {
   return { communityPhrases };
 }
 
-// ---------------------------------------------------------------------------
-// NL Text Extraction
-// ---------------------------------------------------------------------------
-
 /**
- * Extract natural language text from source code (comments, docstrings).
- * @param {string} content
- * @param {string} ext
  * @param {Set<string>} [codeGraphNames] - Known entity names for secret exemption
  */
 export function extractNLText(content, ext, codeGraphNames) {
@@ -220,18 +198,11 @@ export function isDirectiveComment(text) {
   return text.split(/[\s,]+/).filter(Boolean).every((w) => /[-:@]/.test(w));
 }
 
-// ---------------------------------------------------------------------------
-// Secret Detection
-// ---------------------------------------------------------------------------
-
 /**
- * Check if text looks like it contains a secret/credential.
  * F9: If the term also appears as an identifier name in the code graph,
  * it's a variable name, not a secret value — exempt it.
  *
- * @param {string} text
  * @param {Set<string>} [codeGraphNames] - Known entity names from code-graph.db
- * @returns {boolean}
  */
 export function isSecretLike(text, codeGraphNames) {
   if (!SECRET_PATTERNS.some(pattern => pattern.test(text))) return false;
@@ -244,10 +215,6 @@ export function isSecretLike(text, codeGraphNames) {
   }
   return true;
 }
-
-// ---------------------------------------------------------------------------
-// Script Detection
-// ---------------------------------------------------------------------------
 
 /**
  * Detect dominant Unicode script of text.
@@ -271,12 +238,7 @@ export function detectScript(text) {
   return 'other';
 }
 
-// ---------------------------------------------------------------------------
-// Tokenization
-// ---------------------------------------------------------------------------
-
 /**
- * Tokenize NL text into lowercase words, filtering stop words and short tokens.
  * F8: CJK/non-Latin support via Intl.Segmenter when >80% is CJK script.
  */
 export function tokenizeNL(text) {
@@ -284,7 +246,6 @@ export function tokenizeNL(text) {
 
   const script = detectScript(text);
 
-  // F8: Use Intl.Segmenter for CJK-dominant text
   if (script === 'cjk' && typeof Intl !== 'undefined' && Intl.Segmenter) {
     try {
       const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
@@ -304,12 +265,7 @@ export function tokenizeNL(text) {
     .filter(t => t.length > 2 && !STOP_WORDS.has(t));
 }
 
-// ---------------------------------------------------------------------------
-// N-gram Extraction
-// ---------------------------------------------------------------------------
-
 /**
- * Extract bigrams from a token list.
  * @returns {Map<string, number>} bigram -> count
  */
 export function extractBigrams(tokens) {
@@ -322,7 +278,6 @@ export function extractBigrams(tokens) {
 }
 
 /**
- * Extract trigrams from a token list.
  * @returns {Map<string, number>} trigram -> count
  */
 export function extractTrigrams(tokens) {

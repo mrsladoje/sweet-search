@@ -51,9 +51,9 @@ export function cwdOffset({ cwd = process.cwd(), root } = {}) {
 export function resolveCwdPath(p, { cwd = process.cwd(), root, exists = existsSync } = {}) {
   if (typeof p !== 'string' || p === '' || path.isAbsolute(p)) return p;
   const offset = cwdOffset({ cwd, root });
-  if (!offset) return p;                         // at the root or outside it: unchanged
+  if (!offset) return p;
   const candidate = path.posix.normalize(path.posix.join(offset, p.replace(/\\/g, '/')));
-  if (candidate === '..' || candidate.startsWith('../')) return p;   // escapes the repository
+  if (candidate === '..' || candidate.startsWith('../')) return p;
   let found = false;
   try { found = exists(path.join(root, candidate)); } catch { found = false; }
   return found ? candidate : p;
@@ -99,11 +99,11 @@ export function resolveCwdGlob(glob, { cwd = process.cwd(), root, exists = exist
     }
   }
   const offset = cwdOffset({ cwd, root });
-  if (!offset) return glob;                               // at the root or outside it
+  if (!offset) return glob;
   const trimmed = body.replace(/\/+$/, '');
-  if (body.startsWith('**')) return glob;                 // any depth already
+  if (body.startsWith('**')) return glob;
   const explicitHere = /^(?:\.\/|\/)/.test(body);
-  if (!explicitHere && !trimmed.includes('/')) return glob;   // basename glob, any depth
+  if (!explicitHere && !trimmed.includes('/')) return glob;
   const rel = body.replace(/^(?:\.\/|\/)+/, '');
   // `..` is resolved lexically (`../src/**` from lib/ is `/src/**`); the engine matches
   // paths, not spellings. A glob that climbs out of the repository is left as typed.
@@ -111,7 +111,6 @@ export function resolveCwdGlob(glob, { cwd = process.cwd(), root, exists = exist
   if (joined === '..' || joined.startsWith('../')) return glob;
   const cwdAnchored = `${neg}/${joined}`;
   if (explicitHere) return cwdAnchored;
-  // The literal leading path (segments before the first glob metacharacter).
   const literal = [];
   for (const seg of rel.split('/')) {
     if (seg === '' || GLOB_META.test(seg)) break;
@@ -120,7 +119,7 @@ export function resolveCwdGlob(glob, { cwd = process.cwd(), root, exists = exist
   if (literal.length === 0 || literal.includes('..') || literal.includes('.')) return cwdAnchored;
   const has = (p) => { try { return exists(p); } catch { return false; } };
   if (has(path.join(root, offset, ...literal))) return cwdAnchored;
-  if (has(path.join(root, ...literal))) return glob;      // root-relative, as typed
+  if (has(path.join(root, ...literal))) return glob;
   return cwdAnchored;                                     // neither exists: rg's reading
 }
 

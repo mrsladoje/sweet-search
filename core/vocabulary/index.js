@@ -1,10 +1,7 @@
 /**
  * Vocabulary Domain Barrel
- *
- * Re-exports public API from all vocabulary sub-modules.
  */
 
-// vocab-miner.js
 export {
   default as vocabMiner,
   mineStructural,
@@ -14,7 +11,6 @@ export {
   mineAll,
 } from './vocab-miner.js';
 
-// Also re-export the barrel re-exports from vocab-miner.js
 export {
   splitIdentifier, STOP_WORDS, SOURCE_EXTENSIONS,
   addTerm, mergeTerms, termsToArray, walkShallow,
@@ -31,7 +27,6 @@ export {
   SECRET_PATTERNS, NL_MINING_TIMEOUT_MS,
 } from './vocab-miner-nl.js';
 
-// vocab-ranker.js
 export {
   classifyWarmMode,
   rankIdentifiers,
@@ -40,7 +35,6 @@ export {
   _internals as rankerInternals,
 } from './vocab-ranker.js';
 
-// vocab-warmer.js
 export {
   default as vocabWarmer,
   warmLexical,
@@ -52,18 +46,14 @@ export {
   _loadEntityMetadata,
 } from './vocab-warmer.js';
 
-// vocab-warmup-orchestrator.js
 export {
   runFullWarmup,
   saveBinaryArtifact,
 } from './vocab-warmup-orchestrator.js';
 
-
-// vocab-constants.js
 export {
   DATA_DIR as vocabDataDir,
   ARTIFACT_PATHS as vocabArtifactPaths,
 } from './vocab-constants.js';
 
-// vocab-prewarm-cli.js
 export { handlePrewarmVocabCli } from './vocab-prewarm-cli.js';

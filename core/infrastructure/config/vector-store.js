@@ -1,39 +1,22 @@
-/**
- * Vector Store Configuration — HNSW and Binary HNSW indices.
- * Split from core/config.js during DDD migration.
- */
-
 import { EMBEDDING_CONFIG } from './embedding.js';
 
-// =============================================================================
-// HNSW INDEX CONFIGURATION
-// =============================================================================
-
 export const HNSW_CONFIG = {
-  // Dimension matches active provider's HNSW dimension
   get dimension() {
     return EMBEDDING_CONFIG.hnswDimension;
   },
 
-  // Index construction
   M: 16,                     // Bi-directional links
   efConstruction: 200,       // Construction-time candidate list
 
-  // Search parameters
   efSearch: 100,             // Query-time candidate list
 
-  // Distance metric
   metric: 'cosine',
 
-  // Memory settings
   maxElements: 100000,
 };
 
-// =============================================================================
-// BINARY HNSW INDEX CONFIGURATION (32x memory reduction, 10x faster search)
+// Binary HNSW: 32x memory reduction, 10x faster search.
 // Reference: https://huggingface.co/blog/embedding-quantization
-// =============================================================================
-
 export const BINARY_HNSW_CONFIG = {
   // Binary dimension = float dimension / 8 (bits to bytes)
   // 512d float → 64 bytes binary
@@ -41,7 +24,6 @@ export const BINARY_HNSW_CONFIG = {
     return Math.ceil(EMBEDDING_CONFIG.hnswDimension / 8);
   },
 
-  // Float dimension for rescore stage
   get floatDimension() {
     return EMBEDDING_CONFIG.hnswDimension;
   },
@@ -50,16 +32,13 @@ export const BINARY_HNSW_CONFIG = {
   M: 64,                     // Dense graph for fast convergence + recall
   efConstruction: 800,       // High ef for quality graph construction
 
-  // Search parameters
   efSearch: 400,             // Higher budget — adaptive ef reduces for easy queries
 
-  // Distance metric
   metric: 'hamming',
 
   // Memory settings (can hold more since binary is 32x smaller)
   maxElements: 500000,
 
-  // 3-stage retrieval configuration
   retrieval: {
     // Binary HNSW retrieves at least this many (semanticSearch3Stage raises it
     // to the largest possible stage-2 pool for k); stage 2 int8-scores all of

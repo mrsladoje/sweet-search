@@ -33,7 +33,7 @@ import {
 } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
 import { formatIndexFormatNotice } from '../incremental-indexing/infrastructure/staleness-display.mjs';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
-// Static, not dynamic: the D.5 teardown watchdog must be able to hand off from
+// Static, not dynamic: the teardown watchdog must be able to hand off from
 // a synchronous callback, so the launcher has to be resolved before any await
 // in the shutdown path can wedge.
 import { launchMaintainer, pauseHolds } from './maintainer-launcher.mjs';
@@ -42,21 +42,16 @@ import { recordSpawn } from '../infrastructure/spawn-ledger.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// === Configuration ===
 const PROJECT_ROOT = join(__dirname, '../..');
 
-// Timing configuration
-const LOCK_REFRESH_INTERVAL = 30000;   // 30 seconds between lock refreshes (M5: was 60s)
-const LOCK_STALE_THRESHOLD = 180000;   // 3 minutes (M5: was 5 min, ratio 6:1 with refresh)
-// Lifecycle fix v2 — progress-aware takeover. The legacy 3-min pure-timestamp
-// takeover ("lock looks stale ⇒ steal it") produced stealth co-owner orphans
-// when a busy daemon's heartbeat aged past the threshold; the v1 interim fix
-// raised the threshold to 30 min, which traded faster wedge recovery for
-// safety. v2 reverts the threshold to 3 min and adds a second signal so we
-// keep both: orphan-free AND fast recovery, without false-positives on long
-// async work.
+const LOCK_REFRESH_INTERVAL = 30000;   // 30 seconds between lock refreshes
+const LOCK_STALE_THRESHOLD = 180000;   // 3 minutes (ratio 6:1 with refresh)
+// Progress-aware takeover. A pure-timestamp takeover ("lock looks stale ⇒
+// steal it") produced stealth co-owner orphans when a busy daemon's heartbeat
+// aged past the threshold. A second signal keeps both orphan-freedom and fast
+// recovery, without false-positives on long async work.
 //
-// The lockfile now carries TWO timestamps:
+// The lockfile carries TWO timestamps:
 //   - `timestamp`         — the heartbeat, refreshed every 30 s by setInterval
 //                           (event-loop bound, like before).
 //   - `progressTimestamp` — refreshed by recordProgress() at known work
@@ -78,39 +73,25 @@ const LOCK_STALE_THRESHOLD = 180000;   // 3 minutes (M5: was 5 min, ratio 6:1 wi
 // progress beacon — left as future work.
 export const WEDGED_KILL_GRACE_MS = 5000;  // SIGTERM grace before declaring takeover complete
 
-// State
 let shutdownRequested = false;
 
-// === Logging Helper (L3) ===
-
-/**
- * Structured logging with timestamp and level prefix
- * L3 FIX: Proper log levels instead of console.error for everything
- * @param {'INFO'|'WARN'|'ERROR'|'DEBUG'} level - Log level
- * @param {string} message - Log message
- */
 function log(level, message) {
   const timestamp = new Date().toISOString().slice(11, 19);
   console.error(`[${timestamp}] [${level}] [index-maintainer] ${message}`);
 }
 
-// === Lock File Management ===
 // SECURITY INVARIANT: All lock release functions MUST verify ownership before releasing.
 // Pattern: read lock file → verify PID matches process.pid → then release
 // This prevents Process A from accidentally releasing Process B's lock.
 
 /**
- * Check if a PID is running
- * S3 FIX: Optionally validate process start time to prevent PID reuse attacks
- * @param {number} pid - Process ID to check
+ * Optionally validates the process start time, to prevent PID reuse attacks.
  * @param {string|null} expectedStartTime - Expected /proc start time (Linux only)
- * @returns {boolean} true if process is running (and matches start time if provided)
  */
 function isPidRunning(pid, expectedStartTime = null) {
   try {
     process.kill(pid, 0);
 
-    // S3 FIX: Linux-specific validation of process start time
     if (expectedStartTime && process.platform === 'linux') {
       try {
         const stat = readFileSync(`/proc/${pid}/stat`, 'utf-8');
@@ -129,11 +110,6 @@ function isPidRunning(pid, expectedStartTime = null) {
   }
 }
 
-/**
- * Get process start time for PID reuse detection (Linux only)
- * S3 FIX: Returns /proc starttime for current process
- * @returns {string|null} Start time string or null if unavailable
- */
 function getProcessStartTime() {
   if (process.platform !== 'linux') return null;
   try {
@@ -144,8 +120,6 @@ function getProcessStartTime() {
     return null;
   }
 }
-
-// === Queue Management (Exported for testing) ===
 
 export function isReconcilePaused(stateDir) {
   const pauseFile = join(stateDir, 'reconcile-pause.json');
@@ -295,7 +269,7 @@ function writeStateLock(lockFile) {
 }
 
 /**
- * Lifecycle fix v2 — record a work-progress checkpoint. Called from the
+ * Record a work-progress checkpoint. Called from the
  * reconcile loop (top of iteration, post-tick, post-drain) so a candidate
  * maintainer in acquireStateLock can tell "alive but stuck on a hung await"
  * from "busy and progressing." One small JSON write per call; the cost is
@@ -351,11 +325,8 @@ async function sigtermAndStealLock(existing, lockFile, reason) {
 }
 
 /**
- * Acquire the reconcile-v2 state lock atomically.
- *
- * Lifecycle fix v2 — progress-aware single-owner takeover (see the
- * WEDGED_KILL_GRACE_MS block above for the design rationale). Decision
- * matrix on an existing lockfile:
+ * Progress-aware single-owner takeover (see the WEDGED_KILL_GRACE_MS block
+ * above for the design rationale). Decision matrix on an existing lockfile:
  *
  *   no / unparseable lock                  → unlink + retry create
  *   dead holder                            → unlink + retry create
@@ -402,7 +373,6 @@ export async function acquireStateLock(stateDir) {
       if (err.code !== 'EEXIST') throw err;
       const existing = readStateLock(lockFile);
       if (!existing) {
-        // Corrupt / unparseable lock — unlink and retry the O_EXCL create.
         try { unlinkSync(lockFile); } catch {}
         continue;
       }
@@ -452,8 +422,7 @@ export function releaseStateLock(lockFile) {
 }
 
 /**
- * Lifecycle fix. Returns true iff the state lockfile exists AND still names
- * this process. Used by:
+ * True iff the state lockfile exists AND still names this process. Used by:
  *   - the main reconcile loop, to self-exit when displaced (no immortal
  *     twins after a wedged-backstop takeover), and
  *   - the heartbeat refresh setInterval, so a displaced daemon never
@@ -655,8 +624,6 @@ function tmpSweepMaxAgeMs(env = process.env) {
  * writers race. Returns the drain summary, or `{skipped: true, reason}` when the
  * worker call throws (maintenance failures never crash the daemon).
  *
- * Exported so tests and the daemon main loop call the same code path.
- *
  * @param {{stateDir:string, env?:NodeJS.ProcessEnv}} ctx
  */
 export async function drainMaintenanceInline(ctx) {
@@ -765,7 +732,7 @@ async function sleepWithProgress(totalMs, lockFile, opts = {}) {
 const BACKLOG_TICK_GAP_MS = 250;
 
 /**
- * A.4-consume: recompute the daemon's sleep interval from the just-finished
+ * Recomputes the daemon's sleep interval from the just-finished
  * tick. The reconciler config-half (G2) only re-tunes an ephemeral per-tick
  * Reconciler instance, so the daemon MUST recompute the interval in its OWN
  * loop or the autotune has no effect.
@@ -814,7 +781,7 @@ export function computeNextIntervalMs({
 }
 
 /**
- * D.1: idle-TTL. Default 0/disabled. Returns the configured wall-clock idle
+ * Idle-TTL. Default 0/disabled. Returns the configured wall-clock idle
  * budget (ms) after which an unattended maintainer self-shuts-down so N resident
  * model-loaded daemons collapse to 1–2 (the ~16 GB cross-repo footprint fix).
  * 0 (or invalid / negative) ⇒ disabled (today's "run forever" behavior).
@@ -833,7 +800,7 @@ export function maintainerIdleTtlMs(env = process.env, totalMemBytes = os.totalm
 }
 
 /**
- * D.1 idle bookkeeping (pure + testable). The maintainer has NO query route, so
+ * Idle bookkeeping (pure + testable). The maintainer has NO query route, so
  * idle is keyed on consecutive ticks that found NOTHING to do — `dirtyAtTickStart
  * === 0` AND an empty maintenance queue — NOT on the self-heartbeats
  * (recordProgress/writeStateLock always tick). Any indexed change resets the
@@ -861,8 +828,6 @@ export function recordIdleTick(state, { dirtyAtTickStart, maintenanceBacklog, sk
 }
 
 /**
- * D.1: has the maintainer been continuously idle (no indexed change, empty
- * maintenance queue) for at least `ttlMs` wall-clock across consecutive ticks?
  * Requires BOTH at least one consecutive idle tick AND the wall-clock budget to
  * have elapsed since idleness began. ttlMs<=0 ⇒ never (disabled).
  */
@@ -1008,9 +973,8 @@ function confirmSuccessor(child, ms) {
 
 /**
  * Start the successor maintainer after an RSS recycle, and report what
- * happened. Extracted from the shutdown path so the decision logic is testable
- * without spawning a process: `launch` is the injected launcher (defaults to
- * the real `launchMaintainer`).
+ * happened. `launch` is the injected launcher (defaults to the real
+ * `launchMaintainer`) so the decision logic is testable without spawning.
  *
  * A synchronous `spawn()` return does NOT mean the child is running — Node
  * reports EAGAIN/EMFILE/ENOENT asynchronously — so a confirmed handoff waits
@@ -1243,17 +1207,16 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   }
 
   const resolved = resolveReconcileV2Interval();
-  // A.4-consume: the sleep interval is now mutable so the autotune can move it
-  // each iteration. When the operator pins an explicit interval, the resolver
-  // marks it `pinned` and the autotune never fires (parity with the reconciler
-  // config's `pinnedIntervalMs` short-circuit).
+  // Mutable so the autotune can move it each iteration. When the operator pins
+  // an explicit interval, the resolver marks it `pinned` and the autotune never
+  // fires (parity with the reconciler config's `pinnedIntervalMs` short-circuit).
   let intervalMs = resolved.intervalMs;
   const autotunePinned = resolved.pinned === true;
   log('INFO', `Reconcile v2 interval ${intervalMs}ms (source=${resolved.source}${resolved.tier ? `, tier=${resolved.tier}` : ''})`);
 
-  // G3 arming: configure the BACKGROUND/maintainer ORT profile BEFORE the first
+  // The BACKGROUND/maintainer ORT profile must be configured BEFORE the first
   // tick embeds. The ONNX session singleton is built once on first encode;
-  // configuring after is a silent no-op (mirrors indexer-phases.js:491).
+  // configuring after is a silent no-op.
   //
   // MAINTAINER-SCOPED: arm the background ORT profile (force_spinning_stop +
   // arena-off + 2–6 intra-op threads), ONLY in this maintainer daemon process. We
@@ -1304,8 +1267,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     }
   }
 
-  // G7 RSS-budget registry hook (integration seam; module owned by G7).
-  // Registers when the soft cap is enabled — which is now tier-aware:
+  // RSS-budget registry hook. Registers when the soft cap is enabled, which is tier-aware:
   // `isEnabled()` is true when SWEET_SEARCH_RSS_BUDGET_FRACTION is set OR the
   // system-RAM tier auto-enables a cap (small-RAM hosts). Best-effort, guarded
   // so a missing module is a no-op.
@@ -1354,17 +1316,17 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   }
   let completedTicks = 0;
 
-  // D.1 idle-TTL: an unattended maintainer self-shuts-down after the configured
+  // Idle-TTL: an unattended maintainer self-shuts-down after the configured
   // wall-clock idle budget so N resident model-loaded daemons collapse to 1–2
   // (the ~16 GB cross-repo footprint fix). Default 0/disabled ⇒ run forever
   // (today's behavior). Idle is keyed on consecutive ticks that found nothing to
   // do (dirtyAtTickStart===0 AND empty maintenance queue), NEVER on the
   // self-heartbeats. NOTE: the search-server daemon has its own idle-TTL+LRU,
-  // but it never enumerates/registers the maintainer (search-server.js:918), so
-  // there is no double-mechanism here.
+  // but it never enumerates/registers the maintainer (core/search/search-server.js),
+  // so there is no double-mechanism here.
   const idleTtl = maintainerIdleTtlMs();
   const idleState = { idleTicks: 0, idleSinceMs: null };
-  // Unref'd idle timer mirrors search-server.js:907–913 — it never keeps the
+  // Unref'd idle timer mirrors the one in core/search/search-server.js — it never keeps the
   // event loop alive on its own and only REQUESTS shutdown (it does NOT
   // process.exit); the main loop drains the current tick to `finally`.
   const idleTimer = idleTtl > 0
@@ -1380,7 +1342,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     : null;
   if (idleTimer?.unref) idleTimer.unref();
 
-  // Lifecycle fix: only refresh the heartbeat if we still own the lock. If a
+  // Only refresh the heartbeat if we still own the lock. If a
   // wedged-backstop takeover stole it, the lockfile now names another pid —
   // we must NOT clobber that successor with our pid. The main loop's
   // ownership check will end this maintainer at the next iteration.
@@ -1436,7 +1398,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
 
   try {
     while (!shutdownRequested) {
-      // Lifecycle fix: bail out if the lock no longer names us. This is the
+      // Bail out if the lock no longer names us. This is the
       // backstop that ensures any displacement path (wedged-takeover,
       // alive-but-stuck takeover, manual unlink) never leaves an immortal
       // twin maintainer behind — the displaced daemon self-exits at the
@@ -1450,16 +1412,14 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
         shutdownRequested = true;
         break;
       }
-      // Lifecycle fix v2: progress checkpoint at the top of each iteration.
-      // Combined with the post-tick / post-drain checkpoints below this lets
+      // Together with the post-tick / post-drain checkpoints below this lets
       // acquireStateLock distinguish a busy-but-progressing daemon from one
       // hung on a never-resolving await — see the WEDGED_KILL_GRACE_MS block.
       recordProgress(lock.lockFile);
-      // G6: the watcher already fed the queue from filesystem events, so the
+      // The watcher already fed the queue from filesystem events, so the
       // expensive full stat-walk producer is demoted to a periodic backstop.
-      // We pass the demotion decision into the tick via ctx so the producer
-      // block (index-maintainer.mjs ~:907) can skip the walk when appropriate.
-      // When the watcher is inactive this is always `false` ⇒ today's behavior.
+      // The demotion decision reaches the tick via ctx.skipFullWalk
+      // (see runReconcileV2Tick). When the watcher is inactive the walk always runs.
       let runFullWalk = true;
       if (watcherState.active) {
         const nowMs = Date.now();
@@ -1502,12 +1462,12 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
         try {
           const onProgress = createLifecycleProgress(lock.lockFile);
           const tickCounters = await runReconcileV2Tick({ ...ctx, onProgress, skipFullWalk: watcherState.active && !runFullWalk });
-          onProgress('tick:post');  // post-tick checkpoint
+          onProgress('tick:post');
           await drainMaintenanceInline({ ...ctx, onProgress });
-          onProgress('drain:post');  // post-drain checkpoint
+          onProgress('drain:post');
 
-          // A.4-consume + D.1 idle bookkeeping. Read the maintenance backlog
-          // AFTER the drain (it reflects what remains, not what was queued).
+          // Read the maintenance backlog AFTER the drain (it reflects what
+          // remains, not what was queued).
           let backlog = 0;
           try {
             const { readMaintenanceQueue } = await import('../incremental-indexing/application/maintenance-worker.mjs');
@@ -1550,7 +1510,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
             // read-modify-write, and a slow one must never delay the next tick.
             Promise.resolve(rssRegistration.touch()).catch(() => {});
           }
-          // D.5: per-process RSS recycle check — tick boundary only (the tick
+          // Per-process RSS recycle check at the tick boundary only (the tick
           // above has published; a recycle here can never tear an artifact).
           completedTicks += 1;
           if (rssCeiling.ceilingBytes > 0 && typeof rssCeiling.shouldRecycleForRss === 'function') {
@@ -1571,9 +1531,9 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
         } catch (err) {
           if (err instanceof MaintainerLifecycleAbort) {
             log('WARN', `Reconcile v2 lifecycle abort: ${err.message}. Cleaning up cancellation-orphaned temps and exiting cleanly.`);
-            // Caveat-1 fix: on cancellation, immediately remove our own
-            // staging temps so they don't sit on disk waiting for the next
-            // daemon startup to sweep them. Safe to use maxAgeMs=0 here
+            // On cancellation, immediately remove our own staging temps so
+            // they don't sit on disk waiting for the next daemon startup to
+            // sweep them. Safe to use maxAgeMs=0 here
             // because (a) sweepStaleArtifactTemps uses a strict allowlist
             // of staging-temp suffixes — it never touches canonical
             // artifacts, queues, WAL, or the lockfile — and (b) maintenance
@@ -1595,14 +1555,11 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
           log('ERROR', `Reconcile v2 tick failed: ${err?.message ?? err}`);
         }
       }
-      // Skip the sleep when a shutdown was requested during this iteration
-      // (idle-TTL, signal, or D.5 RSS recycle) — exit promptly instead of
-      // waiting out one more interval.
       if (shutdownRequested) break;
       await sleepWithProgress(backlogLeft ? BACKLOG_TICK_GAP_MS : intervalMs, lock.lockFile, {
         // G6 early-wake: break the sleep the instant the watcher reports new
         // events so a fresh edit is reconciled without waiting out the interval.
-        // No watcher ⇒ this is never truthy ⇒ today's full-interval sleep.
+        // No watcher ⇒ this is never truthy ⇒ the full-interval sleep.
         wokenByWatcher: watcherState.active ? () => watcherState.pendingEvents : null,
       });
     }
@@ -1611,7 +1568,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     if (idleTimer) clearInterval(idleTimer);
     if (daemonCheck) clearInterval(daemonCheck);
 
-    // D.5 teardown watchdog — armed BEFORE the awaits below, not after them.
+    // Teardown watchdog — armed BEFORE the awaits below, not after them.
     // `watcher.close()`, the registry `unregister()` and `unloadLocalModel()`
     // are all native and none is guaranteed to resolve. If one wedges we would
     // otherwise sit here forever: lock still held, no ticks running, full RSS
@@ -1658,12 +1615,12 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     }, RECYCLE_TEARDOWN_DEADLINE_MS) : null;
     watchdog?.unref?.();
 
-    // G6 watcher teardown — best-effort, never throw and never hang. Safe to
+    // Watcher teardown — best-effort, never throw and never hang. Safe to
     // abandon on timeout: closing a watcher only touches parent-local state.
     if (watcherState.handle && typeof watcherState.handle.close === 'function') {
       await runBoundedTeardown('Watcher close', () => watcherState.handle.close());
     }
-    // G7 RSS registry teardown — SKIPPED ENTIRELY when we are handing off.
+    // RSS registry teardown — SKIPPED ENTIRELY when we are handing off.
     //
     // `unregister` is an async read-modify-rename over a registry file SHARED
     // with every other daemon on the host. On a handoff that is a hazard with
@@ -1680,7 +1637,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     if (rssRegistration && typeof rssRegistration.unregister === 'function' && !recycleForRss) {
       await runBoundedTeardown('RSS registry unregister', () => rssRegistration.unregister());
     }
-    // D.1: release the ORT session in order on a clean (idle-TTL or signal)
+    // Release the ORT session in order on a clean (idle-TTL or signal)
     // shutdown so a respawned daemon starts from a clean slate. This canNOT go
     // in the process.on('exit') handler (synchronous, no async). releaseStateLock
     // below unlinks the O_EXCL lock so the next launchMaintainer respawns cleanly
@@ -1711,7 +1668,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
         gcWorktreeIndexes(dirname(ctx.stateDir), { selfPid: process.pid });
       } catch { /* the next maintainer start cleans up */ }
     }
-    // D.5 successor handoff. An RSS recycle is the ONE exit reason where the
+    // Successor handoff. An RSS recycle is the ONE exit reason where the
     // work is NOT finished — the maintainer quits mid-backlog purely to hand
     // native (ORT arena / sqlite) memory back to the OS. Every other exit
     // reason means "stop": SIGTERM/SIGINT is an operator asking us to go away,
@@ -1767,19 +1724,19 @@ async function main() {
   // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set).
   recordSpawn({ pid: process.pid, role: 'maintainer-self' });
 
-  // A.1: below-normal OS priority (nice 10; the encoder child inherits it), so the
+  // Below-normal OS priority (nice 10; the encoder child inherits it), so the
   // foreground (editor / git / shell) wins contended cores. Not the lowest (19): under
   // a load average of 20 the encoder then took 11 s per model load and a cold edit
   // 13 s to become searchable; freshness comes first. Best-effort.
   try { os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL); } catch { /* best-effort */ }
 
-  // E.4 (global half): set the process-global SQLite `soft_heap_limit` ONCE,
-  // before any tier connection opens. SQLite's `soft_heap_limit` is a
+  // Set the process-global SQLite `soft_heap_limit` ONCE, before any tier
+  // connection opens. SQLite's `soft_heap_limit` is a
   // PROCESS-WIDE setting (sqlite3_soft_heap_limit64), not per-connection — so
   // running the pragma on a single throwaway in-memory connection at startup
   // caps the page-cache heap for EVERY subsequent better-sqlite3 connection in
-  // this process (128 MiB). This is the process-wide lever that pairs with G2's
-  // per-connection `cache_size` / `shrink_memory`. (better-sqlite3 exposes no
+  // this process (128 MiB). It pairs with the per-connection `cache_size` /
+  // `shrink_memory`. (better-sqlite3 exposes no
   // static global setter, so the throwaway-conn pragma is the documented path.)
   // Guarded + best-effort: a packaging without better-sqlite3 degrades to a
   // no-op and never crashes the daemon.
@@ -1799,8 +1756,8 @@ async function main() {
   await runReconcileV2Main({ runOnce, merkleOnce });
 }
 
-// Only run main() when executed directly (not when imported for testing)
-// This allows the exported functions to be tested without starting the daemon
+// Only run main() when executed directly, so the exported functions can be
+// tested without starting the daemon.
 const isMainModule = import.meta.url === `file://${process.argv[1]}` ||
                      process.argv[1]?.endsWith('index-maintainer.mjs');
 

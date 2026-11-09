@@ -43,15 +43,7 @@ function isCodeImportTarget(entity) {
   return !NON_CODE_IMPORT_TARGET_EXTS.has(path.posix.extname(base));
 }
 
-// =============================================================================
-// PROJECT DETECTION
-// =============================================================================
-
 /**
- * Detect which project a file belongs to based on its path.
- * Uses marker-file detection to find nearest project boundary.
- *
- * @param {string} filePath - File path to analyze
  * @returns {string} Project identifier (kebab-cased directory name) or 'unknown'
  */
 // file path → project name, per resolution run (cleared with the other
@@ -70,13 +62,6 @@ function detectProject(filePath) {
   return name;
 }
 
-/**
- * Check if two files belong to the same project.
- *
- * @param {string} path1 - First file path
- * @param {string} path2 - Second file path
- * @returns {boolean} True if both files are in the same project
- */
 function isSameProject(path1, path2) {
   const project1 = detectProject(path1);
   const project2 = detectProject(path2);
@@ -86,10 +71,6 @@ function isSameProject(path1, path2) {
 
   return project1 === project2;
 }
-
-// =============================================================================
-// CALL-TARGET HELPERS
-// =============================================================================
 
 // Entity types that own methods. Extractors rarely fill `parent_class`
 // (tree-sitter entities never do), so the owner is derived from spans.
@@ -1014,20 +995,8 @@ function extensionReceiverOf(c) {
   return m[1].slice(m[1].lastIndexOf('.') + 1);
 }
 
-/**
- * Candidates for a call whose receiver has a declared type (receiver-types.js):
- * that type's own methods (a nested type within its enclosing type, a Go type
- * within its package), else the nearest supertype that defines the method,
- * else an extension function of the type or a supertype. [] = no edge (the
- * method lives outside the repo, or the type has no such method). null = the
- * type says nothing — a Go interface (implementations satisfy it implicitly,
- * so no edge leads to them), or a name the repo defines only as an alias — and
- * the receiver rules decide as for an untyped receiver. (Rust, Swift and
- * Kotlin aliases are no entities: such a call stays unresolved.)
- */
 const SMART_POINTER = String.raw`(?:(?:::)?\w+::)*(?:shared_ptr|unique_ptr|weak_ptr|intrusive_ptr|Rc|Arc|Box|RefPtr|sp)\s*<\s*(?:const\s+)?`;
 
-/** Type named by an alias declaration's right side (see aliasTargetOf), or null. */
 // Language groups that call each other (interop, shared headers). An extension in no
 // group is compatible with everything (the filter only removes known mismatches).
 const LANGUAGE_GROUPS = [
@@ -1075,6 +1044,7 @@ function declaredPrivate(c) {
   return v;
 }
 
+/** Type named by an alias declaration's right side (see aliasTargetOf), or null. */
 export function aliasTargetIn(signature, name) {
   const sig = String(signature || '').replace(/\s+/g, ' ');
   const smart = new RegExp(String.raw`(?:=|typedef)\s*(?:typename\s+)?${SMART_POINTER}(?:(?:::)?\w+(?:::|\.))*([A-Za-z_]\w*)\s*>`).exec(sig);
@@ -1088,6 +1058,17 @@ export function aliasTargetIn(signature, name) {
   return t && t !== name ? t : null;
 }
 
+/**
+ * Candidates for a call whose receiver has a declared type (receiver-types.js):
+ * that type's own methods (a nested type within its enclosing type, a Go type
+ * within its package), else the nearest supertype that defines the method,
+ * else an extension function of the type or a supertype. [] = no edge (the
+ * method lives outside the repo, or the type has no such method). null = the
+ * type says nothing — a Go interface (implementations satisfy it implicitly,
+ * so no edge leads to them), or a name the repo defines only as an alias — and
+ * the receiver rules decide as for an untyped receiver. (Rust, Swift and
+ * Kotlin aliases are no entities: such a call stays unresolved.)
+ */
 function narrowByReceiverType(pool, receiverType, sourceEntity, idx, depth = 0) {
   if (receiverType.external) return [];
   // An alias names another type: resolve through it (`TcpConnectionPtr` is
@@ -1231,7 +1212,6 @@ function buildEntityLookups(entities) {
     if (!fileEntities) { fileEntities = []; byFile.set(entity.file_path, fileEntities); }
     fileEntities.push(entity);
 
-    // Method name (just the method part)
     if (CALLABLE_TYPES.has(entity.type)) {
       const methodName = entity.name.split('.').pop();
       let methods = byMethodName.get(methodName);
@@ -1389,7 +1369,6 @@ export function resolveRelationshipTargets(db) {
   declaredTypeMemo.clear();
   projectMemo.clear();
 
-  // Build entity lookup maps
   // Sorted, not rowid (= discovery) order: ties between equal candidates
   // must not depend on the order files were found.
   const entities = db.prepare(`
@@ -1410,7 +1389,6 @@ export function resolveRelationshipTargets(db) {
   }
   const callIndex = createCallResolutionIndex(entities, { fileImports, hierarchy: buildTypeHierarchy(db), receiverSpread: buildReceiverSpread(db) });
 
-  // Get all unresolved relationships (include full_import_path for package-aware matching)
   const unresolved = db.prepare(`
     SELECT rowid, source_id, target_name, type, context_line, full_import_path
     FROM relationships
@@ -1468,7 +1446,6 @@ export function resolveRelationshipTargets(db) {
           }
         }
       } else {
-        // Check if it's ambiguous (multiple matches)
         const exactMatches = byExactName.get(rel.target_name) || [];
         if (exactMatches.length > 1) {
           ambiguous++;
@@ -1494,7 +1471,6 @@ export function resolveRelationshipTargets(db) {
     console.log(`  ⚠ ${ambiguous} ambiguous targets (multiple matches)`);
   }
 
-  // Show sample warnings (max 5)
   if (warnings.count > 0) {
     console.log('  Sample resolution warnings:');
     for (const warning of warnings.samples) {
@@ -1549,9 +1525,6 @@ function resolveRustPathCall(candidates, pathScope, callIndex, byMethodName) {
   return inCrate.length === 1 ? inCrate[0].id : null;
 }
 
-/**
- * Resolve a single relationship target
- */
 function resolveTarget(
   sourceId,
   targetName,
@@ -1571,7 +1544,6 @@ function resolveTarget(
   if (relType === 'importsFile') return null;
   if (relType === 'imports' && fullImportPath && fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX)) return null;
 
-  // Get source entity for context (O(1) lookup instead of database query)
   const sourceEntity = sourceId ? byId.get(sourceId) : null;
 
   // Strategy 1: Exact name match in same file (highest priority). Not for
@@ -1586,7 +1558,6 @@ function resolveTarget(
     }
   }
 
-  // Strategy 2: Relationship-specific resolution
   switch (relType) {
     case 'calls': {
       // Method calls: "object.method" or just "method"
@@ -1618,7 +1589,6 @@ function resolveTarget(
     }
 
     case 'overrides': {
-      // Method overrides: find method in parent class
       const candidates = (byMethodName.get(targetName) || []).filter(c => c.id !== sourceId);
       const picked = pickClosestCandidate(candidates, sourceEntity);
       if (picked && candidates.length > 1 && warnings) {
@@ -1682,7 +1652,6 @@ function resolveTarget(
         return pick ? pick.id : null;
       }
 
-      // Import statements: use full_import_path for package-aware matching
       let candidates = (byExactName.get(targetName) || []).filter(isCodeImportTarget);
 
       // Handle inner class imports: "Employee.Builder" → try "Employee" as fallback
@@ -1702,15 +1671,11 @@ function resolveTarget(
       } else if (candidates.length === 1) {
         return candidates[0].id;
       } else if (fullImportPath) {
-        // Multiple matches - use full_import_path for disambiguation
         // fullImportPath: "com.example.app.services.AuthService"
-        // We need to match entity by file_path that corresponds to this package
 
-        // Convert Java package path to file path pattern
         // "com.example.app.services.AuthService" -> "com/example/app/services/AuthService.java"
         const expectedPathSuffix = fullImportPath.replace(/\.\*$/, '').replace(/\./g, '/') + '.java';
 
-        // Find candidate whose file_path ends with this pattern
         const packageMatch = candidates.find(c =>
           c.file_path && c.file_path.replace(/\\/g, '/').endsWith(expectedPathSuffix)
         );
@@ -1760,7 +1725,6 @@ function resolveTarget(
       return resolveTypeUsage(targetName, sourceEntity, sourceId, byExactName, callIndex);
 
     default: {
-      // Unknown relationship type - try exact name match
       const candidates = (byExactName.get(targetName) || []).filter(c => c.id !== sourceId);
       const picked = pickClosestCandidate(candidates, sourceEntity);
       return picked ? picked.id : null;

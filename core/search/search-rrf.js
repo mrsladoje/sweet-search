@@ -228,7 +228,6 @@ export async function runRRFFallback(fused, query, opts = {}) {
   const injectCap = Math.max(5, Math.min(30, opts.injectCap ?? 20));
   const top = ranked.slice(0, injectCap);
 
-  // Normalize RRF scores to [FALLBACK_BASE, FALLBACK_BASE + FALLBACK_RANGE]
   const maxRrf = top[0]?.rrf || 0;
   if (maxRrf <= 0) {
     return { results: fused, stats: { reason, keywords, injected: 0, boosted: 0, fusedCount: fusedMap.size } };

@@ -31,7 +31,7 @@ export const STALE_SIDECAR_EXT = '.stale.bin';
 export const LI_SEGMENT_SIZE = 10_000;
 
 /**
- * Step 2b: PROCESS-scoped verified-identity cache for the positions-only reader.
+ * PROCESS-scoped verified-identity cache for the positions-only reader.
  * segment path -> filesystem identity key of the last read whose whole-file
  * CRC32 was verified.
  *
@@ -89,9 +89,6 @@ export function nextSegmentSeq(manifest) {
 
 /**
  * Per-segment state object that the LI tier uses while applying deltas.
- *
- * @param {string} segmentPath
- * @param {number} docCount
  */
 export function openSegmentState(segmentPath, docCount) {
   let bitmap = loadBitmap(staleSidecarPath(segmentPath));
@@ -112,7 +109,6 @@ export function openSegmentState(segmentPath, docCount) {
  * before manifest publish does not lose the tombstone state.
  *
  * @param {object} segmentState
- * @param {number} docIndex
  */
 export function tombstoneDoc(segmentState, docIndex) {
   setBit(segmentState.bitmap, docIndex);
@@ -147,7 +143,6 @@ export function staleDocRatio(segmentState) {
  * lexicographically (caller is responsible for any ordering they need
  * beyond that).
  *
- * @param {string} segmentsDir
  * @returns {string[]}
  */
 export function listSegments(segmentsDir) {
@@ -164,7 +159,6 @@ export function listSegments(segmentsDir) {
  * The watermark scheduler (`domain/watermark-scheduler.mjs`) consumes
  * the returned array via `liSegments` input.
  *
- * @param {string} segmentsDir
  * @param {Map<string, number>} [docCountsBySegment]   Optional override.
  * @returns {Array<{segmentId:string, staleDocRatio:number}>}
  */
@@ -198,7 +192,6 @@ export function filterLiveDocs(segmentState, candidates) {
  * Check whether a doc index is alive (false) or tombstoned (true).
  *
  * @param {object} segmentState
- * @param {number} docIndex
  * @returns {boolean}
  */
 export function isDocTombstoned(segmentState, docIndex) {

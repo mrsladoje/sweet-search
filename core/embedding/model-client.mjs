@@ -50,8 +50,6 @@ export function modelServerSocketPath(env = process.env) {
   return path.join(os.tmpdir(), `sweet-search-model${uidPart}.sock`);
 }
 
-// ── Wire codec ────────────────────────────────────────────────────────────
-
 /**
  * Encode a single frame. `header` is a JSON-serializable object; `payload` is
  * an optional Buffer of raw bytes (Float32 little-endian for embeddings).
@@ -79,13 +77,12 @@ export class FrameDecoder {
 
   push(chunk) {
     this._buf = this._buf.length === 0 ? chunk : Buffer.concat([this._buf, chunk]);
-    // Drain as many complete frames as are buffered.
     for (;;) {
       if (this._buf.length < FRAME_HEADER_BYTES) return;
       const headerLen = this._buf.readUInt32BE(0);
       const payloadLen = this._buf.readUInt32BE(4);
       const total = FRAME_HEADER_BYTES + headerLen + payloadLen;
-      if (this._buf.length < total) return; // wait for more bytes
+      if (this._buf.length < total) return;
       const headerJson = this._buf.toString('utf8', FRAME_HEADER_BYTES, FRAME_HEADER_BYTES + headerLen);
       const payload = this._buf.subarray(FRAME_HEADER_BYTES + headerLen, total);
       // Copy the payload out so the retained buffer slice can be GC'd and the
@@ -122,13 +119,11 @@ export function packEmbeddings(embeddings) {
     dims[i] = len;
     totalFloats += len;
   }
-  // One backing buffer; copy each vector's raw little-endian bytes in order.
   const out = Buffer.allocUnsafe(totalFloats * 4);
   let offset = 0;
   for (let i = 0; i < embeddings.length; i++) {
     const v = embeddings[i];
     if (!v || v.length === 0) continue;
-    // Float32Array view over the SAME bytes — copy losslessly into `out`.
     const src = v instanceof Float32Array ? v : Float32Array.from(v);
     const srcBytes = Buffer.from(src.buffer, src.byteOffset, src.length * 4);
     srcBytes.copy(out, offset);
@@ -158,8 +153,6 @@ export function unpackEmbeddings(payload, dims) {
   }
   return out;
 }
-
-// ── RPC client ──────────────────────────────────────────────────────────────
 
 let _nextRequestId = 1;
 

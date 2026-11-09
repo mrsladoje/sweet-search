@@ -1,9 +1,4 @@
 /**
- * Search Post-Processing Module
- *
- * Extracted from sweet-search.js (SOLID refactor).
- * Contains all post-retrieval processing logic that was inlined in search().
- *
  * Functions that use `this` are regular function declarations (not arrows)
  * so they work correctly when wired onto SweetSearch.prototype.
  */
@@ -453,20 +448,8 @@ export function shapeFinalList(results, opts = {}) {
   return out;
 }
 
-// =============================================================================
-// Post-retrieval processing
-// =============================================================================
-
 /**
  * Apply all post-retrieval processing to search results.
- *
- * This function encapsulates the post-search pipeline:
- * 1. Merge semantic stats into main stats
- * 2. Graph expansion
- * 3. Translation fallback
- * 4. Quality scoring
- * 5. Intent policy application
- * 6. Telemetry recording
  *
  * Uses `this` extensively — must be wired onto prototype as _applyPostRetrieval.
  *
@@ -500,9 +483,8 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     _fileKindCache,
   } = searchContext;
 
-  // Merge semantic stats (embedding/rerank) into main stats for CostTracker.
+  // Merge semantic stats (embedding/rerank) into main stats.
   if (semanticStats) {
-    // Validate embedding stats have required fields for cost tracking
     if (semanticStats.embedding &&
         typeof semanticStats.embedding.tokens === 'number' &&
         typeof semanticStats.embedding.provider === 'string') {
@@ -518,7 +500,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       };
     }
 
-    // Validate rerank stats
     if (semanticStats.rerank) {
       stats.rerank = {
         skipped: semanticStats.rerank.skipped ?? true,
@@ -537,20 +518,14 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   const isConfidentLexical = stats.path === 'lexical'
     && (stats.confidence === 'exact' || stats.confidence === 'high');
 
-  // Extract query embedding for query-dependent graph expansion scoring
   const queryInt8 = semanticStats?.queryInt8 || null;
 
-
-  // =========================================================================
-  // Graph Expansion (post-processing)
-  // =========================================================================
   if (effectiveGraphExpand !== 'none' && this.hasGraphIndex && Array.isArray(results) && results.length > 0 && !isConfidentLexical) {
     try {
       await this.graphSearch.init();
       const graphDb = this.graphSearch.db;
       if (graphDb) {
         const expandStart = Date.now();
-        // Pass intent-derived edge types unless explicitly overridden.
         const intentEdgeTypes = intentPolicy?.edgeTypePriority
           ? new Set(intentPolicy.edgeTypePriority)
           : undefined;
@@ -612,9 +587,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     }
   }
 
-  // =========================================================================
-  // Cascaded Scoring (MaxSim → confidence gate → conditional cross-encoder)
-  // =========================================================================
+  // Cascaded scoring (MaxSim → confidence gate → conditional cross-encoder).
   // Runs after graph expansion so expanded candidates also get scored.
   // Replaces the old separate "late interaction blend" block when cascade is enabled.
   // POLICY: Lexical confident queries skip this entirely (handled by isConfidentLexical).
@@ -622,8 +595,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // Guard does NOT require hasLateInteractionIndex. When LI is unavailable
   // (missing index, model mismatch), cascadedScore() handles it internally:
   // all candidates are treated as unscored → CE-only fallback.
-  // Cascade runs when enabled, regardless of useLateInteraction.
-  // When LI is unavailable, cascadedScore() receives null → CE-only fallback.
   // Pattern mode already ran MaxSim ranking — skip redundant CE cascade.
   const isPatternMode = searchMode === 'pattern';
   const shouldRunCascade = this.cascadeEnabled
@@ -657,7 +628,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       results = cascadeResult.results;
       stats.cascade = cascadeResult.stats;
 
-      // Emit stats.rerank for CostTracker compatibility (cost-tracker.js:168 reads it).
       stats.rerank = {
         skipped: !cascadeResult.stats.ceInvoked,
         provider: cascadeResult.stats.ceProvider || null,
@@ -670,9 +640,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       stats.cascade = { error: err.message };
     }
   } else if (!this.cascadeEnabled) {
-    // =========================================================================
-    // Late Interaction Reranking (legacy, flag OFF — post-expansion, Phase 6)
-    // =========================================================================
     const allowLegacyLateInteraction = process.env.SWEET_SEARCH_LEGACY_LI_RERANK === '1'
       || AGENT_FORMATS.has(options.format)
       || searchContext?.fromSearch !== true
@@ -750,9 +717,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // keep their slot through the rerank. Demotions below still apply.
   results = refrontPins(results);
 
-  // =========================================================================
-  // Quality-Aware Chunk Weighting (opt-in)
-  // =========================================================================
   if (qualityWeight > 0 && Array.isArray(results) && results.length > 0) {
     const qStart = Date.now();
     const __t_quality = __ptStart();
@@ -764,7 +728,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     results = this._qualityScorer.scoreResults(results);
     __ptEnd('post:qualityScoring', __t_quality);
 
-    // Blend: final = (1 - w) * original + w * quality
     const w = Math.max(0, Math.min(1, qualityWeight));
     for (const r of results) {
       const orig = r.score ?? r.hybridScore ?? r.rerankScore ?? 0;
@@ -773,7 +736,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     }
     results.sort((a, b) => b.score - a.score);
 
-    // Per-result quality factor logging (top 5)
     if (this.verbose) {
       for (const r of results.slice(0, 5)) {
         this.log(`Quality[${r.metadata?.symbol || r.name || '?'}]: score=${r.quality_score?.toFixed(3)} factors=${JSON.stringify(r.quality_factors)}`);
@@ -791,13 +753,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     };
   }
 
-  // =========================================================================
-  // Apply intent policy — chunkTypeBoosts, maxResults, rerankerWeight
-  // =========================================================================
   let finalK = k;
   const __t_intentPolicy = __ptStart();
   if (intentPolicy && Array.isArray(results) && results.length > 0) {
-    // (a) chunkTypeBoosts: Multiply result scores by per-chunk-type boost factors
     if (intentPolicy.chunkTypeBoosts && Object.keys(intentPolicy.chunkTypeBoosts).length > 0) {
       for (const r of results) {
         const chunkType = r.metadata?.chunk_type || r.chunk_type || r.type;
@@ -810,7 +768,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       results.sort((a, b) => (b.score || 0) - (a.score || 0));
     }
 
-    // (b) rerankerWeight: Modulate rerankScore blending when present
     if (intentPolicy.rerankerWeight != null) {
       const rw = intentPolicy.rerankerWeight;
       for (const r of results) {
@@ -822,7 +779,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       results.sort((a, b) => (b.score || 0) - (a.score || 0));
     }
 
-    // (c) maxResults: the intent policy lowers the final cap (applied by the
+    // The intent policy lowers the final cap (applied by the
     // final-k cut below, after span dedupe, so freed slots still refill).
     if (intentPolicy.maxResults) {
       finalK = Math.min(k, intentPolicy.maxResults);
@@ -830,10 +787,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   }
   __ptEnd('post:intentPolicy', __t_intentPolicy);
 
-  // =========================================================================
-  // Intent-aware file-kind ranking
-  // =========================================================================
-  // Soft-demote docs/examples/tests/types/config files when the query is
+  // Intent-aware file-kind ranking. Soft-demote docs/examples/tests/types/config files when the query is
   // confidently implementation-seeking AND the top-N window contains both
   // demotable and implementation candidates. No-op otherwise. Disable with
   // SWEET_SEARCH_FILE_KIND_RANKING=0; tune SWEET_SEARCH_FILE_KIND_FACTOR.
@@ -994,16 +948,11 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   stats.total_ms = Date.now() - start;
   stats.results_count = Array.isArray(results) ? results.length : 0;
 
-  // Log performance
   if (this.timing) {
     this.logPerformance(stats);
   }
 
-  // Record per-mode telemetry for vocabulary prewarm analytics (Step 0)
-  // =========================================================================
-  // Sibling expansion (dedup re-attach)
-  // =========================================================================
-  // Aliases were skipped during HNSW construction to prevent duplicate-hits
+  // Sibling expansion (dedup re-attach). Aliases were skipped during HNSW construction to prevent duplicate-hits
   // for the same cluster. Re-attach them now so callers can still surface
   // every file matching a search — grouped under the exemplar as result.aliases.
   if (Array.isArray(results) && results.length > 0 && this.codebaseRepo) {
@@ -1039,10 +988,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   return { results, stats, reserve };
 }
 
-/**
- * Compute per-mode cache hit signals for telemetry.
- * Extracted as a pure helper to keep logic testable and auditable.
- */
 export function computeCacheHit(mode, {
   latency = 0,
   embedLatencyMs = 0,
@@ -1069,10 +1014,6 @@ export function computeCacheHit(mode, {
 
   return { lexSubLatency, lexHit, semHit, cacheHit };
 }
-
-// =============================================================================
-// Mixed rerank pool helpers (post-expansion LI / cascade)
-// =============================================================================
 
 /**
  * For each `is_expanded` result with a known file_path + line range, find the

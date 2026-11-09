@@ -242,7 +242,6 @@ function ownStateDir(worktree) {
   try { return !fs.lstatSync(path.join(worktree, STATE_DIR_NAME)).isSymbolicLink(); } catch { return false; }
 }
 
-/** Does a claim (parsed, or null when unreadable) still hold? */
 function claimHolds(prev, ageOfFileMs) {
   if (!prev) return ageOfFileMs < UNREADABLE_HELD_MS;
   const age = Date.now() - Number(prev.atMs || 0);
@@ -251,7 +250,6 @@ function claimHolds(prev, ageOfFileMs) {
   return false;
 }
 
-/** Take the claim; a stale or finished claim is replaced. */
 function takeClaim(file) {
   const payload = JSON.stringify({ status: 'running', pid: process.pid, atMs: Date.now() });
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -572,7 +570,7 @@ export function gcWorktreeIndexes(worktreesDir, { selfPid = 0, nowMs = Date.now(
 const CLONE_LOCK = 'worktree-bootstrap.lock';
 const CLONE_LOCK_WAIT_MS = 120_000;
 
-/** The per-main-index clone lock (O_EXCL; a dead holder's lock is taken over). */
+// O_EXCL; a dead holder's lock is taken over.
 async function takeCloneLock(mainState, waitMs = CLONE_LOCK_WAIT_MS) {
   const file = path.join(mainState, CLONE_LOCK);
   const deadline = Date.now() + waitMs;

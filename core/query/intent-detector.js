@@ -3,13 +3,7 @@
  *
  * Detects user intent from query patterns to apply targeted ranking boosts.
  * Latency: <1ms (regex patterns only)
- *
- * Part of RANKING_FIX_PLAN Strategy #5 (P1 - Zero Latency)
  */
-
-// =============================================================================
-// INTENT PATTERNS
-// =============================================================================
 
 /**
  * Regex patterns for detecting query intent.
@@ -44,17 +38,9 @@ const INTENT_PATTERNS = {
   ],
 };
 
-// =============================================================================
-// INTENT-SPECIFIC BOOST FACTORS
-// =============================================================================
-
 /**
  * Boost factors for entity types based on detected intent.
  * Higher values = stronger preference for that entity type.
- *
- * @example
- * - "definition" intent + "class" entity type = 2.0x boost
- * - "usage" intent + "call" entity type = 1.8x boost
  */
 const INTENT_BOOSTS = {
   definition: {
@@ -92,14 +78,7 @@ const INTENT_BOOSTS = {
   },
 };
 
-// =============================================================================
-// INTENT DETECTION FUNCTIONS
-// =============================================================================
-
 /**
- * Detect the intent of a search query.
- *
- * @param {string} query - The search query
  * @returns {{intent: string, confidence: number, patterns: string[]}}
  *
  * @example
@@ -138,8 +117,6 @@ export function detectIntent(query) {
 }
 
 /**
- * Get the boost factor for an entity type given an intent.
- *
  * @param {string} intent - Detected intent ('definition', 'usage', 'conceptual', 'structural', 'general')
  * @param {string} entityType - Entity type ('class', 'method', 'function', etc.)
  * @returns {number} Boost factor (1.0 = no boost)
@@ -158,8 +135,8 @@ export function getIntentBoost(intent, entityType) {
 /**
  * Apply intent-based boosts to search results.
  *
- * Modifies scores in-place by multiplying with intent-specific boost factors.
- * Results are sorted by new scores after boosting.
+ * Returns new result objects (inputs are not mutated) with scores multiplied by
+ * intent-specific boost factors, sorted by the new scores.
  *
  * @param {Array<{score: number, type: string, [key: string]: any}>} results - Search results with score and type
  * @param {string} query - Original query for intent detection
@@ -179,7 +156,7 @@ export function applyIntentBoosts(results, query) {
   const { intent, confidence } = detectIntent(query);
 
   if (intent === 'general' || confidence < 0.7) {
-    return results; // No boost for general/low-confidence
+    return results;
   }
 
   const boosted = results.map(result => {
@@ -192,14 +169,9 @@ export function applyIntentBoosts(results, query) {
     };
   });
 
-  // Re-sort by boosted score
   boosted.sort((a, b) => b.score - a.score);
 
   return boosted;
 }
-
-// =============================================================================
-// EXPORTS
-// =============================================================================
 
 export default { detectIntent, getIntentBoost, applyIntentBoosts };

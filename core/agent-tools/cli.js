@@ -20,13 +20,10 @@ function writeAll(write, stream, buf) {
 }
 
 /**
- * @param {string} subcommand
- * @param {string[]} args
  * @param {{stderr?: 'on-failure'|'always'}} [opts]
  */
 export async function runAgentToolInProcess(subcommand, args, { stderr = 'on-failure' } = {}) {
   const { real } = installVirtualProcess();
-  // Before the tool runs: a later call of a chained command prints a boundary line.
   resolveChainPosition(real.env);
   const result = await runInVirtualProcess(
     // The real environment object: the tool's writes to it (SWEET_SEARCH_PROJECT_ROOT)

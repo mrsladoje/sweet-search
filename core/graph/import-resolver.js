@@ -199,7 +199,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return text;
   }
 
-  // Nearest ancestor directory (inclusive) of `dir` holding `fileName`.
   const nearestMemo = new Map();
   function nearestWith(dir, fileName) {
     const key = `${fileName}\0${dir}`;
@@ -278,10 +277,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   function declares(rel, family, expected) {
     return rel != null && declaredModules(rel, family).has(expected);
   }
-
-  // -------------------------------------------------------------------------
-  // JavaScript / TypeScript
-  // -------------------------------------------------------------------------
 
   // TypeScript order (modules reference): `./x.js` tries x.ts, x.tsx,
   // x.d.ts, then x.js; extensionless tries .ts, .tsx, .d.ts, .js, .jsx, ...
@@ -379,7 +374,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
   }
 
-  /** Effective paths config for files in `dir` (nearest tsconfig/jsconfig). */
   const effectiveMemo = new Map();
   function effectiveTsconfig(dir) {
     if (effectiveMemo.has(dir)) return effectiveMemo.get(dir);
@@ -633,10 +627,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return resolveWorkspacePackage(clean);
   }
 
-  // -------------------------------------------------------------------------
-  // Python
-  // -------------------------------------------------------------------------
-
   let pyRoots = null;
   function pythonRoots() {
     if (pyRoots) return pyRoots;
@@ -769,10 +759,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return [...byShared.keys()].sort((a, b) => b - a).map((k) => byShared.get(k).sort());
   }
 
-  // -------------------------------------------------------------------------
-  // Rust
-  // -------------------------------------------------------------------------
-
   let rustCrates = null;
   function rustCrateMap() {
     if (rustCrates) return rustCrates;
@@ -811,7 +797,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return null;
   }
 
-  /** Directory holding the child modules of `fromFile`'s module. */
   function rustChildDir(fromFile) {
     const base = path.posix.basename(fromFile);
     const dir = dirOf(fromFile);
@@ -918,10 +903,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return { file, crate: crate == null ? '' : crate };
   }
 
-  // -------------------------------------------------------------------------
-  // Go
-  // -------------------------------------------------------------------------
-
   function goModulePath(modDir) {
     const m = /^module\s+(\S+)/m.exec(readText(join(modDir, 'go.mod') ?? 'go.mod') || '');
     return m ? m[1].replace(/^"|"$/g, '') : null;
@@ -989,10 +970,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // C / C++ / Objective-C
-  // -------------------------------------------------------------------------
-
   function resolveC(fromFile, imp) {
     const spec = imp.spec;
     if (imp.kind === 'quote') {
@@ -1009,10 +986,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const norms = norm(spec);
     return norms ? closest(suffixMatches(norms), fromFile) : null;
   }
-
-  // -------------------------------------------------------------------------
-  // JVM / Ruby / PHP / Dart
-  // -------------------------------------------------------------------------
 
   function resolveJvm(fromFile, imp) {
     if (imp.kind === 'jvm-wildcard') return null;
@@ -1104,10 +1077,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return cand && hasFile(cand) ? cand : null;
   }
 
-  // -------------------------------------------------------------------------
-  // Shared helpers for the languages below
-  // -------------------------------------------------------------------------
-
   const listMemo = new Map();
   /** Entry names of a repo directory (memoised); [] when missing. */
   function listDir(rel) {
@@ -1124,10 +1093,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     for (const c of cands) if (c != null && hasFile(c)) return c;
     return null;
   }
-
-  // -------------------------------------------------------------------------
-  // Stylesheets (Sass / SCSS / Less / CSS)
-  // -------------------------------------------------------------------------
 
   // Sass module resolution (sass-lang.com/documentation/at-rules/use,
   // "Finding the Module"): partial first, then the plain file, then the
@@ -1176,10 +1141,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // Lua
-  // -------------------------------------------------------------------------
-
   // LuaRocks rockspec `build.modules = { ["a.b"] = "src/a/b.lua" }`: the
   // module → file table a builtin build installs from.
   let rockModules = null;
@@ -1221,10 +1182,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // Zig
-  // -------------------------------------------------------------------------
-
   // build.zig named modules: `b.addModule("name", .{ .root_source_file = b.path("src/x.zig") })`,
   // `const m = b.createModule(.{ .root_source_file = ... }); x.addImport("name", m)`.
   const zigModMemo = new Map();
@@ -1259,10 +1216,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const f = zigBuildModules(buildDir).get(spec);
     return f && hasFile(f) ? f : null;
   }
-
-  // -------------------------------------------------------------------------
-  // Haskell
-  // -------------------------------------------------------------------------
 
   // GHC finds module A.B at <source dir>/A/B.hs; source dirs come from the
   // package's `hs-source-dirs` (.cabal) / `source-dirs` (package.yaml), as
@@ -1316,10 +1269,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return closest(suffixMatches(`${rel}.hs`).filter((f) => declares(f, 'haskell', spec)), fromFile);
   }
 
-  // -------------------------------------------------------------------------
-  // Clojure
-  // -------------------------------------------------------------------------
-
   const cljRootMemo = new Map();
   function clojureRoots(fromDir) {
     if (cljRootMemo.has(fromDir)) return cljRootMemo.get(fromDir);
@@ -1361,10 +1310,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
     return null;
   }
-
-  // -------------------------------------------------------------------------
-  // Solidity
-  // -------------------------------------------------------------------------
 
   // Remappings (`prefix=target`, optional `context:` scope) from
   // remappings.txt and foundry.toml, longest prefix first (Solidity docs,
@@ -1420,10 +1365,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // Protocol Buffers
-  // -------------------------------------------------------------------------
-
   // protoc resolves `import "a/b.proto"` against its -I roots; buf uses the
   // module root (buf.yaml) or buf.work.yaml directories.
   const protoRootMemo = new Map();
@@ -1453,10 +1394,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (!spec.includes('/')) return null;
     return closest(suffixMatches(norm(spec) ?? spec), fromFile);
   }
-
-  // -------------------------------------------------------------------------
-  // Small path-based languages
-  // -------------------------------------------------------------------------
 
   function relativeFile(fromFile, spec, exts = ['']) {
     return firstFile(exts.map((e) => join(dirOf(fromFile), spec + e)));
@@ -1532,10 +1469,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (imp.spec.startsWith('/') || imp.spec.startsWith('~')) return null;
     return relativeFile(fromFile, imp.spec) || firstFile([norm(imp.spec)]);
   }
-
-  // -------------------------------------------------------------------------
-  // Swift (SwiftPM targets)
-  // -------------------------------------------------------------------------
 
   // Package.swift targets: `.target(name: "X", path: "P")`; default
   // Sources/<name>, Tests/<name> for test targets (PackageDescription docs).
@@ -1620,10 +1553,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return byName;
   }
 
-  // -------------------------------------------------------------------------
-  // C#
-  // -------------------------------------------------------------------------
-
   let csIndexMemo = null;
   function csIndex() {
     if (csIndexMemo) return csIndexMemo;
@@ -1668,10 +1597,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return others.length >= 1 ? others[0] : null;
   }
 
-  // -------------------------------------------------------------------------
-  // JVM declaration index (Java / Kotlin / Scala / Groovy share packages)
-  // -------------------------------------------------------------------------
-
   let jvmIndexMemo = null;
   function jvmIndex() {
     if (jvmIndexMemo) return jvmIndexMemo;
@@ -1700,10 +1625,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return files.length === 1 ? files[0] : null;
   }
 
-  // -------------------------------------------------------------------------
-  // Elixir module index
-  // -------------------------------------------------------------------------
-
   let exIndexMemo = null;
   function exIndex() {
     if (exIndexMemo) return exIndexMemo;
@@ -1726,10 +1647,6 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const others = files.filter((f) => f !== fromFile);
     return others.length === 1 ? others[0] : null;
   }
-
-  // -------------------------------------------------------------------------
-  // Implicit references (namespace / package / module languages)
-  // -------------------------------------------------------------------------
 
   /**
    * Index entry per name: declaring files split by kind ('type' | 'func'),

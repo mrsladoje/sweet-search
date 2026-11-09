@@ -1,13 +1,11 @@
 /**
  * Gitignore alignment for file admission.
  *
- * Extracted from indexer-utils.js so both full indexing (`discoverFiles`) and
- * the shared admission policy (`admission-policy.js`, used by incremental
- * indexing) run the *same* `.gitignore` logic. The only behavioural change vs
- * the original is that the project root is a parameter instead of the global
- * `PROJECT_ROOT` constant, so the incremental maintainer can align gitignore
- * against the worktree it actually reconciles. Full indexing keeps passing
- * `PROJECT_ROOT` (the default), so its behaviour is unchanged.
+ * Both full indexing (`discoverFiles`) and the shared admission policy
+ * (`admission-policy.js`, used by incremental indexing) run this same
+ * `.gitignore` logic. The project root is a parameter (default `PROJECT_ROOT`),
+ * so the incremental maintainer can align gitignore against the worktree it
+ * actually reconciles.
  */
 
 import fs from 'fs/promises';
@@ -46,10 +44,7 @@ export function isGitignoreAllowlistedAgenticPath(relativePath) {
   );
 }
 
-/**
- * Run `git check-ignore` on a single batch of paths.
- * Returns a list of ignored paths, or null on fatal error.
- */
+/** Ignored paths of one batch (`git check-ignore`), or null on fatal error. */
 function checkIgnoreBatch(batch, projectRoot, reportError) {
   return new Promise((resolve) => {
     const ignoredChunks = [];
@@ -165,13 +160,11 @@ export async function getGitIgnoredPathSet(paths, options = {}) {
 
   const ignored = new Set();
 
-  // Pre-filter paths that traverse symlinks — git check-ignore fatals on these.
-  // Files beyond symlinks are also checked: if the symlink dir itself is ignored,
-  // all files under it are treated as ignored too.
+  // git check-ignore fatals on paths that traverse symlinks. If the symlink dir
+  // itself is ignored, all files under it are treated as ignored too.
   const symlinkPrefixes = await findSymlinkDirs(paths, projectRoot);
   let safePaths = paths;
   if (symlinkPrefixes.length > 0) {
-    // Check if the symlink directories themselves are ignored
     const symlinkDirs = symlinkPrefixes.map(p => p.slice(0, -1)); // remove trailing /
     const symlinkIgnored = await checkIgnoreBatch(symlinkDirs, projectRoot, reportError);
     const ignoredSymlinks = new Set(symlinkIgnored || []);
@@ -180,12 +173,11 @@ export async function getGitIgnoredPathSet(paths, options = {}) {
     for (const p of paths) {
       const matchedPrefix = symlinkPrefixes.find(prefix => p.startsWith(prefix));
       if (matchedPrefix) {
-        // Path traverses a symlink — check if symlink dir is gitignored
         const dir = matchedPrefix.slice(0, -1);
         if (ignoredSymlinks.has(dir)) {
           ignored.add(toPosixPath(p)); // inherit parent's ignored status
         }
-        // Either way, skip git check-ignore (would fatal)
+        // Either way, skip git check-ignore (it would fatal)
       } else {
         safePaths.push(p);
       }

@@ -85,7 +85,6 @@ export class HammingSlab {
     this._wasmIdxU32 = null; // cached views over WASM memory (rebuilt on grow)
     this._wasmOutU32 = null;
 
-    // WASM mirror (optional)
     this.wasm = null;
     this.wasmMem = null;
     const mod = getWasmModule();
@@ -179,7 +178,6 @@ export class HammingSlab {
     }
   }
 
-  /** Hamming distance from the staged query to vector idx. */
   distToQuery(idx) {
     if (this.wasm) {
       return this.wasm.hamming_distance(0, SLAB_BASE + idx * this.dim, this.dim);
@@ -201,7 +199,6 @@ export class HammingSlab {
     return c;
   }
 
-  /** Hamming distance between two resident vectors. */
   dist(aIdx, bIdx) {
     if (this.wasm) {
       return this.wasm.hamming_distance(
@@ -235,7 +232,6 @@ export class HammingSlab {
     return this._batch(0, n);
   }
 
-  /** Batch: distances from resident vector targetIdx to batchIdx[0..n). */
   batchToVector(targetIdx, n) {
     if (this.wasm) return this._batch(SLAB_BASE + targetIdx * this.dim, n);
     const idx = this.batchIdx;

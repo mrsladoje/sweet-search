@@ -8,11 +8,6 @@
 import { readdirSync } from 'fs';
 import { join } from 'path';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// Common stop words to exclude from NL terms
 export const STOP_WORDS = new Set([
   'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
   'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
@@ -26,23 +21,17 @@ export const STOP_WORDS = new Set([
   'or', 'if', 'while', 'that', 'this', 'it', 'its', 'i', 'we', 'they',
   'he', 'she', 'you', 'me', 'him', 'her', 'us', 'them', 'my', 'your',
   'his', 'our', 'their', 'what', 'which', 'who', 'whom',
-  // Code stop words
   'var', 'let', 'const', 'function', 'return', 'class', 'new', 'true',
   'false', 'null', 'undefined', 'void', 'typeof', 'instanceof',
   'import', 'export', 'default', 'from', 'require', 'module',
 ]);
 
-// File extensions for source code scanning
 export const SOURCE_EXTENSIONS = new Set([
   '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
   '.py', '.pyi', '.go', '.rs', '.java', '.kt', '.kts',
   '.c', '.cpp', '.cc', '.h', '.hpp', '.cs', '.rb',
   '.php', '.swift', '.scala', '.ex', '.exs', '.lua',
 ]);
-
-// ---------------------------------------------------------------------------
-// Identifier Splitting
-// ---------------------------------------------------------------------------
 
 /**
  * Split an identifier into constituent words.
@@ -54,13 +43,11 @@ export const SOURCE_EXTENSIONS = new Set([
  *   http_server_utils → [http, server, utils]
  *   MAX_RETRY_COUNT   → [MAX, RETRY, COUNT]
  *
- * @param {string} ident - Identifier to split
  * @returns {string[]} Lowercase token parts
  */
 export function splitIdentifier(ident) {
   if (!ident || ident.length < 2) return ident ? [ident.toLowerCase()] : [];
 
-  // Replace separators (_, -, .) with spaces first
   let spaced = ident.replace(/[_\-./]/g, ' ');
 
   // Insert space before transitions: aB, ABc (acronym → word), 2D (digit → upper)
@@ -68,7 +55,6 @@ export function splitIdentifier(ident) {
   spaced = spaced.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
   spaced = spaced.replace(/([0-9])([A-Z])/g, '$1 $2');
 
-  // Split on whitespace and filter
   const parts = spaced
     .split(/\s+/)
     .map(p => p.trim().toLowerCase())
@@ -76,10 +62,6 @@ export function splitIdentifier(ident) {
 
   return parts;
 }
-
-// ---------------------------------------------------------------------------
-// Term Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Add or update a term in the terms map. Keeps the highest score.
@@ -93,18 +75,12 @@ export function addTerm(terms, term, score, source) {
   }
 }
 
-/**
- * Merge an array of term objects into a Map.
- */
 export function mergeTerms(target, termArray) {
   for (const t of termArray) {
     addTerm(target, t.term, t.score, t.source);
   }
 }
 
-/**
- * Convert terms Map to sorted array.
- */
 export function termsToArray(terms) {
   return [...terms.values()]
     .sort((a, b) => b.score - a.score);

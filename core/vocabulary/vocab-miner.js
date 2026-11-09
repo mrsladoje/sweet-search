@@ -20,7 +20,6 @@ import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
 import { pageRank, loadGraph, buildAdjacency } from '../graph/repo-map.js';
 
-// Import from sub-modules
 import {
   STOP_WORDS, SOURCE_EXTENSIONS,
   splitIdentifier, addTerm, mergeTerms, termsToArray, walkShallow,
@@ -37,9 +36,6 @@ import {
   SECRET_PATTERNS, NL_MINING_TIMEOUT_MS,
 } from './vocab-miner-nl.js';
 
-// ---------------------------------------------------------------------------
-// Barrel Re-exports (backward compatibility layer)
-// ---------------------------------------------------------------------------
 // Prefer direct imports from leaf modules for new code:
 //   - ./vocab-miner-utils.js
 //   - ./vocab-miner-extractors.js
@@ -62,11 +58,6 @@ export {
   SECRET_PATTERNS, NL_MINING_TIMEOUT_MS,
 } from './vocab-miner-nl.js';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// Manifest files to mine
 const MANIFEST_FILES = [
   { file: 'package.json', extract: extractNpmDeps },
   { file: 'Cargo.toml', extract: extractCargoDeps },
@@ -88,7 +79,6 @@ const COUNT_SKIP_DIRS = new Set([
  * Fallback performs iterative directory traversal (avoids recursion depth limits).
  */
 function estimateTotalSourceFiles(root) {
-  // Fast path: ask git for tracked files, then filter by source extensions.
   try {
     const listed = execFileSync(
       'git',
@@ -107,7 +97,6 @@ function estimateTotalSourceFiles(root) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
 
-  // Fallback: full traversal (still bounded by skip-dir rules).
   const stack = [root];
   let count = 0;
 
@@ -135,21 +124,13 @@ function estimateTotalSourceFiles(root) {
   return count;
 }
 
-// ---------------------------------------------------------------------------
-// 1. Structural Mining
-// ---------------------------------------------------------------------------
-
 /**
- * Mine vocabulary terms from file paths, directories, and package manifests.
- *
- * @param {string} [projectRoot] - Project root directory
  * @returns {{ terms: Array<{term: string, score: number, source: string}> }}
  */
 export function mineStructural(projectRoot) {
   const root = projectRoot || PROJECT_ROOT;
   const terms = new Map(); // term -> { score, source }
 
-  // Mine top-level directory names
   try {
     const entries = readdirSync(root, { withFileTypes: true });
     for (const entry of entries) {
@@ -166,7 +147,6 @@ export function mineStructural(projectRoot) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
 
-  // Mine source file paths (walk top 3 levels)
   try {
     const files = walkShallow(root, 3);
     for (const filePath of files) {
@@ -176,7 +156,6 @@ export function mineStructural(projectRoot) {
       const rel = relative(root, filePath);
       const parts = rel.split(sep).filter(Boolean);
 
-      // File name tokens (without extension)
       const fileName = basename(filePath, ext);
       for (const part of splitIdentifier(fileName)) {
         if (part.length > 2 && !STOP_WORDS.has(part)) {
@@ -201,7 +180,6 @@ export function mineStructural(projectRoot) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
 
-  // Mine package manifests
   for (const { file, extract } of MANIFEST_FILES) {
     const manifestPath = join(root, file);
     if (!existsSync(manifestPath)) continue;
@@ -210,7 +188,6 @@ export function mineStructural(projectRoot) {
       const deps = extract(content);
       for (const dep of deps) {
         addTerm(terms, dep, 0.5, 'dependency');
-        // Split scoped/compound dep names
         const depParts = dep.replace(/^@[^/]+\//, '').split(/[-_./]/);
         for (const part of depParts) {
           if (part.length > 2 && !STOP_WORDS.has(part.toLowerCase())) {
@@ -223,7 +200,6 @@ export function mineStructural(projectRoot) {
     }
   }
 
-  // Mine .env.example keys
   try {
     const envExPath = join(root, '.env.example');
     if (existsSync(envExPath)) {
@@ -245,17 +221,7 @@ export function mineStructural(projectRoot) {
   return { terms: termsToArray(terms) };
 }
 
-// ---------------------------------------------------------------------------
-// 2. Symbol Mining
-// ---------------------------------------------------------------------------
-
 /**
- * Mine vocabulary from source code symbols: imports, exports, class/function names.
- *
- * @param {string} [projectRoot] - Project root directory
- * @param {object} [options]
- * @param {number} [options.maxFiles=500] - Max files to scan
- * @param {number} [options.maxFileSize=100000] - Max bytes per file
  * @returns {{ terms: Array<{term: string, score: number, source: string}> }}
  */
 export function mineSymbols(projectRoot, options = {}) {
@@ -272,7 +238,6 @@ export function mineSymbols(projectRoot, options = {}) {
     return { terms: [] };
   }
 
-  // Limit file count
   if (files.length > maxFiles) files = files.slice(0, maxFiles);
 
   for (const filePath of files) {
@@ -294,31 +259,22 @@ export function mineSymbols(projectRoot, options = {}) {
 
     const ext = extname(filePath);
 
-    // Extract imports
     extractImports(content, ext, terms);
 
-    // Extract exports
     extractExports(content, ext, terms);
 
-    // Extract class/function/method names
     extractDefinitions(content, ext, terms);
 
-    // Extract constants (SCREAMING_SNAKE_CASE)
     extractConstants(content, terms);
   }
 
   return { terms: termsToArray(terms) };
 }
 
-// ---------------------------------------------------------------------------
-// 3. Code Graph Mining
-// ---------------------------------------------------------------------------
-
 /**
  * Mine vocabulary from the code-graph.db entity/relationship graph.
  * Leverages PageRank scores to weight terms by graph importance.
  *
- * @param {string} [dbPath] - Path to code-graph.db
  * @returns {{ terms: Array<{term: string, score: number, source: string}>, pageRankScores: Map<string, number> }}
  */
 export function mineCodeGraph(dbPath) {
@@ -338,8 +294,8 @@ export function mineCodeGraph(dbPath) {
     return { terms: [], pageRankScores };
   }
 
-  // Run PageRank for importance scoring
   const { outEdges, allNodes } = buildAdjacency(graph);
+  // Run PageRank for importance scoring
   pageRankScores = pageRank(outEdges, allNodes);
 
   // Compute in-degree for hub detection
@@ -350,7 +306,6 @@ export function mineCodeGraph(dbPath) {
     }
   }
 
-  // Mine entity names weighted by PageRank
   const maxPR = Math.max(...pageRankScores.values(), 0.001);
 
   for (const ent of graph.entities) {
@@ -370,14 +325,12 @@ export function mineCodeGraph(dbPath) {
       ent.type === 'object' || ent.type === 'actor';
     if (isPublic) score = Math.min(score * 1.2, 1.0);
 
-    // Leaf penalty
     const outDeg = (outEdges.get(ent.id)?.size) || 0;
+    // Leaf penalty
     if (inDeg === 0 && outDeg <= 1) score *= 0.5;
 
-    // Add entity name
     addTerm(terms, ent.name, score, 'graph-entity');
 
-    // Add split parts
     for (const part of splitIdentifier(ent.name)) {
       if (part.length > 2 && !STOP_WORDS.has(part)) {
         addTerm(terms, part, score * 0.6, 'graph-entity-part');
@@ -388,17 +341,7 @@ export function mineCodeGraph(dbPath) {
   return { terms: termsToArray(terms), pageRankScores };
 }
 
-// ---------------------------------------------------------------------------
-// 5. Git Mining
-// ---------------------------------------------------------------------------
-
 /**
- * Mine vocabulary from git history: commit messages, branch names, hot files.
- *
- * @param {string} [projectRoot]
- * @param {object} [options]
- * @param {number} [options.maxCommits=200]
- * @param {number} [options.maxDays=30]
  * @returns {{ terms: Array<{term: string, score: number, source: string}> }}
  */
 export function mineGit(projectRoot, options = {}) {
@@ -407,7 +350,6 @@ export function mineGit(projectRoot, options = {}) {
   const maxDays = options.maxDays ?? 30;
   const terms = new Map();
 
-  // Commit messages
   try {
     const log = execFileSync(
       'git', ['log', `--format=%s`, '-n', String(maxCommits), `--since=${maxDays} days ago`],
@@ -424,7 +366,6 @@ export function mineGit(projectRoot, options = {}) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
 
-  // Branch names
   try {
     const branches = execFileSync(
       'git', ['branch', '--all', '--format=%(refname:short)'],
@@ -444,7 +385,6 @@ export function mineGit(projectRoot, options = {}) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
 
-  // Frequently changed files (hot files)
   try {
     const hotFiles = execFileSync(
       'git', ['log', '--format=', '--name-only', '-n', String(maxCommits), `--since=${maxDays} days ago`],
@@ -456,7 +396,6 @@ export function mineGit(projectRoot, options = {}) {
       fileCounts.set(file, (fileCounts.get(file) || 0) + 1);
     }
 
-    // Top 20 hottest files
     const sorted = [...fileCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
     const maxCount = sorted.length > 0 ? sorted[0][1] : 1;
 
@@ -476,15 +415,7 @@ export function mineGit(projectRoot, options = {}) {
   return { terms: termsToArray(terms) };
 }
 
-// ---------------------------------------------------------------------------
-// Unified API
-// ---------------------------------------------------------------------------
-
 /**
- * Run all miners and merge results into a unified term list.
- *
- * @param {string} [projectRoot]
- * @param {string} [dbPath]
  * @param {Array} [communities] - From detectCommunities()
  * @param {object} [options]
  * @param {boolean} [options.deep=false] - Include git mining
@@ -497,15 +428,12 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
   let communityPhrases = [];
   let totalFiles = 0;
 
-  // 1. Structural mining
   const structural = mineStructural(root);
   mergeTerms(mergedTerms, structural.terms);
 
-  // 2. Symbol mining
   const symbols = mineSymbols(root, options);
   mergeTerms(mergedTerms, symbols.terms);
 
-  // 3. Code graph mining
   const graph = mineCodeGraph(dbPath);
   mergeTerms(mergedTerms, graph.terms);
   pageRankScores = graph.pageRankScores;
@@ -527,12 +455,10 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
     }
   }
 
-  // 4. Community NL mining
   if (communities && communities.length > 0) {
     const nl = mineNLContent(communities, root, { ...options, codeGraphNames });
     communityPhrases = nl.communityPhrases;
 
-    // Flatten community phrases into terms
     for (const cp of communityPhrases) {
       for (const phrase of cp.phrases) {
         addTerm(mergedTerms, phrase.text, phrase.score, phrase.type);
@@ -540,7 +466,6 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
     }
   }
 
-  // 5. Git mining (deep mode only)
   if (options.deep) {
     const git = mineGit(root, options);
     mergeTerms(mergedTerms, git.terms);
@@ -562,7 +487,6 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
   };
 }
 
-// Backward compatibility for existing default-import callers.
 export default {
   mineStructural,
   mineSymbols,

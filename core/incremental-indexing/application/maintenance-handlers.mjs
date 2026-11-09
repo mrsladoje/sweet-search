@@ -1,9 +1,6 @@
 /**
- * Maintenance handlers — real implementations for the four reclamation
- * tiers the soak REPORT.md flagged as queue-only.
- *
- * Each handler is registered by `defaultMaintenanceHandlers()` in
- * `maintenance-worker.mjs`. Handlers run inside the reconcile daemon's
+ * Maintenance handlers: the reclamation tiers. Each handler is registered by
+ * `defaultMaintenanceHandlers()` in `maintenance-worker.mjs`. Handlers run inside the reconcile daemon's
  * single-writer process, so on-disk artifacts have one writer at a time.
  *
  * Atomicity contract: per artifact-family, each handler writes its new
@@ -71,10 +68,6 @@ function float32FromBuffer(buffer) {
   const view = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   return new Float32Array(view);
 }
-
-/* ------------------------------------------------------------------ *
- * sparse_gram                                                         *
- * ------------------------------------------------------------------ */
 
 // Files above which the fold runs in a child process (it reads every file); one at
 // a time per base.
@@ -190,10 +183,6 @@ export async function sparseGramHandler(job, { stateDir, projectRoot = null, onP
   };
 }
 
-/* ------------------------------------------------------------------ *
- * binary_hnsw                                                         *
- * ------------------------------------------------------------------ */
-
 // The graph build of a large base runs in a child process across drains; one at a
 // time per index (this process is the index's single writer).
 let hnswBuild = null;
@@ -276,10 +265,6 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
   };
 }
 
-/* ------------------------------------------------------------------ *
- * li_segment                                                          *
- * ------------------------------------------------------------------ */
-
 /**
  * Per-segment recompaction. Reads the sealed segment, drops docs marked
  * by the segment's stale bitmap, writes a new compacted segment, then
@@ -325,7 +310,7 @@ export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
 
   // Read this segment's LIVE docs (tombstoned docs dropped per the stale
   // bitmap) in insertion order. The already-quantized entries are reused
-  // verbatim; only this segment is read, not the whole index.
+  // verbatim; only this segment is read.
   const { index, collected: ordered } = await collectLiveDocs(stubPath, segmentDir, manifest, new Set([segmentPath]));
   progress('maintenance:li-segment:loaded');
   const liveDocs = new Map();
@@ -335,7 +320,7 @@ export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
     return { skipped: 'no-live-docs', segmentId };
   }
 
-  // Use a writer purely as the SSLX serializer; we never call `add()`.
+  // The writer is only the SSLX serializer; `add()` is never called.
   const writer = new LateInteractionIndex({
     indexPath: stubPath,
     loadExisting: false,
@@ -371,10 +356,6 @@ export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
   };
 }
 
-/* ------------------------------------------------------------------ *
- * li_segments (batch merge)                                           *
- * ------------------------------------------------------------------ */
-
 /**
  * Batch-merge small live LI segments into fewer larger segments so the
  * segment count stays bounded (the per-segment `li_segment` handler only
@@ -386,17 +367,12 @@ export async function liSegmentsHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
   const graceRaw = Number.parseInt(process.env.SWEET_SEARCH_LI_MERGE_GRACE_MS || '', 10);
   const graceMs = Number.isFinite(graceRaw) && graceRaw >= 0 ? graceRaw : LI_MERGE_GRACE_MS;
-  // A `pending_delete` re-fire only needs the cheap quarantine/orphan sweep —
-  // never reload the full index just to unlink a few deferred files.
+  // A `pending_delete` re-fire only needs the cheap quarantine/orphan sweep, not a full index reload.
   const sweepOnly = job?.reason === 'pending_delete';
   const result = await mergeLiSegments(stateDir, { graceMs, sweepOnly });
   progress('maintenance:li-segments:merged');
   return result;
 }
-
-/* ------------------------------------------------------------------ *
- * vector_gc (retired-row physical prune)                             *
- * ------------------------------------------------------------------ */
 
 /**
  * Physically delete retired `codebase.db` vector rows that no live or
@@ -419,10 +395,6 @@ export function vectorGcHandler(job, { stateDir, onProgress = null }) {
   return result;
 }
 
-/* ------------------------------------------------------------------ *
- * graph_gc (retired graph-row physical prune)                         *
- * ------------------------------------------------------------------ */
-
 /**
  * Physically delete retired `code-graph.db` rows (entities + relationships +
  * HCGS summaries) that no live or future reader can observe, keeping the
@@ -444,10 +416,6 @@ export function graphGcHandler(job, { stateDir, onProgress = null }) {
   progress('maintenance:graph-gc:done');
   return result;
 }
-
-/* ------------------------------------------------------------------ *
- * graph_pagerank (recompute the page_rank column)                     *
- * ------------------------------------------------------------------ */
 
 /**
  * Recompute PageRank over the live graph, as the full build does, and record the time and
@@ -472,10 +440,6 @@ export function graphPageRankHandler(job, { stateDir, onProgress = null }) {
     db.close();
   }
 }
-
-/* ------------------------------------------------------------------ *
- * vocab_refresh (communities + vocabulary artifacts)                  *
- * ------------------------------------------------------------------ */
 
 let vocabRun = null;
 
@@ -528,15 +492,8 @@ export function vocabRefreshInFlight() {
   return vocabRun;
 }
 
-/* ------------------------------------------------------------------ *
- * Registry                                                            *
- * ------------------------------------------------------------------ */
-
 /**
- * Build the full handler set used by the maintenance worker. The fts5
- * handler stays in maintenance-worker.mjs::defaultMaintenanceHandlers
- * (built-in to the same file as the worker); this returns the four
- * additional handlers and lets the caller merge them.
+ * The handlers other than fts5; fts5 stays in maintenance-worker.mjs::defaultMaintenanceHandlers.
  */
 export function reclamationHandlers(stateDir, { embed = null } = {}) {
   return {

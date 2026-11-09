@@ -58,9 +58,8 @@ function resetCache() {
   _cachedExtraMatchers = null;
 }
 
-// Precompiled Minimatch instances — `minimatch(p, g, opts)` recompiles the
-// glob to a regex on every call; `new Minimatch(g, opts).match(p)` is the
-// documented equivalent with the compile amortized.
+// `minimatch(p, g, opts)` recompiles the glob to a regex on every call; a
+// precompiled `new Minimatch(g, opts).match(p)` amortizes the compile.
 const _excludeMatchersByRoot = new Map();
 
 function getExcludeMatchers(projectRoot) {

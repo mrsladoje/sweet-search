@@ -1,6 +1,4 @@
 /**
- * Graph Expansion Module
- *
  * Expands search results by following relationship edges in the entity graph.
  * Given top-k search results, performs 1-hop (or 2-hop) traversal to include
  * related code chunks (imports, extends, implements, uses, calls).
@@ -19,7 +17,6 @@ import {
 import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
 import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
 
-// Default edge types to follow during expansion
 const DEFAULT_EDGE_TYPES = new Set(['imports', 'extends', 'implements', 'uses', 'calls']);
 
 // SQLite-variable-limit guard. Mirrors SAFE_IN_CLAUSE_BATCH in
@@ -71,8 +68,6 @@ function __ptEnd(stage, t0) {
   (buf[stage] = buf[stage] || []).push(ms);
 }
 
-// --- Token Estimation Helpers ---
-
 // Language-specific tokens-per-line averages (from CodeSearchNet analysis)
 const TOKENS_PER_LINE = {
   java: 15, kotlin: 14, swift: 13,
@@ -81,7 +76,6 @@ const TOKENS_PER_LINE = {
   ruby: 9, python: 8,
 };
 
-// Map file extensions to language keys
 const EXT_TO_LANG = {
   js: 'javascript', ts: 'typescript', py: 'python', rb: 'ruby',
   kt: 'kotlin', cc: 'cpp', cxx: 'cpp', h: 'c', hpp: 'cpp', m: 'c',
@@ -119,11 +113,9 @@ function fallbackTokenEstimate(result) {
  */
 export function loadChunkTexts(codebaseDbOrRepo, ids) {
   if (!codebaseDbOrRepo || !ids || ids.length === 0) return new Map();
-  // Repository path (preferred)
   if (typeof codebaseDbOrRepo.getChunkTexts === 'function') {
     return codebaseDbOrRepo.getChunkTexts(ids);
   }
-  // Legacy raw-DB path (backward compat)
   try {
     _assertInClauseSize(ids.length, 'graph-expansion.getChunkTexts');
     const ph = ids.map(() => '?').join(',');
@@ -172,7 +164,6 @@ export function computeTokenEstimates(results, options = {}) {
     }
   }
 
-  // Batch-load original chunk texts from codebase.db
   const textMap = loadChunkTexts(codebaseDb, originalIds);
   for (let j = 0; j < originalIds.length; j++) {
     const text = textMap.get(originalIds[j]);
@@ -188,7 +179,6 @@ export function computeTokenEstimates(results, options = {}) {
 const HOP_DECAY = 0.6;
 const HOP2_DECAY = 0.35;
 
-// Edge priority scores for adaptive 2-hop ranking
 const EDGE_PRIORITY = {
   extends: 4,
   implements: 4,
@@ -208,7 +198,6 @@ const EDGE_ALPHA_BONUS = {
 };
 const FLOW_THRESHOLD = 0.05;
 
-// Structural entity type boosts for reranking
 const TYPE_BOOST = {
   class: 1.3,
   function: 1.2,
@@ -247,11 +236,6 @@ function blendScores(graphScore, cosineSim, weight) {
 }
 
 /**
- * Expand search results using the entity relationship graph.
- *
- * @param {import('better-sqlite3').Database} db - The code graph database
- * @param {Array} results - Initial search results with entity IDs
- * @param {Object} options
  * @param {string} options.expandMode - 'none' | '1hop' | '2hop'
  * @param {number} options.maxExpanded - Max expanded results to add
  * @param {number} options.tokenBudget - Max total tokens in expanded set
@@ -304,7 +288,6 @@ export function expandResults(db, results, options = {}) {
 
   if (expandMode === 'none' || results.length === 0) return results;
 
-  // Collect entity IDs from results
   const __t_seeds = __ptStart();
   const seedIds = collectSeedIds(db, results, { manifestEpoch });
   __ptEnd('expand:collectSeedIds', __t_seeds);
@@ -315,7 +298,6 @@ export function expandResults(db, results, options = {}) {
   const expanded = expandOneHop(db, seedIds, edgeTypes, { manifestEpoch });
   __ptEnd('expand:expandOneHop', __t_hop1);
 
-  // 2-hop expansion (if requested)
   if (expandMode === '2hop' && expanded.size > 0) {
     const __t_hop2 = __ptStart();
     if (adaptiveHop2) {
@@ -342,13 +324,11 @@ export function expandResults(db, results, options = {}) {
 
   if (expanded.size === 0) return results;
 
-  // Look up entity details for expanded IDs, respecting maxExpanded
   const expandedIds = [...expanded.keys()].slice(0, maxExpanded);
   const __t_lookup = __ptStart();
   let expandedResults = lookupEntities(db, expandedIds, expanded, { manifestEpoch });
   __ptEnd('expand:lookupEntities', __t_lookup);
 
-  // F1 envelope cap: drop expanded entities exceeding line cap (agent format only).
   if (envelopeCapEnabled && expandedResults.length > 0) {
     const beforeLen = expandedResults.length;
     expandedResults = expandedResults.filter(er => {
@@ -360,7 +340,6 @@ export function expandResults(db, results, options = {}) {
     }
   }
 
-  // Score expanded results relative to original results
   const maxOriginalScore = Math.max(...results.map(r => r.score || 0), 1);
   for (const er of expandedResults) {
     const hops = er.expansion?.hops || 1;
@@ -368,7 +347,6 @@ export function expandResults(db, results, options = {}) {
     er.score = maxOriginalScore * decay;
   }
 
-  // Rerank expanded results using composite scoring (file proximity + entity type + semantic)
   const __t_rerank = __ptStart();
   rerankExpanded(expandedResults, results, {
     queryInt8,
@@ -378,7 +356,6 @@ export function expandResults(db, results, options = {}) {
   });
   __ptEnd('expand:rerankExpanded', __t_rerank);
 
-  // Apply token budget
   const __t_budget = __ptStart();
   const { results: budgeted, stats: budgetStats } = applyTokenBudget(
     [...results, ...expandedResults], tokenBudget,
@@ -391,11 +368,8 @@ export function expandResults(db, results, options = {}) {
 }
 
 /**
- * Collect entity IDs from search results.
  * Tries entity_id from metadata, then falls back to file_path + line range matching.
  *
- * @param {import('better-sqlite3').Database} db
- * @param {Array} results
  * @returns {Set<string>}
  */
 function collectSeedIds(db, results, options = {}) {
@@ -488,14 +462,6 @@ function collectSeedIds(db, results, options = {}) {
   return seedIds;
 }
 
-/**
- * Perform 1-hop graph expansion from seed entity IDs.
- *
- * @param {import('better-sqlite3').Database} db
- * @param {Set<string>} seedIds
- * @param {Set<string>} edgeTypes
- * @returns {Map<string, {via: string, direction: string, score: number, hops?: number}>}
- */
 /** Reverse-edge rows whose source_id is an entity row (any epoch), in order. */
 function keepEntitySources(db, rels) {
   if (rels.length === 0) return rels;
@@ -514,13 +480,13 @@ function keepEntitySources(db, rels) {
   return known.size === ids.length ? rels : rels.filter(r => known.has(r.source_id));
 }
 
+/** @returns {Map<string, {via: string, direction: string, score: number, hops?: number}>} */
 export function expandOneHop(db, seedIds, edgeTypes, options = {}) {
   const expanded = new Map();
   const seedArray = [...seedIds];
   _assertInClauseSize(seedArray.length, 'graph-expansion.expandOneHop.seeds');
   const placeholders = seedArray.map(() => '?').join(',');
 
-  // Forward edges: seed -> neighbor
   let forwardRels;
   try {
     const relVis = _relationshipVisibility(db, options.manifestEpoch);
@@ -533,7 +499,6 @@ export function expandOneHop(db, seedIds, edgeTypes, options = {}) {
     forwardRels = [];
   }
 
-  // Reverse edges: neighbor -> seed
   let reverseRels;
   try {
     const relVis = _relationshipVisibility(db, options.manifestEpoch);
@@ -573,9 +538,6 @@ export function expandOneHop(db, seedIds, edgeTypes, options = {}) {
 }
 
 /**
- * Perform 2nd-hop expansion from the 1-hop neighbors.
- *
- * @param {import('better-sqlite3').Database} db
  * @param {Set<string>} seedIds - Original seeds
  * @param {Map<string, Object>} expanded - 1-hop expansion map (mutated in place)
  * @param {Set<string>} edgeTypes
@@ -671,11 +633,8 @@ export function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) 
  * Perform adaptive 2nd-hop expansion with per-edge-type alpha decay,
  * degree normalization, and flow-based early stopping (PathRAG-style).
  *
- * @param {import('better-sqlite3').Database} db
  * @param {Set<string>} seedIds - Original seed entity IDs
  * @param {Map<string, Object>} hop1Expanded - 1-hop expansion map (mutated in place)
- * @param {Set<string>} edgeTypes - Allowed edge types
- * @param {Object} options
  * @param {number} options.maxHop2 - Max 2-hop entities to add
  * @param {number} options.tokenBudget - Token budget for 2-hop expansion
  * @returns {{ added: number, budgetUsed: number, candidates: number }}
@@ -717,7 +676,6 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
     degreeMap = new Map();
   }
 
-  // Query candidate 2-hop targets with source, weights, and line ranges
   let rawCandidates;
   try {
     const entityVis = _entityVisibility(db, options.manifestEpoch, 'e');
@@ -733,7 +691,6 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
     return { added: 0, budgetUsed: 0, candidates: 0 };
   }
 
-  // Filter by edge types and score all paths.
   const excluded = new Set([...seedIds, ...hop1Expanded.keys()]);
   const vectorCache = semanticEnabled ? new Map() : null;
   const scoredCandidates = [];
@@ -819,7 +776,6 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
       }
     }
 
-    // PathRAG-style early stopping
     if (score < FLOW_THRESHOLD) continue;
 
     const prev = bestByTarget.get(c.target_id);
@@ -829,10 +785,8 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
 
   const scored = [...bestByTarget.values()];
 
-  // Sort by composite score descending
   scored.sort((a, b) => b.score - a.score);
 
-  // Greedily select candidates within token budget and maxHop2 limit
   let budgetUsed = 0;
   let count = 0;
 
@@ -858,14 +812,6 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
   return { added: count, budgetUsed, candidates: scored.length };
 }
 
-/**
- * Look up entity details for expanded IDs.
- *
- * @param {import('better-sqlite3').Database} db
- * @param {string[]} expandedIds
- * @param {Map<string, Object>} expansionMeta
- * @returns {Array}
- */
 function lookupEntities(db, expandedIds, expansionMeta, options = {}) {
   if (expandedIds.length === 0) return [];
   _assertInClauseSize(expandedIds.length, 'graph-expansion.lookupEntities');
@@ -937,13 +883,11 @@ export function rerankExpanded(expandedResults, seedResults, options = {}) {
   for (const er of expandedResults) {
     let rerankScore = er.score || 0;
 
-    // File proximity boost: entities in same file as seeds are more relevant
     const erFile = er.file_path || er.file || er.metadata?.path;
     if (erFile && seedFiles.has(erFile)) {
       rerankScore *= 1.5;
     }
 
-    // Entity type relevance: structural entities are more valuable
     const entType = er.type || er.metadata?.chunk_type;
     if (TYPE_BOOST[entType]) {
       rerankScore *= TYPE_BOOST[entType];
@@ -977,18 +921,14 @@ export function rerankExpanded(expandedResults, seedResults, options = {}) {
     }
   }
 
-  // Re-sort by reranked score descending
   expandedResults.sort((a, b) => (b.score || 0) - (a.score || 0));
   return expandedResults;
 }
 
 /**
- * Apply token budget to limit total result set size.
  * Uses accurate token counts from chunk text when available,
  * falls back to language-specific per-line multipliers.
  *
- * @param {Array} results
- * @param {number} budget - Total token budget
  * @param {Object} [options]
  * @param {number} [options.expandedBudget] - Separate budget for expanded results
  * @param {import('better-sqlite3').Database} [options.codebaseDb] - For chunk text lookup
@@ -998,7 +938,6 @@ export function rerankExpanded(expandedResults, seedResults, options = {}) {
 export function applyTokenBudget(results, budget, options = {}) {
   const { expandedBudget, codebaseDb, readFileLines } = options;
 
-  // Pre-compute accurate token estimates when data sources are available
   const tokenEstimates = (codebaseDb || readFileLines)
     ? computeTokenEstimates(results, { codebaseDb, readFileLines })
     : new Map();
@@ -1015,7 +954,6 @@ export function applyTokenBudget(results, budget, options = {}) {
 
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
-    // Use accurate estimate if available, otherwise fall back to per-language heuristic
     const accurate = tokenEstimates.get(i);
     const estimatedTokens = (accurate != null && accurate > 0) ? accurate : fallbackTokenEstimate(r);
     const isExpanded = !!r.is_expanded;
@@ -1024,7 +962,6 @@ export function applyTokenBudget(results, budget, options = {}) {
     // Check total budget (always include at least one result)
     if (totalTokens + estimatedTokens > budget && budgeted.length > 0) break;
 
-    // Check expanded-specific budget
     if (isExpanded && expandedBudget != null && expandedTokens + estimatedTokens > expandedBudget) {
       continue;
     }
@@ -1033,7 +970,6 @@ export function applyTokenBudget(results, budget, options = {}) {
     if (isExpanded) expandedTokens += estimatedTokens;
     budgeted.push(r);
 
-    // Track per-category stats
     if (!isExpanded) {
       stats.original.count++;
       stats.original.tokens += estimatedTokens;
@@ -1051,10 +987,6 @@ export function applyTokenBudget(results, budget, options = {}) {
 }
 
 /**
- * Get expansion statistics for a set of entities.
- *
- * @param {import('better-sqlite3').Database} db
- * @param {string[]} entityIds
  * @returns {{ total: number, byType: Record<string, number> }}
  */
 export function getExpansionStats(db, entityIds, options = {}) {

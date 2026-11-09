@@ -1,7 +1,7 @@
 /**
  * Sweet Search Configuration v2.3 (SOTA December 2025)
  *
- * Public facade — DDD Migration Phase 4 complete.
+ * Public facade.
  * All config lives in core/infrastructure/config/*.js.
  * This file re-exports everything as the stable public API.
  *
@@ -21,6 +21,5 @@
  * - https://huggingface.co/lightonai/LateOn-Code
  */
 
-// This repo is "type": "module" — use ESM syntax only.
 // Data directory: '.sweet-search' (default, configurable via SWEET_SEARCH_DATA_DIR)
 export * from './infrastructure/config/index.js';

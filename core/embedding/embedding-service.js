@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
 /**
- * Embedding Service v2.2 (SOTA December 2025)
- *
  * Facade module - imports from specialized sub-modules and re-exports all public APIs.
  * Hub functions (generateEmbedding, getEmbedding, etc.) live here because they
  * orchestrate across remote, local-model, and cache sub-modules.
@@ -13,7 +11,6 @@ import { bootLog } from '../infrastructure/boot-log.js';
 import { recordEncode } from '../infrastructure/inference-provenance.js';
 import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, wasmInt8BatchDot, isWasmAvailable } from '../infrastructure/simd-distance.js';
 
-// --- Sub-module imports (no circular deps) ---
 import {
   circuitBreaker,
   _providerCompressionSupport,
@@ -73,18 +70,12 @@ import {
   registerAutoPersistOnExit,
 } from './embedding-cache.js';
 
-// Re-export sub-module symbols that were previously named exports
 export { circuitBreaker };
 export { TimeWindowRateLimiter };
-
-// =============================================================================
-// UNIFIED EMBEDDING SERVICE (hub functions)
-// =============================================================================
 
 // Process-scoped flag so the "vocab is full" message logs once, not per-query.
 let _vocabFullLogged = false;
 
-/** Generate embedding using the active provider with circuit breaker */
 async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQuery = false) {
   const localText = isQuery ? applyLocalQueryPrefix(text) : text;
   const localMaxLength = isQuery ? QUERY_MAX_LENGTH : INDEXING_MAX_LENGTH;
@@ -145,7 +136,6 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQ
   return (await callLocalModel([localText], { maxLength: localMaxLength }))[0];
 }
 
-/** Generate embeddings for multiple texts (batched, V2 concurrent) */
 async function generateEmbeddings(texts, provider = EMBEDDING_CONFIG.provider, options = {}) {
   if (!texts || texts.length === 0) return [];
 
@@ -367,12 +357,10 @@ async function _generateUncachedEmbeddings(uncachedTexts, provider, providerOpti
         if (process.env.DEBUG_CATCHES) {
           process.stderr.write(`[embedding-service] shared model server RPC failed, falling back: ${err?.message || err}\n`);
         }
-        // fall through to in-process
       }
     }
   }
 
-  // Default / fallback path — byte-and-behavior identical to today.
   return generateEmbeddings(uncachedTexts, provider, { ...providerOptions, onProgress });
 }
 
@@ -429,10 +417,6 @@ export async function getEmbeddings(texts, options = {}) {
   return results;
 }
 
-// =============================================================================
-// QUANTIZATION / MATH RE-EXPORTS (canonical impls in infrastructure/quantization.js)
-// =============================================================================
-
 import {
   truncateForHNSW as _truncateForHNSW,
   fisherYatesShuffle,
@@ -449,12 +433,6 @@ import {
 
 export { fisherYatesShuffle, floatToBinary, computeCentroid, generateSignVector, walshHadamardTransform, fastRotate, asymmetricDocEncode, asymmetricQueryEncode };
 
-/**
- * Truncate embedding to target dimension and L2 re-normalize.
- * Thin wrapper that supplies the domain-specific default dimension.
- * @param {number[]} embedding
- * @param {number} [targetDim] - defaults to EMBEDDING_CONFIG.hnswDimension
- */
 export function truncateForHNSW(embedding, targetDim = EMBEDDING_CONFIG.hnswDimension) {
   return _truncateForHNSW(embedding, targetDim);
 }
@@ -464,7 +442,6 @@ export function truncateForHNSW(embedding, targetDim = EMBEDDING_CONFIG.hnswDime
  * Approximates squared distance via asymmetric dot product + correction.
  */
 export function asymmetricDistance(docBinary, queryInt4, queryNorm) {
-  // Delegate to WASM when available
   if (isWasmAvailable()) {
     // WASM version expects integer-scaled queryNorm
     return wasmAsymmetricDistance(docBinary, queryInt4, Math.round(queryNorm));
@@ -552,10 +529,6 @@ export function int8CosineSimilarity(a, b) {
 /** @deprecated Use int8CosineSimilarity (for cosine) or int8BatchDotScores (for normalized dot). */
 export { int8CosineSimilarity as int8DotProduct };
 
-// =============================================================================
-// BINARY / INT8 EMBEDDING
-// =============================================================================
-
 export async function getBinaryEmbedding(text) {
   const start = performance.now();
   const cacheKey = `binary:${text}`;
@@ -590,8 +563,6 @@ export async function getInt8Embedding(text) {
     }
   }
 
-  // All providers use client-side int8 quantization for consistency.
-
   const floatResult = await getEmbedding(text, { isQuery: true });
   const truncated = truncateForHNSW(floatResult.embedding);
   const int8 = floatToInt8(truncated);
@@ -599,10 +570,6 @@ export async function getInt8Embedding(text) {
   if (EMBEDDING_CONFIG.cache?.enabled) queryCache.set(cacheKey, { int8: result.int8, float: result.float });
   return result;
 }
-
-// =============================================================================
-// WARMUP / LIFECYCLE
-// =============================================================================
 
 export async function warmup(options = {}) {
   const { initVocabulary = true, initSemanticCache = true } = options;
@@ -672,10 +639,6 @@ export async function unload() {
   bootLog('Local model unloaded');
 }
 
-// =============================================================================
-// WRAPPED CACHE EXPORTS (inject dependencies to avoid circular imports)
-// =============================================================================
-
 export function getCacheStats() {
   return _getCacheStats(circuitBreaker.getState());
 }
@@ -688,23 +651,17 @@ export async function expandVocabulary(terms) {
   return _expandVocabulary(terms, embed);
 }
 
-// Re-export cache functions that need no wrapping
 export { getSemanticCacheStats, clearCache, getFrequentQueries, autoPersistFrequentQueries, registerAutoPersistOnExit };
 
 // Named exports for internal generator functions (used by vocab-warmer)
 export { generateEmbedding, generateEmbeddings };
 
-// Local model runtime configuration (Phase 2 — parallel indexing)
 // Pool lifecycle (initEmbeddingPool / shutdownEmbeddingPool) lives in
 // core/indexing/indexer-pool.js per the DDD dependency matrix.
 export {
   configureLocalModelRuntime,
   resetLocalModelRuntime,
 };
-
-// =============================================================================
-// CLI INTERFACE
-// =============================================================================
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
@@ -772,7 +729,6 @@ ${Object.entries(EMBEDDING_PROVIDERS)
   }
 }
 
-// Deprecated alias for backward compatibility
 const int8DotProduct = int8CosineSimilarity;
 
 export default {

@@ -5,7 +5,7 @@
  * Falls back gracefully when tree-sitter or grammar files are unavailable.
  *
  * Usage:
- *   import { getTreeSitterProvider } from './core/tree-sitter-provider.js';
+ *   import { getTreeSitterProvider } from './core/infrastructure/tree-sitter-provider.js';
  *   const provider = getTreeSitterProvider();
  *   const chunks = await provider.parseFileToChunks(content, 'javascript');
  *   if (!chunks) { // fall back to regex }
@@ -48,7 +48,7 @@ const GRAMMAR_MAP = {
   // classes. Wiring tree-sitter-c-sharp puts C# on the same code path as
   // the other 13 languages (cAST sibling-merge over a proper AST).
   csharp: 'tree-sitter-c_sharp',
-  // Wired 2026-06 (v2.6.3) for first-class AST/cAST chunking. All four wasm
+  // All four wasm
   // grammars ship in tree-sitter-wasms and load on the installed web-tree-sitter
   // ABI. (tree-sitter-elm / tree-sitter-ql also ship but are ABI 12/10 vs the
   // required 13–15, so they stay on generic chunking.)
@@ -83,25 +83,18 @@ const IDENT_TYPES = new Set([
 
 // AST node types that represent meaningful chunk boundaries
 const BOUNDARY_TYPES = new Set([
-  // Functions
   'function_declaration', 'function_definition', 'method_definition',
   'arrow_function', 'function_expression', 'method_declaration',
   'function_item',
-  // Classes
   'class_declaration', 'class_definition',
   // TypeScript `abstract class Foo {}`
   'abstract_class_declaration',
-  // Interfaces/Types (TypeScript)
   'interface_declaration', 'type_alias_declaration', 'enum_declaration',
-  // Structs/Traits (Rust/Go)
   'struct_item', 'impl_item', 'trait_item', 'type_declaration',
   // Rust macros (macro_rules!)
   'macro_definition',
-  // Modules
   'module', 'namespace_declaration',
-  // Python
   'decorated_definition',
-  // Java
   'record_declaration', 'constructor_declaration',
   // Java annotation types (`@interface Foo { ... }`). Without this, files
   // that contain only an annotation declaration (gson SerializedName.java,
@@ -126,15 +119,10 @@ const BOUNDARY_TYPES = new Set([
   // tags.scm for Ruby uses the same node names.
   'class', 'method', 'singleton_class',
   'singleton_method',
-  // PHP
   'trait_declaration',
-  // Kotlin
   'object_declaration',
-  // Swift
   'protocol_declaration', 'protocol_function_declaration', 'init_declaration',
-  // C
   'struct_specifier', 'enum_specifier', 'type_definition',
-  // C++
   'class_specifier', 'namespace_definition',
   // C++ `using X = ...` type aliases + `template<...> class|struct|fn|using` wrappers.
   // Without these the chunker emitted templated decls as anonymous `code` chunks
@@ -286,7 +274,6 @@ const NODE_TYPE_MAP = {
   'module': 'module',
   'namespace_declaration': 'namespace',
   'decorated_definition': 'decorator',
-  // Java
   'record_declaration': 'record',
   'constructor_declaration': 'method',
   // @interface Foo { ... } — chunk labelled as 'interface' to match the
@@ -302,19 +289,15 @@ const NODE_TYPE_MAP = {
   'singleton_class': 'class',
   'method': 'method',
   'singleton_method': 'method',
-  // PHP
   'trait_declaration': 'trait',
   // Kotlin (only grammar with this node type)
   'object_declaration': 'object',
-  // Swift
   'protocol_declaration': 'interface',
   'protocol_function_declaration': 'method',
   'init_declaration': 'method',
-  // C
   'struct_specifier': 'struct',
   'enum_specifier': 'enum',
   'type_definition': 'typeAlias',
-  // C++
   'class_specifier': 'class',
   'namespace_definition': 'namespace',
   'alias_declaration': 'typeAlias',
@@ -891,7 +874,6 @@ const C_FAMILY_ATTRIBUTE_PHANTOM_NAMES = new Set([
 // literally named `final` is not affected.
 const C_FAMILY_LANGUAGES = new Set(['c', 'cpp']);
 
-// Map capture names from tags.scm queries to entity types
 const CAPTURE_TO_ENTITY_TYPE = {
   'function.definition': 'function',
   'class.definition': 'class',
@@ -905,7 +887,6 @@ const CAPTURE_TO_ENTITY_TYPE = {
   'arrow.definition': 'arrowFunction',
   'decorator.definition': 'decorator',
   'namespace.definition': 'namespace',
-  // New: Java, Ruby, PHP, Kotlin
   'record.definition': 'record',
   'module.definition': 'module',
   'object.definition': 'object', // Kotlin object / companion object
@@ -1250,7 +1231,6 @@ export class TreeSitterProvider {
     this._tagsQueryCache = new WeakMap(); // Language → compiled tags Query
   }
 
-  /** Check if web-tree-sitter is importable */
   async isAvailable() {
     if (this._available !== null) return this._available;
     try {
@@ -1649,12 +1629,10 @@ export class TreeSitterProvider {
     return chunks.length > 0 ? chunks : null;
   }
 
-  /** Generate a unique chunk ID for this parse session */
   _nextChunkId() {
     return `c${++this._chunkCounter}`;
   }
 
-  /** Collect children of a node into an array */
   _getChildren(node) {
     const children = [];
     for (let i = 0; i < node.childCount; i++) {
@@ -1686,7 +1664,6 @@ export class TreeSitterProvider {
    *   with no declaration of its own is named after it: `Foo (part 2)`.
    * @param {string} [ctx.parsedContent] - The text tree-sitter parsed (C/C++
    *   export macros blanked); defaults to `content`.
-   * @returns {Array} List of chunk objects
    */
   recursiveChunk(nodes, content, maxSize, parentInfo, boundaryTypes = BOUNDARY_TYPES, ctx = {}) {
     const chunks = [];
@@ -2043,7 +2020,6 @@ export class TreeSitterProvider {
       const sliceSize = buffer.length > 0 ? node.endIndex - buffer[0].startIndex : nodeSize;
 
       if (sliceSize <= maxSize) {
-        // Fits in current buffer — accumulate
         buffer.push(node);
         continue;
       }
@@ -2053,8 +2029,7 @@ export class TreeSitterProvider {
       // by its children without losing that text: it is a leaf here.
       const isLeaf = node.childCount === 0 || !this._childrenCoverText(node, ctx.parsedContent ?? content);
       if (nodeSize <= maxSize || isLeaf) {
-        // Doesn't fit — flush buffer first. The doc comment directly above
-        // the node moves with it into the new buffer, so a full buffer does
+        // The doc comment directly above the node moves with it into the new buffer, so a full buffer does
         // not cut a comment off from its declaration.
         let leading = this._takeLeadingComments(buffer, node, content, { isDeclaration: isBoundaryNode });
         if (leading.length > 0 && (nodeSize > maxSize || node.endIndex - leading[0].startIndex > maxSize)) {
@@ -2090,7 +2065,6 @@ export class TreeSitterProvider {
             buffer = [...opening, ...leading, node];
           }
         } else {
-          // Leaf node too big — emit as-is (never split mid-expression)
           const resolved = this._resolveBoundary(node);
           let name = this._extractNodeName(resolved.nameNode);
           let type = resolved.type;
@@ -2112,7 +2086,6 @@ export class TreeSitterProvider {
         continue;
       }
 
-      // Node is oversized even alone — recurse into its children.
       // A Python decorated_definition is named after the definition it wraps
       // (its decorators then open that definition's header chunk).
       const decorated = node.type === 'decorated_definition'
@@ -2503,12 +2476,10 @@ export class TreeSitterProvider {
     if (!boundaryTypes.has(node.type)) return null;
 
     let bodyStart = null;
-    // Try field-name lookup first (works for most modern grammars).
     const bodyField = node.childForFieldName?.('body');
     if (bodyField && BODY_TYPES.has(bodyField.type)) {
       bodyStart = bodyField.startIndex;
     } else {
-      // Fall back to scanning children for a body-shaped child.
       for (let i = 0; i < node.childCount; i++) {
         const child = node.child(i);
         if (BODY_TYPES.has(child.type)) {
@@ -2527,8 +2498,6 @@ export class TreeSitterProvider {
       raw = content.substring(node.startIndex, node.endIndex);
     }
 
-    // Normalize: collapse runs of whitespace (including newlines) to a
-    // single space, drop leading/trailing whitespace.
     const normalized = raw.replace(/\s+/g, ' ').trim();
     if (!normalized) return null;
 
@@ -2603,9 +2572,7 @@ export class TreeSitterProvider {
     return null;
   }
 
-  /** Extract symbol name from an AST node */
   _extractNodeName(node) {
-    // Try field name first (most reliable)
     const nameNode = node.childForFieldName('name');
     if (nameNode) return nameNode.text;
 
@@ -2763,7 +2730,6 @@ export class TreeSitterProvider {
     return new Query(language, queryString);
   }
 
-  /** Find grammar WASM file on disk */
   async _findGrammarWasm(languageId, grammarName) {
     const fs = await import('fs');
     const pathMod = await import('path');
@@ -2841,17 +2807,14 @@ export class TreeSitterProvider {
     return null;
   }
 
-  /** List all languages with tree-sitter grammar support */
   getSupportedLanguages() {
     return Object.keys(GRAMMAR_MAP);
   }
 
-  /** Check if a language ID has tree-sitter grammar mapping */
   hasLanguage(languageId) {
     return languageId in GRAMMAR_MAP;
   }
 
-  /** Reset internal state (useful for testing) */
   reset() {
     if (this._parser) {
       try { this._parser.delete(); } catch { /* ignore */ }
@@ -2863,7 +2826,6 @@ export class TreeSitterProvider {
   }
 }
 
-// Singleton instance
 let _instance = null;
 
 export function getTreeSitterProvider(options) {

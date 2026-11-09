@@ -1,9 +1,4 @@
 /**
- * Search Boost Module
- *
- * Extracted from sweet-search.js (SOLID refactor).
- * Contains all post-fusion boost logic: definition, syntax, position, kind hierarchy.
- *
  * Functions that use `this` are regular function declarations (not arrows)
  * so they work correctly when wired onto SweetSearch.prototype.
  */
@@ -18,10 +13,6 @@ const IDENTIFIER_AGREEMENT_STOPWORDS = new Set([
   'was', 'were', 'what', 'when', 'where', 'which', 'with', 'you',
 ]);
 
-// =============================================================================
-// BOOST_POLICY (static property on SweetSearch)
-// =============================================================================
-
 export const BOOST_POLICY = {
   definition_strong: {
     definitionBoost: 2.0,
@@ -30,14 +21,13 @@ export const BOOST_POLICY = {
     positionBoost: true,
   },
   definition_mild: {
-    // PHASE_1_FIXES: Increased from 1.5/1.3 to 1.8/1.5 per research
     definitionBoost: 1.8,
     syntaxBoost: 1.5,
     kindHierarchy: true,
     positionBoost: true,
   },
   general: {
-    // PHASE_1_FIXES: Aggressive boosts restored per research (90.5% vs 90.0%)
+    // Aggressive boosts per research (90.5% vs 90.0%)
     // Reference: https://opensourceconnections.com/blog/2022/12/16/approaches-to-field-boost-tuning-with-learning-to-rank/
     definitionBoost: 1.8,
     syntaxBoost: 1.8,
@@ -58,14 +48,9 @@ export const BOOST_POLICY = {
   },
 };
 
-// =============================================================================
-// Boost intent mapping
-// =============================================================================
-
 /**
- * Map router mode to boost intent (PHASE_1_FIXES Change 3)
+ * Map router mode to boost intent.
  *
- * Replaces intent-detector.js with query router as single source of truth.
  * Pure function — does not reference `this`. On prototype for call-site convenience.
  *
  * @param {string} routerMode - Mode from query router
@@ -73,27 +58,23 @@ export const BOOST_POLICY = {
  * @returns {string} Boost intent
  */
 export function getBoostIntent(routerMode, routerConfidence) {
-  // High confidence identifier query -> strong definition boosts
   if (routerMode === 'lexical' && routerConfidence >= 0.8) {
     return 'definition_strong';
   }
 
-  // Lower confidence lexical -> mild boosts
   if (routerMode === 'lexical') {
     return 'definition_mild';
   }
 
-  // Hybrid/mixed -> minimal boosts (avoid oversteering)
+  // Minimal boosts (avoid oversteering)
   if (routerMode === 'hybrid') {
     return 'general';
   }
 
-  // Semantic/conceptual -> no definition boosts
   if (routerMode === 'semantic') {
     return 'none';
   }
 
-  // Structural -> handled by graph traversal
   if (routerMode === 'structural') {
     return 'structural';
   }
@@ -101,12 +82,8 @@ export function getBoostIntent(routerMode, routerConfidence) {
   return 'general';
 }
 
-// =============================================================================
-// Post-fusion boosts
-// =============================================================================
-
 /**
- * Apply post-fusion boosts uniformly (PHASE_1_FIXES Change 4)
+ * Apply post-fusion boosts uniformly
  *
  * Applied AFTER fusion so both lexical and semantic paths benefit equally.
  * Boost intensity controlled by router confidence.
@@ -129,7 +106,6 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
     let totalBoost = 1.0;
     const boostDetails = [];
 
-    // 1. Definition Boost (based on filename/name match)
     if (policy.definitionBoost > 1.0) {
       const defBoost = this.computeDefinitionBoost(result, queryLower, queryTokens);
       if (defBoost > 1.0) {
@@ -139,7 +115,6 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
       }
     }
 
-    // 2. Syntax Boost (definition patterns in signature)
     if (policy.syntaxBoost > 1.0) {
       const synBoost = this.computeSyntaxBoost(result, queryTokens);
       if (synBoost > 1.0) {
@@ -149,7 +124,7 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
       }
     }
 
-    // 2.5 Identifier agreement: prefer symbols/files whose meaningful
+    // Identifier agreement: prefer symbols/files whose meaningful
     // identifier words are named by the natural-language query.
     const idBoost = allowIdentifierAgreement
       ? this.computeIdentifierAgreementBoost?.(result, query)
@@ -159,7 +134,6 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
       boostDetails.push(`id:${idBoost.toFixed(2)}`);
     }
 
-    // 3. Symbol Kind Hierarchy (always mild)
     if (policy.kindHierarchy) {
       const kindWeight = SYMBOL_KIND_WEIGHTS[result.type] || 0.5;
       const kindBoost = 0.7 + 0.3 * kindWeight; // Softer: 0.7-1.0 range
@@ -169,7 +143,6 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
       }
     }
 
-    // 4. Position Boost (only for strong definition intent)
     if (policy.positionBoost && result.startLine != null) {
       const posBoost = this.computePositionBoost(result);
       if (posBoost > 1.0) {
@@ -178,7 +151,7 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
       }
     }
 
-    // P0 FIX: Cap total boost to prevent over-promotion (max stacking = 4.68x theoretical)
+    // Cap total boost to prevent over-promotion (max stacking = 4.68x theoretical)
     const cappedBoost = Math.min(totalBoost, 3.0);
     if (cappedBoost < totalBoost) {
       boostDetails.push(`capped:${totalBoost.toFixed(2)}→3.0`);
@@ -278,9 +251,6 @@ export function computeIdentifierAgreementBoost(result, query) {
   return 1.0 + weight * Math.min(1, agreement);
 }
 
-/**
- * Compute definition boost (PHASE_1_FIXES helper)
- */
 export function computeDefinitionBoost(result, queryLower, queryTokens) {
   const isDefinitionType = DEFINITION_TYPES.has(result.type);
   const resultNameLower = (result.name || '').toLowerCase();
@@ -299,9 +269,6 @@ export function computeDefinitionBoost(result, queryLower, queryTokens) {
   return 1.0;
 }
 
-/**
- * Compute syntax boost (PHASE_1_FIXES helper)
- */
 const DEFINITION_SIGNATURE_PATTERNS = [
   /\b(?:public|private|protected)?\s*(?:abstract|final)?\s*class\s+(\w+)/,
   /\b(?:public|private|protected)?\s*interface\s+(\w+)/,
@@ -330,9 +297,6 @@ export function computeSyntaxBoost(result, queryTokens) {
   return 1.0;
 }
 
-/**
- * Compute position boost (PHASE_1_FIXES helper)
- */
 export function computePositionBoost(result) {
   const startLine = result.startLine;
   if (startLine == null || startLine < 0) return 1.0;
@@ -343,9 +307,6 @@ export function computePositionBoost(result) {
   return 1 + 0.3 * positionPrior;
 }
 
-/**
- * Extract query tokens for matching (PHASE_1_FIXES helper)
- */
 export function extractQueryTokens(query) {
   const tokens = new Set();
   tokens.add(query.toLowerCase().trim());

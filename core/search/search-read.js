@@ -34,7 +34,6 @@ const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
 const _cache = new Map(); // key -> { text|null, lineOffsets, size, mtimeMs }
 
-// ---------------------------------------------------------------------------
 // Span-gated whole-file expansion
 //
 // When a range read ALREADY covers a quarter of a small file, serving the rest
@@ -43,7 +42,6 @@ const _cache = new Map(); // key -> { text|null, lineOffsets, size, mtimeMs }
 // at most (1 - MIN_FRAC) of a file no larger than MAX_LINES.
 //
 // WHY THESE TWO NUMBERS (2026-08-14, three-harness replay, d11-c4-all-harnesses.mjs)
-// ---------------------------------------------------------------------------
 // Replayed over 102 sweet rollouts — 34 each on codex, opencode and claude-code,
 // each harness's baseline reproducing its recorded arm cost to 100.0%:
 //
@@ -173,12 +171,10 @@ function _getGraphRepo(projectRoot) {
   return _graphRepos.get(dbPath) || null;
 }
 
-// ---------------------------------------------------------------------------
 // Config keys the window reads (2026-10-05, jj-12 replay: the code read
 // `"experimental-advance-branches"` and the agent never saw misc.toml, where
 // its defaults live). A key-shaped string literal in the window that a config
 // file declares as a key gets one line naming where. Agent format only.
-// ---------------------------------------------------------------------------
 
 const CONFIG_FILE_RE = /\.(?:toml|ya?ml|json|jsonc|json5|ini|properties|cfg|conf)$/i;
 const CONFIG_SKIP_DIR_RE = /(?:^|\/)(?:tests?|testdata|test-data|systests?|e2e|fixtures?|examples?|samples?|snapshots?|__snapshots__|node_modules|vendor|third_party|dist|build)\//i;
@@ -333,13 +329,11 @@ function _normalizeRelativePath(rel) {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Line-offset table — index of byte offsets where each line starts.
 // lineOffsets[i] = byte offset of start of line (i+1). lineOffsets has
 // totalLines entries. To slice lines [a..b] (1-based, inclusive):
 //   start = lineOffsets[a-1]
 //   end   = (b < totalLines) ? lineOffsets[b] : buffer.length
-// ---------------------------------------------------------------------------
 
 function _buildLineOffsets(buf) {
   const offsets = [0];
@@ -351,10 +345,6 @@ function _buildLineOffsets(buf) {
   if (offsets[offsets.length - 1] === buf.length) offsets.pop();
   return offsets;
 }
-
-// ---------------------------------------------------------------------------
-// Read implementation
-// ---------------------------------------------------------------------------
 
 async function _readFromDisk(absPath) {
   // statSync is OK here — async stat costs more than the sync syscall.
@@ -374,7 +364,7 @@ async function _readFromDisk(absPath) {
   // efficient line-aware streaming primitive), but subsequent line-range
   // reads will reuse the cached offset table without re-reading from disk.
   // If the file is enormous and the caller asked for a range, we read just
-  // enough bytes to cover the range — see _sliceLines().
+  // enough bytes to cover the range — see _sliceLinesFromDisk().
   const buf = await fs.readFile(absPath);
   const lineOffsets = _buildLineOffsets(buf);
   const isLarge = stat.size > CACHE_LARGE_FILE_BYTES;
@@ -449,10 +439,6 @@ async function _sliceLinesFromDisk(absPath, lineOffsets, fileSize, startLine, en
   }
 }
 
-// ---------------------------------------------------------------------------
-// Index metadata enrichment
-// ---------------------------------------------------------------------------
-
 function _parseMeta(rawMeta) {
   if (!rawMeta) return null;
   if (typeof rawMeta === 'object') return rawMeta;
@@ -500,17 +486,14 @@ function _attachIndexMetadata(filePathRel, projectRoot) {
       signature: meta.signature ?? null,
     });
   }
-  // Order by startLine for predictable consumption.
   chunks.sort((a, b) => (a.startLine ?? 0) - (b.startLine ?? 0));
   return { indexed: true, chunks, language };
 }
 
-// ---------------------------------------------------------------------------
 // Remainder definition sniffing — fallback symbol names for the "what
 // remains" trailer when the index has no named chunks in the unread span
 // (e.g. C++ files where the chunker recorded `name: null`). Scans ONLY the
 // remainder lines of the buffer already in memory: zero I/O, capped.
-// ---------------------------------------------------------------------------
 
 const SNIFF_MAX_LINES = 4000;
 const UNREAD_SYMBOLS_MAX = 5;        // hard cap on named symbols in the trailer
@@ -923,10 +906,6 @@ function _kindList(symbols, moreCount) {
   return text && moreCount > 0 ? `${text} +${moreCount} more` : text;
 }
 
-// ---------------------------------------------------------------------------
-// Public API — single read
-// ---------------------------------------------------------------------------
-
 /**
  * Read one file (or one line range of one file).
  *
@@ -936,7 +915,6 @@ function _kindList(symbols, moreCount) {
  * @param {number} [req.endLine] - 1-based, inclusive
  * @param {string} [req.projectRoot] - default: process.cwd()
  * @param {boolean} [req.includeMetadata=true] - attach index chunks/language
- * @returns {Promise<Object>}
  */
 async function _readFileUnpinned(req) {
   const t0 = performance.now();
@@ -1099,7 +1077,6 @@ async function _readFileUnpinned(req) {
     configKeys = configKeyRefs(projectRoot, relForIndex, sliced.text);
   }
 
-  // If a line range was requested, narrow attached chunks to the overlap.
   if (wantsRange && chunks.length) {
     chunks = chunks.filter(c =>
       c.startLine == null || c.endLine == null
@@ -1172,10 +1149,6 @@ export async function readFiles(files, opts = {}) {
     return { files: results, totalMs: +(performance.now() - t0).toFixed(2) };
   });
 }
-
-// ---------------------------------------------------------------------------
-// Formatting
-// ---------------------------------------------------------------------------
 
 /**
  * Render the "what remains" trailer for a range read that stopped before
@@ -1422,10 +1395,6 @@ export function formatReadResults(results, format = 'agent', opts = {}) {
   return results.files.map((result) => _formatAgent(result, { ...opts, format })).join('\n');
 }
 
-// ---------------------------------------------------------------------------
-// CLI handler
-// ---------------------------------------------------------------------------
-
 function _parseLineRange(spec) {
   // Accepts "45-92", "45:92", "45" (single line), or "45-" (open end).
   if (!spec) return [null, null];
@@ -1565,7 +1534,6 @@ export function __resetReadCachesForTests() {
 
 export const __testing = { projectRelative: _projectRelative, codebasePathForProject: _codebasePathForProject };
 
-// ── ss-read <file> <symbol> ────────────────────────────────────────────────────────────
 // The definitions named `spec` in one file, from the code graph: `name`, or `Owner.name`
 // (also `Owner::name`, `Owner#name`) to pick a member of one type. Exact-case matches win
 // over case-insensitive ones; file order. Each: { name, type, startLine, endLine, parentClass }.

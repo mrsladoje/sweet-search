@@ -1,8 +1,6 @@
 /**
  * Pattern Search Query Planner — regex candidate generation pipeline.
  *
- * Extracted from search-pattern.js for the 500-line-limit rule.
- *
  * Pipeline:
  *   1. Unified search (single NAPI call) when available
  *   2. Fallback: gram narrowing → literal prefilter → cost-model planner
@@ -160,10 +158,6 @@ function rootAnchoredScopes(fileFilter, root) {
   return out;
 }
 
-// =============================================================================
-// Core pipeline — regex candidate generation
-// =============================================================================
-
 export async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   return dropSymlinkAliasMatches(await collectRegexMatches(searcher, regex, searchDir, options), searchDir);
 }
@@ -305,7 +299,6 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     }
   }
 
-  // --- Fallback: existing multi-step path ---
   let searchFiles = null;
   let gramLookupTime = 0;
   let gramLookupResult = null;
@@ -338,7 +331,6 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     }
   }
 
-  // --- Optimization #3: compute gram selectivity for planning ---
   const gramCandidateFiles = gramLookupResult?.candidateFiles || 0;
   const gramTotalFiles = gramLookupResult?.totalFiles || 0;
   const gramSelectivity = gramTotalFiles > 0 ? gramCandidateFiles / gramTotalFiles : null;
@@ -409,10 +401,8 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   const usingGramCandidates = Array.isArray(searchFiles);
   const gramTooBroad = fileGramTooBroad;
 
-  // --- Optimization #4: use gram DF stats to skip literal prefilter when broad ---
   const gramSaysBroad = gramSelectivity !== null && gramSelectivity > 0.40;
 
-  // --- Native grep on all indexed files: skip the prefilter entirely ---
   const sparseForAllFiles = (!fixedString && globs.length === 0)
     ? ensureSparseGramIndex(searcher, options)
     : null;
@@ -490,10 +480,6 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     }
   }
 
-  // ==========================================================================
-  // Cost-model query planner
-  // ==========================================================================
-
   let plannerRoute;
   let grepStrategy;
 
@@ -532,8 +518,6 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     grepStrategy = 'direct_json';
     filteredFiles = null;
   }
-
-  // --- Execute chosen strategy ---
 
   const grepStart = performance.now();
   let matchingFiles = [];

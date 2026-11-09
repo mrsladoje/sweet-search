@@ -111,7 +111,6 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
   const respectGitignore = cfg.respectGitignore !== false;
   const hasGit = existsSync(path.join(projectRoot, '.git'));
 
-  /** Include allowlist only (matches a project include glob). */
   function matchesInclude(rel) {
     const r = normalizeRel(rel);
     if (!r) return false;
@@ -237,7 +236,6 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     }
   }
 
-  /** Rule 5 bound to this root; see `isSymlinkedRelUnder`. */
   function isSymlinkedRel(rel, memo = null) {
     return isSymlinkedRelUnder(projectRoot, rel, memo);
   }
@@ -304,7 +302,6 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     return ignoredDirsCache;
   }
 
-  /** True when `rel` (a directory) is ignored as a whole by git and may be skipped by a walk. */
   function isIgnoredDirectory(rel) {
     return ignoredDirectories().has(normalizeRel(rel));
   }

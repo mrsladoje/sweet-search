@@ -487,7 +487,6 @@ function clampSentinelEndLines(entities, fileLineCount, language) {
  * Splits camelCase, PascalCase, snake_case, digits and emits both
  * the split form and the collapsed alnum form.
  *
- * @param {string} name - The original identifier name
  * @returns {string} Space-separated alias tokens (lowercased, deduped)
  *
  * @example
@@ -501,7 +500,6 @@ function clampSentinelEndLines(entities, fileLineCount, language) {
 export function normalizeIdentifier(name) {
   if (!name) return '';
 
-  // Step 1-4: Split on separators and camelCase/PascalCase boundaries
   let split = name
     // Insert space before acronym→word transitions (e.g. HTMLParser -> HTML Parser)
     // Requires 2+ uppercase chars to avoid splitting single-letter prefixes (OAuth stays intact)
@@ -514,10 +512,8 @@ export function normalizeIdentifier(name) {
     // Split on separators: _ - . / :
     .replace(/[_\-./:\\]/g, ' ');
 
-  // Step 5-6: Lowercase and normalize whitespace
   const tokens = split.toLowerCase().split(/\s+/).filter(t => t.length > 0);
 
-  // Step 7: Emit both split tokens and collapsed form
   const collapsed = tokens.join('');
   const uniqueTokens = [...new Set([...tokens, collapsed])];
 
@@ -526,9 +522,6 @@ export function normalizeIdentifier(name) {
 
 /**
  * Persist the current schema version after schema creation/migration succeeds.
- *
- * @param {import('better-sqlite3').Database} db
- * @param {number} [version=SCHEMA_VERSION]
  */
 function setSchemaVersion(db, version = SCHEMA_VERSION) {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)`);
@@ -577,70 +570,48 @@ function ensureLexicalFtsSchema(db) {
 
 }
 
-// =============================================================================
-// ENTITY EXTRACTION PATTERNS
-// =============================================================================
-
 const JAVA_PATTERNS = {
-  // Class declarations
   class: /(?:public|private|protected)?\s*(?:static)?\s*(?:final|abstract)?\s*class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s]+))?/g,
 
-  // Interface declarations
   interface: /(?:public)?\s*interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?/g,
 
-  // Enum declarations
   enum: /(?:public)?\s*enum\s+(\w+)/g,
 
-  // Method declarations
   method: /(?:@\w+\s*(?:\([^)]*\))?\s*)*(?:public|private|protected)?\s*(?:static)?\s*(?:final)?\s*(?:synchronized)?\s*(?:<[\w\s,<>?]+>\s*)?(\w+(?:<[\w\s,<>?]+>)?(?:\[\])?)\s+(\w+)\s*\(([^)]*)\)/g,
 
-  // Field declarations
   field: /(?:public|private|protected)\s+(?:static)?\s*(?:final)?\s*(\w+(?:<[\w\s,<>?]+>)?(?:\[\])?)\s+(\w+)\s*[;=]/g,
 
-  // Method calls
   methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/g,
 
   // Imports (supports static and wildcard: import com.foo.*; import static com.bar.Baz.*)
   import: /import\s+(?:static\s+)?([a-zA-Z_][\w.]*(?:\.\*)?)\s*;/g,
 
-  // Throw statements
   throw: /throw\s+new\s+(\w+)/g,
 
-  // Package declaration
   package: /package\s+([\w.]+)\s*;/,
 };
 
 const JS_PATTERNS = {
-  // Function declarations
   function: /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/g,
 
-  // Arrow functions
   arrowFunction: /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/g,
 
-  // Class declarations
   class: /(?:export\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?/g,
 
-  // React components (capitalized functions)
   component: /(?:export\s+)?(?:const|function)\s+([A-Z]\w+)\s*[=:]/g,
 
-  // Method calls
   methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/g,
 
-  // Imports
   import: /import\s+(?:{([^}]+)}|(\w+))\s+from\s+['"]([^'"]+)['"]/g,
 };
 
 const PROTO_PATTERNS = {
-  // Message declarations
   message: /message\s+(\w+)\s*\{/g,
 
-  // Service declarations
   service: /service\s+(\w+)\s*\{/g,
 
-  // RPC declarations
   rpc: /rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s+returns\s+\(\s*(\w+)\s*\)/g,
 
-  // Enum declarations
   enum: /enum\s+(\w+)\s*\{/g,
 };
 
@@ -775,7 +746,6 @@ function createCommentLineTracker(comment) {
   };
 }
 
-// Relationship types whose patterns read a type declaration header.
 const INHERITANCE_RELATIONSHIP_TYPES = new Set(['extends', 'implements']);
 // Entity types that own an inheritance list. A one-line declaration
 // (`enum Color implements Paint { RED }`, Kotlin `companion object F : C { fun make() }`)
@@ -888,7 +858,6 @@ function joinDefinitionSignature(lines, i, lineComment) {
   return text;
 }
 
-/** True when line `i` (trimmed text) is part of a type declaration header. */
 function isTypeHeaderLine(trimmed, i, headers) {
   if (headers && (headers.joins.has(i) || headers.consumed.has(i))) return true;
   return TYPE_DECL_KEYWORD.test(trimmed) && TYPE_DECL_START.test(trimmed);
@@ -998,7 +967,6 @@ const JS_RESERVED_WORDS = new Set([
   'if', 'else', 'for', 'while', 'switch', 'catch', 'with', 'do', 'try', 'return',
 ]);
 
-// Import-like relationship patterns for extractJavaScript() — DRYs up five inline blocks.
 const JS_IMPORT_PATTERNS = [
   { regex: /import\s+(?:\{[^}]+\}|\w+)\s+from\s+['"]([^'"]+)['"]/, group: 1 },
   { regex: /(?:const|let|var)\s+(?:\{[^}]+\}|\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/, group: 1 },
@@ -1143,10 +1111,6 @@ export function splitTopLevelCommas(str) {
   return parts;
 }
 
-// =============================================================================
-// GRAPH EXTRACTOR CLASS
-// =============================================================================
-
 export class GraphExtractor {
   constructor(options) {
     this.projectRoot = options?.projectRoot || process.cwd();
@@ -1191,11 +1155,6 @@ export class GraphExtractor {
     return set;
   }
 
-  /**
-   * Extract entities and relationships from a file.
-   * Dispatches to specialized extractors for Java/JS/Proto,
-   * generic registry-based extractor for all other languages.
-   */
   async extractFromFile(filePath, content) {
     this._idStates.set(filePath, new Map());
     // A view (.cshtml, .razor, .aspx, ...) is read as the C# class it compiles to, line for
@@ -1521,7 +1480,6 @@ export class GraphExtractor {
       }
     }
 
-    // Specialized extractors for languages with complex logic
     if (langInfo.id === 'java') {
       return this.extractJava(content, lines, filePath);
     }
@@ -1532,7 +1490,6 @@ export class GraphExtractor {
       return this.extractProto(content, lines, filePath);
     }
 
-    // Generic registry-based extraction for all other languages
     if (langInfo.graph) {
       return this.extractGeneric(content, lines, filePath, langInfo);
     }
@@ -1540,20 +1497,14 @@ export class GraphExtractor {
     return { entities: [], relationships: [] };
   }
 
-  /**
-   * Extract from Java file
-   */
   extractJava(content, lines, filePath) {
     this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const entities = [];
     const relationships = [];
 
-    // Extract package
     const pkgMatch = content.match(JAVA_PATTERNS.package);
     this.packageName = pkgMatch ? pkgMatch[1] : '';
 
-    // Extract Java imports (Phase 3.2: Java Import Extraction)
-    // Creates 'imports' relationships for dependency tracking
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const javaCallScanner = new CallSiteScanner(JAVA_CALL_SCANNER_LANG);
     const callSites = [];
@@ -1600,7 +1551,6 @@ export class GraphExtractor {
         targetName = parts[parts.length - 1];
       }
 
-      // Skip empty or invalid target names
       if (!targetName || targetName.length === 0) continue;
 
       relationships.push({
@@ -1616,7 +1566,6 @@ export class GraphExtractor {
       });
     }
 
-    // Track current class for method/field association
     let currentClass = null;
     let braceDepth = 0;
     let classStartDepth = 0;
@@ -1643,9 +1592,6 @@ export class GraphExtractor {
       const lineNum = i + 1;
 
       const enteredAtStart = inBlockComment;
-      // Update inBlockComment state from this line's `/*` opens and
-      // `*/` closes. We scan character-by-character but cheaply: a
-      // single pass with two indexOf-style searches per iteration.
       {
         let scan = 0;
         while (scan < line.length) {
@@ -1672,7 +1618,6 @@ export class GraphExtractor {
       // ends true: line has no executable code AFTER the `/*`).
       const lineWasFullyInComment = enteredAtStart && inBlockComment;
       if (lineWasFullyInComment) {
-        // Don't count braces, don't run extraction regexes.
         continue;
       }
 
@@ -1681,7 +1626,6 @@ export class GraphExtractor {
       braceDepth += (line.match(/{/g) || []).length;
       braceDepth -= (line.match(/}/g) || []).length;
 
-      // Reset current class when we exit its scope
       if (currentClass && braceDepth < classStartDepth) {
         currentClass = null;
       }
@@ -1695,7 +1639,6 @@ export class GraphExtractor {
       // after `*/`, the regex will still capture; that mirrors the
       // existing 99% case (real `public class Foo {` lines).
 
-      // Class declarations
       const classMatch = line.match(/(?:public|private|protected)?\s*(?:static)?\s*(?:final|abstract)?\s*class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s]+))?/);
       if (classMatch) {
         const className = classMatch[1];
@@ -1718,7 +1661,6 @@ export class GraphExtractor {
         currentClass = entity;
         classStartDepth = braceDepth;
 
-        // Extends relationship
         if (extendsClass) {
           relationships.push({
             source_id: id,
@@ -1729,7 +1671,6 @@ export class GraphExtractor {
           });
         }
 
-        // Implements relationships
         if (implementsStr) {
           const interfaces = implementsStr.split(',').map(s => s.trim());
           for (const iface of interfaces) {
@@ -1744,7 +1685,6 @@ export class GraphExtractor {
         }
       }
 
-      // Interface declarations
       const ifaceMatch = line.match(/(?:public)?\s*interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?/);
       if (ifaceMatch) {
         const ifaceName = ifaceMatch[1];
@@ -1762,7 +1702,6 @@ export class GraphExtractor {
           package: this.packageName,
         });
 
-        // Extends relationships for interfaces
         const extendsStr = ifaceMatch[2];
         if (extendsStr) {
           const extended = extendsStr.split(',').map(s => s.trim());
@@ -1778,21 +1717,17 @@ export class GraphExtractor {
         }
       }
 
-      // Method declarations
       const methodMatch = line.match(/(?:@\w+\s*(?:\([^)]*\))?\s*)*(?:public|private|protected)?\s*(?:static)?\s*(?:final)?\s*(?:synchronized)?\s*(?:<[\w\s,<>?]+>\s*)?(\w+(?:<[\w\s,<>?]+>)?(?:\[\])?)\s+(\w+)\s*\(([^)]*)\)/);
       if (methodMatch && !line.includes('class ') && !line.includes('interface ')) {
         const returnType = methodMatch[1];
         const methodName = methodMatch[2];
         const params = methodMatch[3];
 
-        // Skip if this looks like a constructor
         if (returnType === currentClass?.name) continue;
 
-        // Build full signature for collision-proof ID (overloaded methods)
         const fullSignature = `${returnType} ${methodName}(${params})`;
         const signatureHash = this.makeSignatureHash(fullSignature);
 
-        // Use signature hash for disambiguation of overloaded methods
         const { id } = this.entityId(filePath, 'method', methodName, { owner: currentClass?.name, line });
 
         entities.push({
@@ -1809,7 +1744,6 @@ export class GraphExtractor {
           package: this.packageName,
         });
 
-        // Check for @Override
         if (i > 0 && lines[i - 1].includes('@Override')) {
           relationships.push({
             source_id: id,
@@ -1821,7 +1755,6 @@ export class GraphExtractor {
         }
       }
 
-      // Method calls (within method bodies; comment-aware)
       const javaSource = currentClass ? currentClass.id : null;
       javaCallScanner.scanLine(
         line,
@@ -1830,7 +1763,6 @@ export class GraphExtractor {
         (name) => definedOnLine(entities, lineNum, name),
       );
 
-      // Throw statements
       const throwMatch = line.match(/throw\s+new\s+(\w+)/);
       if (throwMatch && currentClass) {
         relationships.push({
@@ -1846,9 +1778,6 @@ export class GraphExtractor {
     return { entities, relationships, callSites };
   }
 
-  /**
-   * Extract from JavaScript/TypeScript file
-   */
   extractJavaScript(content, lines, filePath) {
     this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const entities = [];
@@ -1862,8 +1791,6 @@ export class GraphExtractor {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineNum = i + 1;
-
-      // --- Entity extraction (if-else chain: first match wins per line) ---
 
       const classMatch = line.match(/(?:export\s+(?:default\s+)?)?class\s+(\w+)(?:\s+extends\s+(\w+))?/);
       if (classMatch) {
@@ -1966,9 +1893,6 @@ export class GraphExtractor {
         }
       }
 
-      // --- Relationship extraction ---
-
-      // Module-level import patterns (ESM import, CJS require, re-export, dynamic import)
       for (const { regex, group } of JS_IMPORT_PATTERNS) {
         const m = line.match(regex);
         if (m) {
@@ -1985,10 +1909,8 @@ export class GraphExtractor {
         }
       }
 
-      // Destructured require — per-name import relationships
       this._appendDestructuredRequireRelationships(line, fileEntityId, relationships);
 
-      // Method call relationships (comment-aware)
       jsCallScanner.scanLine(
         line,
         (targetName) => this._pushCallEdge(relationships, seenCalls, fileEntityId, targetName, lineNum),
@@ -2000,9 +1922,6 @@ export class GraphExtractor {
     return { entities, relationships, callSites };
   }
 
-  /**
-   * Extract from Proto file
-   */
   extractProto(content, lines, filePath) {
     this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const entities = [];
@@ -2017,7 +1936,6 @@ export class GraphExtractor {
       const lineNum = i + 1;
       if (currentService && lineNum > currentService.end_line) currentService = null;
 
-      // Message declarations
       const msgMatch = line.match(/message\s+(\w+)\s*\{/);
       if (msgMatch) {
         entities.push({
@@ -2032,7 +1950,6 @@ export class GraphExtractor {
         });
       }
 
-      // Service declarations
       const svcMatch = line.match(/service\s+(\w+)\s*\{/);
       if (svcMatch) {
         currentService = {
@@ -2048,7 +1965,6 @@ export class GraphExtractor {
         entities.push(currentService);
       }
 
-      // RPC declarations
       const rpcMatch = line.match(/rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s+returns\s+\(\s*(\w+)\s*\)/);
       if (rpcMatch) {
         const rpcName = rpcMatch[1];
@@ -2069,7 +1985,6 @@ export class GraphExtractor {
           ...(owner ? { parent_class: owner } : {}),
         });
 
-        // RPC uses input and output messages
         relationships.push({
           source_id: id,
           target_id: null,
@@ -2090,10 +2005,6 @@ export class GraphExtractor {
     return { entities, relationships };
   }
 
-  /**
-   * Generic extraction using registry patterns.
-   * Works for all languages that have graph patterns in language-patterns.js.
-   */
   extractGeneric(content, lines, filePath, langInfo) {
     this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const entities = [];
@@ -2124,7 +2035,6 @@ export class GraphExtractor {
     let pendingAttributes = [];
     const headers = this._typeHeaderJoins(relationshipPatterns, lines, langInfo);
 
-    // Choose findEndLine strategy based on language type
     const findEndLineFn = (startIdx) => {
       if (langInfo.indentBased) {
         return this.findEndLineIndent(lines, startIdx);
@@ -2260,7 +2170,6 @@ export class GraphExtractor {
         }
       }
 
-      // Relationship extraction
       const sourceEntityId = activeEntityScopes.length > 0
         ? activeEntityScopes[activeEntityScopes.length - 1].id
         : null;
@@ -2752,7 +2661,6 @@ export class GraphExtractor {
     const seenCalls = this._callEdgeSet(callSites); // one ranking edge per (caller, target) per file
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
 
-    // Build scope lookup from tree-sitter entities for source_id attribution
     const sortedEntities = [...entities].sort((a, b) => a.start_line - b.start_line);
 
     const findScopeEntity = (lineNum) => {
@@ -2854,7 +2762,6 @@ export class GraphExtractor {
 
       this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
 
-      // Other relationships (imports, extends, etc.)
       for (const { type: relType, pattern, prefilter } of relationshipPatterns) {
         if (relType === 'methodCall') continue;
         const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
@@ -3101,8 +3008,6 @@ export class GraphExtractor {
    * ID format: sha256(relativePath:type:name:disambiguator)[0:16]
    *
    * @param {string} filePath - Absolute file path
-   * @param {string} type - Entity type (class, method, function, etc.)
-   * @param {string} name - Entity name
    * @param {object} [options] - Optional disambiguation info
    * @param {string} [options.signature] - Method/function signature for overload disambiguation
    * @param {number} [options.startLine] - Start line as fallback disambiguator
@@ -3111,13 +3016,10 @@ export class GraphExtractor {
   makeId(filePath, type, name, options = {}) {
     const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
 
-    // Build disambiguator for overloaded methods or same-name entities
     let disambiguator = '';
     if (options.signature) {
-      // Hash the signature for a compact, stable disambiguator
       disambiguator = createHash('sha256').update(options.signature).digest('hex').slice(0, 8);
     } else if (options.startLine !== undefined) {
-      // Fallback: use line number if no signature
       disambiguator = String(options.startLine);
     }
 
@@ -3125,10 +3027,8 @@ export class GraphExtractor {
   }
 
   /**
-   * Generate a signature hash for stable entity identification.
    * Used for backup/restore matching when IDs change.
    *
-   * @param {string} signature - Full method/function signature
    * @returns {string|null} 8-char hex hash or null if no signature
    */
   makeSignatureHash(signature) {
@@ -3136,9 +3036,6 @@ export class GraphExtractor {
     return createHash('sha256').update(signature).digest('hex').slice(0, 8);
   }
 
-  /**
-   * Extract doc comment from lines before a declaration
-   */
   extractDocComment(lines, lineIndex) {
     const comments = [];
     let i = lineIndex - 1;
@@ -3158,9 +3055,6 @@ export class GraphExtractor {
     return comments.join(' ').slice(0, 500) || null;
   }
 
-  /**
-   * Find end line of a block (matching braces)
-   */
   findEndLine(lines, startIndex) {
     let braceDepth = 0;
     let started = false;
@@ -3191,10 +3085,6 @@ export class GraphExtractor {
     return lines.length;
   }
 
-  /**
-   * Find end line for indent-based languages (Python, YAML, etc.)
-   * Scans forward until a line at the same or lesser indentation is found.
-   */
   findEndLineIndent(lines, startIndex) {
     const startLine = lines[startIndex];
     const startIndent = startLine.length - startLine.trimStart().length;
@@ -3212,10 +3102,6 @@ export class GraphExtractor {
     return lines.length;
   }
 
-  /**
-   * Find end line for end-keyword languages (Ruby, Elixir, Lua, Obj-C).
-   * Counts matching keyword pairs to find the closing end/keyword.
-   */
   findEndLineKeyword(lines, startIndex, endKeyword, blockKeywords, language = null) {
     const endRe = new RegExp(`^\\s*${escapeRegexLiteral(endKeyword)}\\b`);
     const blockStartRe = blockKeywords?.length
@@ -3236,7 +3122,6 @@ export class GraphExtractor {
 
     for (let i = startIndex + 1; i < lines.length; i++) {
       const line = lines[i];
-      // Check for nested block openers (boundary patterns or block keywords)
       if (blockStartRe && blockStartRe.test(line) && !opensNoBlock(line)) {
         depth++;
       }
@@ -3251,9 +3136,6 @@ export class GraphExtractor {
     return lines.length;
   }
 
-  /**
-   * Find end line of a method (simpler heuristic)
-   */
   findMethodEndLine(lines, startIndex) {
     let braceDepth = 0;
     let started = false;
@@ -3274,10 +3156,6 @@ export class GraphExtractor {
     return Math.min(startIndex + 50, lines.length);
   }
 }
-
-// =============================================================================
-// DATABASE OPERATIONS
-// =============================================================================
 
 /**
  * Create code graph database schema
@@ -3350,7 +3228,6 @@ export function createGraphSchema(db, { path: dbPath = 'code-graph.db' } = {}) {
     console.log('  FTS5 not available:', err.message);
   }
 
-  // Indexes for graph traversal and text search
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_file ON entities(file_path)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)`);
@@ -3475,10 +3352,6 @@ export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {})
 }
 
 /**
- * Insert entities and relationships into database
- * Uses better-sqlite3 (sync API, no .free() needed)
- */
-/**
  * Rebuild + optimize the external-content FTS5 mirrors from the entities
  * table. 'rebuild' reconstructs the whole FTS index from current content, so
  * only the LAST rebuild before any FTS read matters — batch loops should
@@ -3549,8 +3422,6 @@ export function entityParentIds(entities) {
 }
 
 export function insertGraph(db, entities, relationships, hasFts5 = false, { syncFts = true, callSites = null, files = null } = {}) {
-  // Insert entities with HCGS hierarchy support
-  // Includes signature_hash for collision-proof backup/restore
   const entityStmt = db.prepare(`
     INSERT OR REPLACE INTO entities
     (id, file_path, type, name, signature, signature_hash, doc_comment, start_line, end_line, package, parent_class, search_text, name_alias, parent_id, hierarchy_level)
@@ -3580,7 +3451,6 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
   // Use transaction for bulk entity inserts (much faster)
   const insertEntities = db.transaction(() => {
     for (const e of entities) {
-      // Create searchable text combining name, signature, and doc comment
       const searchText = [e.name, e.signature, e.doc_comment]
         .filter(Boolean)
         .join(' ')
@@ -3590,10 +3460,8 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
       const hierarchyLevel = entityHierarchyLevel(e.type);
       const parentId = parentIds.get(e.id) ?? null;
 
-      // Fix 7: Generate normalized identifier alias for cross-style search
       const nameAlias = normalizeIdentifier(e.name);
 
-      // better-sqlite3: use spread params instead of array
       entityStmt.run(
         e.id,
         e.file_path,
@@ -3618,7 +3486,6 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
   console.log(`  ✓ Inserted ${entities.length} entities`);
   // Note: better-sqlite3 doesn't need .free()
 
-  // Insert relationships (filter out invalid ones)
   console.log(`  Inserting ${relationships.length} relationships...`);
 
   const relStmt = db.prepare(`
@@ -3627,15 +3494,12 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Use transaction for bulk relationship inserts
   let relInserted = 0;
   const insertRelationships = db.transaction(() => {
     for (const r of relationships) {
-      // Skip relationships without target_name
       if (!r.target_name) continue;
 
       try {
-        // better-sqlite3: use spread params instead of array
         relStmt.run(
           r.source_id || null,
           r.target_id || null,
@@ -3676,16 +3540,10 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
     db.transaction(() => insertFileNodes(db, files))();
   }
 
-
-  // Rebuild FTS indexes if available
   if (hasFts5 && syncFts) {
     rebuildGraphFts(db);
   }
 }
-
-// =============================================================================
-// CLI
-// =============================================================================
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);

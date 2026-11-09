@@ -40,7 +40,6 @@ import { chunkTextFtsWriter } from '../../indexing/chunk-text-fts.js';
  * one pass. Returns a parallel array; does not mutate the chunks.
  *
  * @param {Array<object>} chunks
- * @param {string} filePath
  * @returns {Array<{chunkStructId:string, structural:boolean, occurrenceIndex:number|null, hashes:{chunk_text_hash:string, embedding_input_hash:string, li_input_hash:string, metadata_fingerprint:string, dedup_fingerprint:string}}>}
  */
 export function annotateChunksForDelta(chunks, filePath) {
@@ -62,8 +61,6 @@ export function annotateChunksForDelta(chunks, filePath) {
  * row has no structural ID — typical for rows written by the older
  * indexer before the Phase 1 migration.
  *
- * @param {import('better-sqlite3').Database} db
- * @param {string} filePath
  * @param {{manifestEpoch?: number}} [options]
  * @returns {Map<string, {id:string, chunk_struct_id:string, chunk_text_hash:string, embedding_input_hash:string, li_input_hash:string, metadata_fingerprint:string, epoch_written:number, epoch_retired:number|null}>}
  */
@@ -218,8 +215,6 @@ export function diffChunks(chunks, annotations, dbSnapshot) {
  * inserts them with the new column values populated via the helpers in
  * this module.
  *
- * @param {import('better-sqlite3').Database} db
- * @param {string} filePath
  * @param {object} diff                      Output of `diffChunks`.
  * @param {number} epoch                     ε+1 for this tick.
  * @returns {{versionedRows:Array<{oldId:string,newId:string,chunkStructId:string}>, replacedRows:Array<{oldId:string,chunkStructId:string}>, retiredRows:Array<{oldId:string,chunkStructId:string}>}}

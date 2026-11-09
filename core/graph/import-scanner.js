@@ -88,10 +88,6 @@ export function scanImports(content, language) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// JavaScript / TypeScript
-// ---------------------------------------------------------------------------
-
 const JS_FROM_RE = /\bfrom\s*(['"])([^'"\n]+)\1/;
 const JS_SIDE_EFFECT_RE = /^import\s*(['"])([^'"\n]+)\1/;
 const JS_IMPORT_EQUALS_RE = /^(?:export\s+)?import\s+\w+\s*=\s*require\s*\(\s*(['"])([^'"\n]+)\1\s*\)/;
@@ -99,7 +95,6 @@ const JS_REQUIRE_RE = /\brequire\s*\(\s*(['"])([^'"\n]+)\1\s*\)/g;
 const JS_DYNAMIC_RE = /\bimport\s*\(\s*(['"])([^'"\n]+)\1\s*\)/g;
 const JS_DESTRUCTURED_REQUIRE_RE = /(?:const|let|var)\s+\{([^}]+)\}\s*=\s*require\s*\(\s*['"]([^'"\n]+)['"]/;
 
-/** True when an `import`/`export` statement header is complete on `text`. */
 function jsStatementDone(text) {
   return JS_FROM_RE.test(text) || /;\s*$/.test(text) || JS_SIDE_EFFECT_RE.test(text);
 }
@@ -127,7 +122,6 @@ function scanJs(content) {
     const hasExport = trimmed.startsWith('export');
     if (!hasImport && !hasRequire && !hasExport) continue;
 
-    // Statement-level `import ...` / `export ... from` (possibly multi-line).
     if ((trimmed.startsWith('import') && !trimmed.startsWith('import(')) || (hasExport && /^export\s+(?:type\s+)?(?:\*|\{)/.test(trimmed))) {
       let stmt = trimmed;
       let j = i;
@@ -188,10 +182,6 @@ function destructuredNames(raw) {
   return names;
 }
 
-// ---------------------------------------------------------------------------
-// Python
-// ---------------------------------------------------------------------------
-
 const PY_FROM_RE = /^from\s+(\.+[\w.]*|[A-Za-z_][\w.]*)\s+import\s+(.*)$/;
 const PY_IMPORT_RE = /^import\s+(.+)$/;
 
@@ -251,10 +241,6 @@ function countOccurrences(text, needle) {
   while (k !== -1) { n++; k = text.indexOf(needle, k + needle.length); }
   return n;
 }
-
-// ---------------------------------------------------------------------------
-// Rust
-// ---------------------------------------------------------------------------
 
 const RUST_USE_START_RE = /^(?:pub(?:\s*\([^)]*\))?\s+)?use\s+/;
 const RUST_MOD_RE = /^(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;/;
@@ -346,10 +332,6 @@ function splitTopLevel(text) {
   return parts;
 }
 
-// ---------------------------------------------------------------------------
-// Go
-// ---------------------------------------------------------------------------
-
 // Group 1: the optional package name (`pb "…/protos/pb"`, `_`, `.`).
 const GO_SINGLE_RE = /^import\s+(?:([A-Za-z_]\w*|\.)\s+)?"([^"]+)"/;
 const GO_BLOCK_LINE_RE = /^(?:([A-Za-z_]\w*|\.)\s+)?"([^"]+)"/;
@@ -397,10 +379,6 @@ export function goImportName(imp) {
   return /^[A-Za-z_]\w*$/.test(last) ? last : null;
 }
 
-// ---------------------------------------------------------------------------
-// C / C++ / Objective-C
-// ---------------------------------------------------------------------------
-
 const C_INCLUDE_RE = /^#\s*(?:include|import)\s*([<"])([^>"]+)[>"]/;
 
 function scanC(content) {
@@ -414,10 +392,6 @@ function scanC(content) {
   }
   return out;
 }
-
-// ---------------------------------------------------------------------------
-// JVM (Java / Kotlin / Scala / Groovy)
-// ---------------------------------------------------------------------------
 
 const JVM_IMPORT_RE = /^import\s+(?:static\s+)?([A-Za-z_][\w.]*?)(\.\*|\._|\.\{([^}]*)\})?\s*(?:as\s+(\w+))?\s*;?\s*$/;
 
@@ -448,10 +422,6 @@ function scanJvm(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Ruby
-// ---------------------------------------------------------------------------
-
 const RUBY_REQUIRE_RE = /^(require_relative|require|load|autoload\s+:\w+\s*,)\s*\(?\s*['"]([^'"]+)['"]/;
 
 function scanRuby(content) {
@@ -465,10 +435,6 @@ function scanRuby(content) {
   }
   return out;
 }
-
-// ---------------------------------------------------------------------------
-// PHP
-// ---------------------------------------------------------------------------
 
 const PHP_USE_RE = /^use\s+(?:function\s+|const\s+)?\\?([\w\\]+?)(?:\\\{([^}]*)\})?\s*(?:as\s+\w+)?\s*[;,]/;
 const PHP_REQUIRE_RE = /^(?:require|include)(?:_once)?\s*\(?\s*(__DIR__\s*\.\s*|dirname\(__FILE__\)\s*\.\s*)?['"]([^'"]+)['"]/;
@@ -508,10 +474,6 @@ function scanPhp(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Dart
-// ---------------------------------------------------------------------------
-
 const DART_IMPORT_RE = /^(?:import|export|part)\s+['"]([^'"]+)['"]/;
 
 function scanDart(content) {
@@ -525,10 +487,6 @@ function scanDart(content) {
   }
   return out;
 }
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
 
 function newlinesBefore(text, index) {
   let n = 0;
@@ -552,10 +510,6 @@ const ELM_RE = /^import\s+([A-Z][\w]*(?:\.[A-Z][\w]*)*)/;
 const R_SOURCE_RE = /^\s*(?:sys\.)?source\(\s*(?:file\s*=\s*)?["']([^"']+)["']/;
 const CRYSTAL_RE = /^\s*require\s+"([^"]+)"/;
 
-// ---------------------------------------------------------------------------
-// Single-file components (.vue / .svelte / .astro)
-// ---------------------------------------------------------------------------
-
 const SFC_SCRIPT_RE = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
 
 function scanSfc(content) {
@@ -577,10 +531,7 @@ function scanSfc(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Stylesheets: Sass/SCSS `@use` / `@forward` / `@import`, Less and CSS `@import`
-// ---------------------------------------------------------------------------
-
 const STYLE_AT_RE = /@(use|forward|import)\b([^;{]*)/g;
 const STYLE_ARG_RE = /url\(\s*(['"]?)([^'")\s]+)\1\s*\)|(['"])([^'"\n]+)\3/g;
 
@@ -611,10 +562,7 @@ function scanStyle(content, language) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // C#: `using X.Y;`, `global using`, `using static`, `using A = X.Y.Z;`
-// ---------------------------------------------------------------------------
-
 const CS_USING_RE = /^(?:global\s+)?using\s+(?:(static)\s+)?(?:([A-Za-z_]\w*)\s*=\s*)?(?:global::)?(@?[A-Za-z_][\w.]*)(?:<[^;]*>)?\s*;/;
 
 function scanCsharp(content) {
@@ -633,10 +581,7 @@ function scanCsharp(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Swift: `import Module`, `@testable import Module`, `import struct Module.Type`
-// ---------------------------------------------------------------------------
-
 const SWIFT_IMPORT_RE = /^(?:@[\w]+(?:\([^)]*\))?\s+)*import\s+(?:(?:typealias|struct|class|enum|protocol|let|var|func)\s+)?([A-Za-z_]\w*)/;
 
 function scanSwift(content) {
@@ -652,10 +597,7 @@ function scanSwift(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Elixir: `alias A.B`, `alias A.{B, C}`, `alias A.B, as: X`, import/require/use
-// ---------------------------------------------------------------------------
-
 const EX_DIRECTIVE_RE = /^(alias|import|require|use)\s+([A-Z][\w]*(?:\.[A-Z][\w]*)*)(\.\{)?/;
 const EX_AS_RE = /,\s*as:\s*([A-Z]\w*)/;
 
@@ -694,10 +636,7 @@ function scanElixir(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Lua: `require "a.b"`, `require("a.b")`, `require('a.b')`
-// ---------------------------------------------------------------------------
-
 const LUA_REQUIRE_RE = /\brequire\s*\(?\s*(['"])([^'"\n]+)\1/g;
 
 function scanLua(content) {
@@ -727,10 +666,7 @@ function scanLua(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Zig: `@import("x.zig")`, `@import("module")`
-// ---------------------------------------------------------------------------
-
 const ZIG_IMPORT_RE = /@import\(\s*"([^"]+)"\s*\)/g;
 
 function scanZig(content) {
@@ -748,10 +684,7 @@ function scanZig(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Haskell: `import [qualified] A.B [as X] [(..)]`, incl. SOURCE / package imports
-// ---------------------------------------------------------------------------
-
 const HS_IMPORT_RE = /^import\s+(?:\{-#\s*SOURCE\s*#-\}\s*)?(?:safe\s+)?(?:qualified\s+)?(?:"[^"]*"\s+)?([A-Z][\w']*(?:\.[A-Z][\w']*)*)/;
 
 function scanHaskell(content) {
@@ -774,10 +707,7 @@ function scanHaskell(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Clojure: `(ns x (:require [a.b :as c] d.e (f.g [h :as i])))`, `(require '[a.b])`
-// ---------------------------------------------------------------------------
-
 /**
  * Minimal reader: nested arrays for lists/vectors (`kind` property), strings
  * for symbols and keywords. Skips strings, comments, chars and reader prefixes.
@@ -853,10 +783,7 @@ function scanClojure(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Solidity: `import "x";`, `import "x" as y;`, `import * as y from "x";`, `import {a} from "x";`
-// ---------------------------------------------------------------------------
-
 const SOL_IMPORT_RE = /^[ \t]*import\s+(?:[^;"']*?\bfrom\s+)?(["'])([^"'\n]+)\1/gm;
 
 function scanSolidity(content) {
@@ -870,10 +797,7 @@ function scanSolidity(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Shell: `source x`, `. x`, with the script-directory idioms
-// ---------------------------------------------------------------------------
-
 const SH_SOURCE_RE = /(?:^|[;&|]\s*|\b(?:then|do|else)\s+)(?:source|\.)\s+/;
 const SH_ASSIGN_RE = /^(?:export\s+|local\s+|readonly\s+|declare\s+(?:-\w+\s+)*)?([A-Za-z_]\w*)=(.*)$/;
 const SH_SCRIPT_DIR_EXPR_RE = /dirname|BASH_SOURCE|\$\{0%\/\*\}|\$0\b/;
@@ -926,20 +850,14 @@ function scanShell(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Protocol Buffers: `import "a/b.proto";`, `import public|weak "x";`
-// ---------------------------------------------------------------------------
-
 const PROTO_IMPORT_RE = /^\s*import\s+(?:public\s+|weak\s+)?"([^"]+)"\s*;/;
 
 function scanProto(content) {
   return scanSimple(content, PROTO_IMPORT_RE, 'proto-import');
 }
 
-// ---------------------------------------------------------------------------
 // Terraform / HCL: `module "x" { source = "./modules/x" }` (local paths only)
-// ---------------------------------------------------------------------------
-
 const HCL_MODULE_RE = /\bmodule\s+"[^"]*"\s*\{/g;
 const HCL_SOURCE_RE = /(?:^|\n)\s*source\s*=\s*"([^"]+)"/;
 
@@ -969,10 +887,7 @@ function scanHcl(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Perl: `use A::B;`, `require A::B;`, `use parent/base qw(A B)`, `require "x.pl"`
-// ---------------------------------------------------------------------------
-
 const PERL_USE_RE = /^\s*(?:use|require)\s+([A-Z][\w]*(?:::\w+)*)\b/;
 const PERL_PARENT_RE = /^\s*use\s+(?:parent|base)\s+(?:-norequire\s*,\s*)?(?:qw\s*[(\[{/]\s*([^)\]}/]+)|["']([^"']+)["'])/;
 const PERL_REQUIRE_FILE_RE = /^\s*(?:require|do)\s+["']([^"']+\.p[lm])["']/;
@@ -1002,10 +917,7 @@ function scanPerl(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // PowerShell: `. $PSScriptRoot\x.ps1`, `Import-Module $PSScriptRoot/x.psm1`, `using module .\x.psm1`
-// ---------------------------------------------------------------------------
-
 const PS_SCRIPTROOT_RE = /^\s*(?:\.|Import-Module(?:\s+-Name)?)\s+["']?\$PSScriptRoot[\\/]([^"'\s;]+)/i;
 const PS_USING_MODULE_RE = /^\s*using\s+module\s+["']?(\.{1,2}[\\/][^"'\s;]+)/i;
 
@@ -1023,10 +935,7 @@ function scanPowershell(content) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Erlang: `-include("x.hrl").`, `-include_lib("app/include/x.hrl").`
-// ---------------------------------------------------------------------------
-
 const ERL_INCLUDE_RE = /^-include(_lib)?\(\s*"([^"]+)"\s*\)/;
 
 function scanErlang(content) {

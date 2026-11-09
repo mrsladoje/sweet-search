@@ -10,19 +10,9 @@
  * 5. Static fallback (no LLM) - uses doc_comment, signature, or "{type} {name}"
  *
  * Override model for any provider: HCGS_MODEL=model-name
- *
- * Features:
- * - Auto-detection of best available provider
- * - Exponential backoff retry with jitter
- * - Intelligent error classification (retryable vs permanent)
- * - Consistent interface across all providers
  */
 
 import { CEREBRAS_CONFIG, HCGS_CONFIG, getCerebrasModel, isCerebrasAvailable } from './config/index.js';
-
-// =============================================================================
-// PROVIDER CONFIGURATION
-// =============================================================================
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
@@ -54,17 +44,7 @@ const RETRY_CONFIG = {
   jitterFactor: 0.2, // 20% jitter
 };
 
-// =============================================================================
-// ERROR CLASSIFICATION
-// =============================================================================
-
-/**
- * Determines if an error is retryable (transient) or permanent
- * @param {Error} error - The error to classify
- * @returns {boolean} - true if the error is retryable
- */
 export function isRetryable(error) {
-  // Network errors are typically retryable
   if (error.code === 'ECONNREFUSED' ||
       error.code === 'ETIMEDOUT' ||
       error.code === 'ECONNRESET' ||
@@ -73,17 +53,13 @@ export function isRetryable(error) {
     return true;
   }
 
-  // HTTP status codes
   const status = error.status || error.statusCode || (error.response && error.response.status);
   if (status) {
-    // Rate limits (429) and server errors (5xx) are retryable
     if (status === 429) return true;
     if (status >= 500 && status < 600) return true;
-    // Client errors (4xx except 429) are permanent
     if (status >= 400 && status < 500) return false;
   }
 
-  // Timeout errors are retryable
   if (error.name === 'AbortError' || error.message?.includes('timeout')) {
     return true;
   }
@@ -91,10 +67,6 @@ export function isRetryable(error) {
   // Default: assume transient for unknown errors
   return true;
 }
-
-// =============================================================================
-// RETRY MECHANISM
-// =============================================================================
 
 /**
  * Calculates delay with exponential backoff and jitter
@@ -108,13 +80,7 @@ function calculateDelay(attempt) {
   return Math.round(cappedDelay + jitter);
 }
 
-/**
- * Executes a function with exponential backoff retry
- * @param {Function} fn - Async function to execute
- * @param {object} options - Retry options
- * @returns {Promise<any>} - Result from the function
- * @throws {Error} - Last error if all retries fail
- */
+/** @throws {Error} the last error if all retries fail */
 export async function generateWithRetry(fn, options = {}) {
   const maxRetries = options.maxRetries ?? RETRY_CONFIG.maxRetries;
   let lastError;
@@ -125,12 +91,10 @@ export async function generateWithRetry(fn, options = {}) {
     } catch (error) {
       lastError = error;
 
-      // Don't retry if this is the last attempt or error is not retryable
       if (attempt >= maxRetries || !isRetryable(error)) {
         throw error;
       }
 
-      // Calculate delay and wait
       const delay = calculateDelay(attempt);
       if (process.env.SEARCH_DEBUG) {
         console.log(`[LLM] Retry ${attempt + 1}/${maxRetries} after ${delay}ms: ${error.message}`);
@@ -142,17 +106,6 @@ export async function generateWithRetry(fn, options = {}) {
   throw lastError;
 }
 
-// =============================================================================
-// PROVIDER: GROQ (Primary — fastest, cheapest)
-// =============================================================================
-
-/**
- * Calls the Groq chat completions API with a specific model
- * @param {string} model - Groq model ID
- * @param {string} prompt - The prompt to send
- * @param {number} maxTokens - Maximum tokens to generate
- * @returns {Promise<string>} - Generated text
- */
 async function callGroqCompletion(model, prompt, maxTokens) {
   const requestBody = {
     model,
@@ -214,16 +167,6 @@ async function generateWithGroq(prompt, options = {}) {
   }
 }
 
-// =============================================================================
-// PROVIDER: CEREBRAS (Fallback — fast, good quality)
-// =============================================================================
-
-/**
- * Generates summary using Cerebras
- * @param {string} prompt - The prompt to send
- * @param {object} options - Generation options
- * @returns {Promise<string>} - Generated summary
- */
 async function generateWithCerebras(prompt, options = {}) {
   if (!isCerebrasAvailable()) {
     throw new Error('Cerebras API key not configured');
@@ -270,14 +213,6 @@ async function generateWithCerebras(prompt, options = {}) {
   return data.choices?.[0]?.message?.content?.trim() || '';
 }
 
-// =============================================================================
-// PROVIDER: OLLAMA (Local GPU)
-// =============================================================================
-
-/**
- * Checks if Ollama is available
- * @returns {Promise<boolean>}
- */
 async function isOllamaAvailable() {
   try {
     const response = await fetch(`${OLLAMA_CONFIG.baseUrl}/api/tags`, {
@@ -286,7 +221,6 @@ async function isOllamaAvailable() {
     if (!response.ok) return false;
 
     const data = await response.json();
-    // Check if our desired model is available
     return data.models?.some(m =>
       m.name === OLLAMA_CONFIG.model ||
       m.name.startsWith(OLLAMA_CONFIG.model.split(':')[0])
@@ -296,12 +230,6 @@ async function isOllamaAvailable() {
   }
 }
 
-/**
- * Generates summary using Ollama
- * @param {string} prompt - The prompt to send
- * @param {object} options - Generation options
- * @returns {Promise<string>} - Generated summary
- */
 async function generateWithOllama(prompt, options = {}) {
   const maxTokens = options.maxTokens ?? 150;
 
@@ -334,18 +262,9 @@ async function generateWithOllama(prompt, options = {}) {
   return data.response?.trim() || '';
 }
 
-// =============================================================================
-// PROVIDER: TRANSFORMERS.JS (Local CPU)
-// =============================================================================
-
-// Lazy-loaded pipeline instance
 let transformersPipeline = null;
 let transformersAvailable = null;
 
-/**
- * Checks if Transformers.js is available and initializes it
- * @returns {Promise<boolean>}
- */
 async function isTransformersAvailable() {
   if (transformersAvailable !== null) {
     return transformersAvailable;
@@ -355,7 +274,6 @@ async function isTransformersAvailable() {
     // Dynamic import to avoid errors if not installed
     const { pipeline, env } = await import('@xenova/transformers');
 
-    // Configure for optimal performance
     env.allowLocalModels = true;
     env.useBrowserCache = false;
 
@@ -379,12 +297,6 @@ async function isTransformersAvailable() {
   }
 }
 
-/**
- * Generates summary using Transformers.js
- * @param {string} prompt - The prompt to send
- * @param {object} options - Generation options
- * @returns {Promise<string>} - Generated summary
- */
 async function generateWithTransformers(prompt, options = {}) {
   if (!transformersPipeline) {
     const available = await isTransformersAvailable();
@@ -408,20 +320,8 @@ async function generateWithTransformers(prompt, options = {}) {
   return result[0]?.generated_text?.trim() || '';
 }
 
-// =============================================================================
-// PROVIDER: STATIC FALLBACK (No LLM)
-// =============================================================================
-
-/**
- * Generates a static summary without LLM
- * Uses available metadata: doc_comment > signature > type + name
- * @param {object} entity - Code entity with metadata
- * @returns {string} - Generated summary
- */
 function generateStaticSummary(entity) {
-  // Priority 1: Use existing doc comment
   if (entity.doc_comment) {
-    // Extract first sentence or line
     const firstLine = entity.doc_comment
       .replace(/^\/\*\*\s*|\s*\*\/$/g, '') // Remove /** */
       .replace(/^\s*\*\s*/gm, '')          // Remove leading *
@@ -433,7 +333,6 @@ function generateStaticSummary(entity) {
     }
   }
 
-  // Priority 2: Use signature if available
   if (entity.signature) {
     const cleanSig = entity.signature
       .replace(/\s+/g, ' ')
@@ -444,7 +343,6 @@ function generateStaticSummary(entity) {
     }
   }
 
-  // Priority 3: Construct from type and name
   const type = entity.type || 'entity';
   const name = entity.name || 'unknown';
 
@@ -457,10 +355,6 @@ function generateStaticSummary(entity) {
   return `${type.charAt(0).toUpperCase() + type.slice(1)}: ${humanName}`;
 }
 
-// =============================================================================
-// PROVIDER DETECTION AND SELECTION
-// =============================================================================
-
 /**
  * Provider interface
  * @typedef {object} SummaryProvider
@@ -469,7 +363,6 @@ function generateStaticSummary(entity) {
  * @property {Function} generate - Generation function
  */
 
-// Provider registry (priority order: Groq → Cerebras → Ollama → Transformers.js → Static)
 const providers = {
   groq: {
     name: 'groq',
@@ -514,21 +407,12 @@ const providers = {
   },
 };
 
-// Cached provider selection
 let selectedProvider = null;
 let providerCheckPromise = null;
 
-/**
- * Auto-detects and returns the best available summary provider
- * @param {object} options - Options
- * @param {boolean} options.preferLocal - Prefer local providers over remote
- * @param {boolean} options.forceCheck - Force re-check of provider availability
- * @returns {Promise<SummaryProvider>} - Best available provider
- */
 export async function getSummaryProvider(options = {}) {
   const { preferLocal = false, forceCheck = false } = options;
 
-  // Return cached provider if available and not forcing recheck
   if (selectedProvider && !forceCheck) {
     return selectedProvider;
   }
@@ -539,10 +423,8 @@ export async function getSummaryProvider(options = {}) {
   }
 
   providerCheckPromise = (async () => {
-    // Get providers sorted by priority (optionally preferring local)
     const providerList = Object.values(providers).sort((a, b) => {
       if (preferLocal) {
-        // Local providers first
         if (a.isLocal !== b.isLocal) {
           return a.isLocal ? -1 : 1;
         }
@@ -550,7 +432,6 @@ export async function getSummaryProvider(options = {}) {
       return a.priority - b.priority;
     });
 
-    // Find first available provider
     for (const provider of providerList) {
       try {
         const available = await provider.checkAvailable();
@@ -568,7 +449,6 @@ export async function getSummaryProvider(options = {}) {
       }
     }
 
-    // Fallback to static (always available)
     selectedProvider = providers.static;
     return providers.static;
   })();
@@ -576,24 +456,9 @@ export async function getSummaryProvider(options = {}) {
   return providerCheckPromise;
 }
 
-// =============================================================================
-// UNIFIED GENERATION INTERFACE
-// =============================================================================
-
-/**
- * Generates a summary for a code entity using the best available provider
- * Falls back through the provider chain on failures
- * @param {string} prompt - The prompt to send
- * @param {object} options - Generation options
- * @param {object} options.entity - Code entity metadata (for static fallback)
- * @param {number} options.maxTokens - Maximum tokens to generate
- * @param {boolean} options.preferLocal - Prefer local providers
- * @returns {Promise<{summary: string, provider: string}>}
- */
 export async function generateSummary(prompt, options = {}) {
   const provider = await getSummaryProvider({ preferLocal: options.preferLocal });
 
-  // Try primary provider with retry
   try {
     const summary = await generateWithRetry(
       () => provider.generate(prompt, options),
@@ -609,7 +474,6 @@ export async function generateSummary(prompt, options = {}) {
       console.log(`[LLM] Primary provider ${provider.name} failed: ${primaryError.message}`);
     }
 
-    // Try fallback providers
     const fallbackOrder = ['groq', 'cerebras', 'ollama', 'transformers', 'static'];
     for (const fallbackName of fallbackOrder) {
       if (fallbackName === provider.name) continue;
@@ -631,7 +495,6 @@ export async function generateSummary(prompt, options = {}) {
       }
     }
 
-    // Ultimate fallback: static
     return {
       summary: generateStaticSummary(options.entity || {}),
       provider: 'static',
@@ -639,12 +502,6 @@ export async function generateSummary(prompt, options = {}) {
   }
 }
 
-/**
- * Generates summaries for multiple entities in batch
- * @param {Array<{prompt: string, entity: object}>} items - Items to summarize
- * @param {object} options - Generation options
- * @returns {Promise<Array<{summary: string, provider: string}>>}
- */
 export async function generateSummariesBatch(items, options = {}) {
   const provider = await getSummaryProvider({ preferLocal: options.preferLocal });
   const concurrency = provider.isLocal ? 1 : 5; // Limit concurrency for local providers
@@ -661,27 +518,16 @@ export async function generateSummariesBatch(items, options = {}) {
   return results;
 }
 
-// =============================================================================
-// PROMPT TEMPLATES
-// =============================================================================
-
-/**
- * Creates a summary prompt for a code entity
- * @param {object} entity - Code entity
- * @returns {string} - Formatted prompt
- */
 export function createSummaryPrompt(entity) {
   const tokenLimit = HCGS_CONFIG.summaryTokenLimits[entity.type] || HCGS_CONFIG.defaultTokenLimit;
 
   let prompt = `Summarize this ${entity.type} in ${tokenLimit} tokens or less:\n\n`;
 
-  // Add entity header
   prompt += `Name: ${entity.name}\n`;
   if (entity.file) {
     prompt += `File: ${entity.file}\n`;
   }
 
-  // Add code content
   if (entity.code) {
     const codeSnippet = entity.code.length > 2000
       ? entity.code.slice(0, 2000) + '\n// ... (truncated)'
@@ -689,7 +535,6 @@ export function createSummaryPrompt(entity) {
     prompt += `\nCode:\n\`\`\`\n${codeSnippet}\n\`\`\`\n`;
   }
 
-  // Add context from children if available
   if (entity.childSummaries && entity.childSummaries.length > 0) {
     prompt += '\nContains:\n';
     for (const child of entity.childSummaries.slice(0, 5)) {
@@ -701,10 +546,6 @@ export function createSummaryPrompt(entity) {
 
   return prompt;
 }
-
-// =============================================================================
-// EXPORTS
-// =============================================================================
 
 export {
   generateWithGroq,

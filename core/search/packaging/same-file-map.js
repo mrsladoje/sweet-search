@@ -6,35 +6,7 @@ import { isSummaryOnly, shownCodeSpan } from '../agent-output-fixes.js';
 import { estimateTokens } from './budget.js';
 
 /**
- * Package ranked results into agent-mode context blocks.
- *
- * Takes the ranked results from patternSearch (same order, same IDs)
- * and transforms them into self-contained code packages with:
- *   - Loaded code content
- *   - Symbol-complete expansion (via CodeGraphRepository)
- *   - Token budget management
- *   - Header context (top-1 only)
- *   - Confidence + sufficiency signals
- *   - Staleness metadata
- *
- * @param {Array} rankedResults - Results from patternSearch ranking pipeline
- * @param {object} searchStats - Stats from the search pipeline
- * @param {object} opts
- * @param {string} opts.query - Original search query
- * @param {string} opts.regex - Regex pattern used
- * @param {string} [opts.format='agent'] - 'agent' | 'agent_preview' | 'agent_full'
- * @param {number} [opts.tokenBudget] - Total token budget (default depends on sub-mode)
- * @param {number} [opts.k] - Final result cap. When set, rankedResults is cut to k
- *   BEFORE budget signals are computed, so numResults never counts more than k.
- * @param {object} [opts.codeGraphRepo] - CodeGraphRepository for entity lookup (DDD)
- * @param {Map} [opts.locationMap] - Chunk location map
- * @param {string} [opts.projectRoot] - Project root path
- * @param {Set<string>} [opts.ablations] - Feature ablations for A/B testing:
- *   'no-syntax-expansion', 'no-header', 'no-diversity', 'no-adaptive-budget'
- * @returns {object} Agent mode response
- */
-/**
- * Same-file span map (2026-07, within-file blind-spot fix). When the top-1
+ * Same-file span map. When the top-1
  * pack entry is a WINDOWED view of a file (kind chunk/sandwich/syntax — not
  * a fully-shown symbol) and the sufficiency verdict is not a clear YES, one
  * compact line names the sibling symbols immediately above/below the shown

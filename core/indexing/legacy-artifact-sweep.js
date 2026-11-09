@@ -24,8 +24,7 @@ export const DEAD_LEGACY_ARTIFACTS = Object.freeze([
 ]);
 
 /**
- * Delete the dead legacy artifacts in `stateDir`. Best-effort per file.
- * @param {string} stateDir
+ * Best-effort per file.
  * @returns {string[]} the names it deleted
  */
 export function removeDeadLegacyArtifacts(stateDir) {
@@ -36,7 +35,6 @@ export function removeDeadLegacyArtifacts(stateDir) {
       rmSync(file);
       removed.push(name);
     } catch {
-      // absent or not removable — nothing to do
     }
   }
   return removed;

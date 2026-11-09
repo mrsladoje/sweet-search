@@ -91,7 +91,6 @@ export function resetResidentState() {
 }
 const QUARANTINE_AFTER_FAILURES = 2;
 
-// ---- G2 lever flags ----------------------------------------------------------
 /**
  * E.4 SQLite memory pragmas, applied AFTER `journal_mode=WAL; synchronous=NORMAL`
  * on a write connection. `cache_size=-32768` caps the per-connection page cache
@@ -99,7 +98,6 @@ const QUARANTINE_AFTER_FAILURES = 2;
  * startup by index-maintainer — NOT here — to avoid every connection re-setting a
  * process-wide knob.
  *
- * @param {import('better-sqlite3').Database} db
  * @param {{readonly?: boolean}} [opts]
  */
 function applyMemoryPragmas(db, { readonly = false } = {}) {
@@ -415,8 +413,6 @@ class ProductionReconcileAdapter {
     };
     return hooks;
   }
-
-  // ---- E.1 tick-scoped store context ---------------------------------------
 
   /**
    * E.1: open the tick-scoped store context once at tick start. Opens RW
@@ -1032,7 +1028,6 @@ class ProductionReconcileAdapter {
 
   async applyGraphDelta(file, hashes, epoch, ctx) {
     const rel = typeof file === 'string' ? file : file.path;
-    // E.1: the tick-scoped RW connection (schema already ensured).
     const db = ctx.graphDb;
     const hasFts = ctx.graphHasFts;
     const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash, type, signature, doc_comment, start_line, end_line, package, parent_class, parent_id, page_rank FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
@@ -1191,7 +1186,6 @@ class ProductionReconcileAdapter {
 
   async applyVectorDelta(file, _chunks, hashes, epoch, ctx) {
     const rel = typeof file === 'string' ? file : file.path;
-    // E.1: the tick-scoped RW connection (schema already ensured).
     const db = ctx.codebaseDb;
     const vectorOps = [];
     let chunks = [];
@@ -1385,7 +1379,6 @@ class ProductionReconcileAdapter {
         ctx.floatRemoveIds.push(op.retireId);
       }
       if (op.addId && op.embedding) {
-        // Stage the add; insertion happens in finalize (sorted by id).
         ctx.pendingAdds.push(op);
         append += 1;
       }

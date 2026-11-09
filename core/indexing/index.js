@@ -3,10 +3,8 @@
  * Re-exports public API from all sub-modules.
  */
 
-// Main indexer facade
 export * from './index-codebase-v21.js';
 
-// Build pipeline (code graph, vector schema, embedding)
 export * from './indexer-build.js';
 
 // Phase runner + phase wrappers (explicit named exports — do NOT switch back
@@ -23,29 +21,20 @@ export {
   printSummaryPhase,
 } from './indexer-phases.js';
 
-// HNSW, late interaction, quantized artifacts
 export * from './indexer-ann.js';
 
-// SQLite config, logging, atomic swap, file discovery
 export * from './indexer-utils.js';
 
-// Incremental tracker (has default export)
 export { default as incrementalTracker } from './incremental-tracker.js';
 export * from './incremental-tracker.js';
 
-
-// Artifact builder (has default export)
 export { default as artifactBuilder } from './artifact-builder.js';
 export * from './artifact-builder.js';
 
-
-// Document chunker
 export * from './document-chunker.js';
 
-// AST Chunker
 export { ASTChunker } from './ast-chunker.js';
 
-// Chunking sub-modules
 export * from './chunking/chunk-builder.js';
 export { default as MarkdownChunker } from './chunking/markdown-chunker.js';
 export * from './chunking/markdown-chunker.js';
@@ -75,5 +64,4 @@ export {
 } from './indexing-file-policy.js';
 
 
-// Sparse-gram artifact builder (tier-1 grep acceleration)
 export { buildSparseGramArtifact } from './indexer-sparse-gram.js';

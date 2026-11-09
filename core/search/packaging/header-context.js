@@ -6,10 +6,8 @@ import { readFileRange } from '../search-pattern-chunks.js';
 import { inferLanguage } from './span-expansion.js';
 import { estimateTokens } from './budget.js';
 
- // rank 1, 2, 3+
 export const MAX_HEADER_TOKENS = 200;
 
-// Language keywords to exclude from identifier extraction
 export const LANG_KEYWORDS = new Set([
   // JS/TS
   'const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while',
@@ -54,14 +52,9 @@ export const LANG_KEYWORDS = new Set([
 function extractImportLines(headerText, lang) {
   const lines = headerText.split('\n');
 
-  // ── Generic multi-line statement collector ───────────────────────────────
-  // Walk lines, accumulate balanced bracket levels for each "starter" we
-  // recognise, emit when the statement closes. Falls back to single-line
-  // emission for languages where a statement ends at EOL.
   const out = [];
 
   if (lang === 'go') {
-    // Go: capture `import (...)` block contents (each line) and single `import "..."`
     let inBlock = false;
     for (const line of lines) {
       if (/^\s*import\s*\(/.test(line)) { inBlock = true; continue; }
@@ -83,7 +76,6 @@ function extractImportLines(headerText, lang) {
       const line = lines[i];
       if (/^\s*(import\s+\w|from\s+[.\w]+\s+import)/.test(line)) {
         let stmt = line.trimEnd();
-        // Continue while line ends with backslash or has unbalanced (
         const opens = () => (stmt.match(/\(/g) || []).length;
         const closes = () => (stmt.match(/\)/g) || []).length;
         const continued = () => /\\\s*$/.test(stmt) || opens() > closes();
@@ -105,7 +97,6 @@ function extractImportLines(headerText, lang) {
       const line = lines[i];
       if (/^\s*(pub\s+)?use\s+/.test(line) || /^\s*extern\s+crate\s+/.test(line)) {
         let stmt = line.trimEnd();
-        // Continue until we see the terminating `;`
         while (!/;\s*(\/\/.*)?$/.test(stmt) && i + 1 < lines.length) {
           stmt += ' ' + lines[++i].trim();
         }
@@ -162,19 +153,15 @@ function extractImportLines(headerText, lang) {
 
 /**
  * Extract minimal header context for the top-1 result.
- * Language-aware: parses Go import blocks, Python from/import, Rust use declarations.
  *
- * @param {string} code - The result code block
  * @param {Map} fileCache - Shared file cache
  * @param {string} filePath - File path (relative)
- * @param {string} projectRoot
  * @returns {{ headerContext: string|null, headerTokens: number }}
  */
 export function extractHeaderContext(code, fileCache, filePath, projectRoot) {
   if (!code || !filePath) return { headerContext: null, headerTokens: 0 };
 
   try {
-    // Read the first 50 lines (import region) of the file
     const headerText = readFileRange(fileCache, filePath, 1, 50, projectRoot);
     if (!headerText) return { headerContext: null, headerTokens: 0 };
 
@@ -183,13 +170,11 @@ export function extractHeaderContext(code, fileCache, filePath, projectRoot) {
 
     if (importLines.length === 0) return { headerContext: null, headerTokens: 0 };
 
-    // Extract identifiers from the code block — broad matching
     const rawMatches = code.match(/\b[a-zA-Z_][a-zA-Z0-9_]{2,}\b/g) || [];
     const codeIdentifiers = new Set(
       rawMatches.filter(id => !LANG_KEYWORDS.has(id))
     );
 
-    // Keep only imports that reference identifiers found in the code
     const relevantImports = importLines.filter(line =>
       [...codeIdentifiers].some(id => line.includes(id))
     );
@@ -199,7 +184,6 @@ export function extractHeaderContext(code, fileCache, filePath, projectRoot) {
     const headerContext = relevantImports.join('\n');
     const headerTokens = estimateTokens(headerContext);
 
-    // Enforce max header tokens — trim at line boundaries
     if (headerTokens > MAX_HEADER_TOKENS) {
       const hdrLines = headerContext.split('\n');
       let trimmed = '';

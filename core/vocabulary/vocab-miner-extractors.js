@@ -15,17 +15,10 @@ const NON_TERM_CONSTANTS = new Set([
   'CHAR', 'BYTE', 'INT8', 'UINT',
 ]);
 
-// ---------------------------------------------------------------------------
-// Import Extraction
-// ---------------------------------------------------------------------------
-
 /**
- * Extract import statements and add imported names as vocabulary terms.
  * Supports JS/TS, Python, Go, Java/Kotlin, and Rust import syntaxes.
- * @param {string} content - Source file content to parse
  * @param {string} ext - File extension including dot (e.g. '.js', '.py')
  * @param {Map<string, {score: number, source: string}>} terms - Accumulator map for discovered terms
- * @returns {void}
  */
 export function extractImports(content, ext, terms) {
   // JS/TS: import { X, Y } from 'module'; import X from 'module'
@@ -186,17 +179,10 @@ export function extractImports(content, ext, terms) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Export Extraction
-// ---------------------------------------------------------------------------
-
 /**
- * Extract exported declarations (classes, functions, constants, etc.) as vocabulary terms.
  * Currently supports JS/TS export syntax.
- * @param {string} content - Source file content to parse
  * @param {string} ext - File extension including dot (e.g. '.js', '.ts')
  * @param {Map<string, {score: number, source: string}>} terms - Accumulator map for discovered terms
- * @returns {void}
  */
 export function extractExports(content, ext, terms) {
   // JS/TS: export { X, Y }; export class X; export function X; export default X
@@ -214,20 +200,12 @@ export function extractExports(content, ext, terms) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Definition Extraction
-// ---------------------------------------------------------------------------
-
 /**
- * Extract class, function, and method definitions as vocabulary terms.
  * Matches universal patterns including async functions and indented method definitions.
- * @param {string} content - Source file content to parse
  * @param {string} ext - File extension including dot (e.g. '.js', '.py')
  * @param {Map<string, {score: number, source: string}>} terms - Accumulator map for discovered terms
- * @returns {void}
  */
 export function extractDefinitions(content, ext, terms) {
-  // Universal: class/function/method patterns
   const defPatterns = [
     // JS/TS: class X, function X, const X =
     /(?:class|interface|enum|type)\s+([A-Z]\w+)/g,
@@ -254,16 +232,9 @@ export function extractDefinitions(content, ext, terms) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Constant Extraction
-// ---------------------------------------------------------------------------
-
 /**
- * Extract SCREAMING_SNAKE_CASE constants as vocabulary terms.
  * Splits compound constant names into sub-parts and skips common annotation tokens (TODO, FIXME, etc.).
- * @param {string} content - Source file content to parse
  * @param {Map<string, {score: number, source: string}>} terms - Accumulator map for discovered terms
- * @returns {void}
  */
 export function extractConstants(content, terms) {
   // SCREAMING_SNAKE_CASE constants (minimum 4 chars total: 1 leading + 3 more)
@@ -282,13 +253,7 @@ export function extractConstants(content, terms) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Manifest Extractors
-// ---------------------------------------------------------------------------
-
 /**
- * Parse a package.json file and return dependency names from both dependencies and devDependencies.
- * @param {string} content - Raw JSON string of a package.json file
  * @returns {string[]} Array of dependency package names (length > 1), or empty array on parse failure
  */
 export function extractNpmDeps(content) {
@@ -305,11 +270,6 @@ export function extractNpmDeps(content) {
   }
 }
 
-/**
- * Parse a Cargo.toml file and return crate dependency names from [dependencies] sections.
- * @param {string} content - Raw content of a Cargo.toml file
- * @returns {string[]} Array of crate dependency names
- */
 export function extractCargoDeps(content) {
   const deps = [];
   const depRe = /^\[dependencies(?:\.[^\]]+)?\]\s*\n([\s\S]*?)(?=\n\[|\n*$)/gm;
@@ -325,8 +285,6 @@ export function extractCargoDeps(content) {
 }
 
 /**
- * Parse a go.mod file and return the last path segment of each required module.
- * @param {string} content - Raw content of a go.mod file
  * @returns {string[]} Array of Go module short names (last path segment)
  */
 export function extractGoDeps(content) {
@@ -345,8 +303,7 @@ export function extractGoDeps(content) {
 }
 
 /**
- * Parse a requirements.txt file and return package names (stripped of version specifiers and comments).
- * @param {string} content - Raw content of a requirements.txt file
+ * Package names are stripped of version specifiers and comments.
  * @returns {string[]} Array of Python package names (length > 1)
  */
 export function extractPipDeps(content) {
@@ -358,8 +315,6 @@ export function extractPipDeps(content) {
 }
 
 /**
- * Parse a pyproject.toml file and return dependency names from the [project] dependencies array.
- * @param {string} content - Raw content of a pyproject.toml file
  * @returns {string[]} Array of Python package names (length > 1)
  */
 export function extractPyprojectDeps(content) {

@@ -30,7 +30,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..', '..');
 const require = createRequire(import.meta.url);
 
-// Supported targets — only these get native resolution.
 const SUPPORTED_TARGETS = new Set([
   'darwin-arm64',
   'darwin-x64',
@@ -68,8 +67,7 @@ export function getPlatformInfo() {
 }
 
 /**
- * Return the expected npm package name for the current platform, or null if unsupported.
- * This returns the standard (non-cuda) name; use `getPlatformInfo()` if you
+ * The standard (non-cuda) package name, or null if unsupported; use `getPlatformInfo()` if you
  * also need the cuda variant.
  */
 export function getPlatformPackageName() {
@@ -109,13 +107,11 @@ export function resolveNativeAddonCandidates(options = {}) {
   const out = [];
   const add = (p) => { if (p && exists(p) && !out.includes(p)) out.push(p); };
 
-  // 1. Local dev build (crates/sweet-search-native/ or legacy native-maxsim/).
+  // Legacy native-maxsim/ is still checked.
   add(join(rootDir, 'crates', 'sweet-search-native', binaryName));
   add(join(rootDir, 'native-maxsim', binaryName));
-  // 2. Local package template — CUDA preferred, then CPU.
   if (cudaPackageName) add(join(rootDir, 'packages', `native-${platform}-${arch}${libc}-cuda`, 'sweet-search-native.node'));
   add(join(rootDir, 'packages', `native-${platform}-${arch}${libc}`, 'sweet-search-native.node'));
-  // 3. Installed npm package — CUDA preferred, then CPU.
   if (cudaPackageName) {
     try { add(join(resolvePackageDir(cudaPackageName), 'sweet-search-native.node')); }
     catch { /* -cuda package not installed */ }
@@ -169,11 +165,9 @@ export function resolveNativeBinary(options = {}) {
   const rootDir = options.rootDir ?? root;
   const resolvePackageDir = options.resolvePackageDir ?? defaultPackageDirResolver;
 
-  // 1. Local dev: crates/sweet-search-cli/target/release/
   const localDev = join(rootDir, 'crates', 'sweet-search-cli', 'target', 'release', 'sweet-search');
   if (exists(localDev)) return localDev;
 
-  // 2. Local package template: packages/native-*-cuda/ preferred, then packages/native-*/
   if (cudaPackageName) {
     const cudaLocalPkg = join(rootDir, 'packages', `native-${platform}-${arch}${libc}-cuda`, 'sweet-search');
     if (exists(cudaLocalPkg)) return cudaLocalPkg;
@@ -182,7 +176,6 @@ export function resolveNativeBinary(options = {}) {
   const localPkg = join(rootDir, 'packages', pkgDir, 'sweet-search');
   if (exists(localPkg)) return localPkg;
 
-  // 3. Installed npm package — CUDA variant preferred on Linux.
   if (cudaPackageName) {
     try {
       const cudaNpmPkgDir = resolvePackageDir(cudaPackageName);
@@ -209,9 +202,7 @@ export function resolveNativeBinary(options = {}) {
  * is insufficient; only the Rust client's versioned marker admits it. The
  * ss-* bin stubs are replaced by this binary only after this check passes.
  *
- * @param {string} binaryPath
  * @param {{ spawn?: typeof spawnSync }} [options]
- * @returns {boolean}
  */
 export function nativeBinarySupportsAgentTools(binaryPath, options = {}) {
   if (typeof binaryPath !== 'string' || binaryPath.length === 0) return false;

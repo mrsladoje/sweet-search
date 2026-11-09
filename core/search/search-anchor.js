@@ -6,15 +6,6 @@
  * happen to mention a real entity name can land on that entity even
  * when the encoder ranks something tangentially-similar higher.
  *
- * This module:
- *   1. Extracts identifier-shaped tokens from the query (PascalCase,
- *      camelCase, snake_case, kCamel, ≥3 chars, not stopwords/keywords).
- *   2. Looks them up case-insensitively against the entities graph
- *      (any kind: function, method, struct, type, class, etc.).
- *   3. Maps each matched entity to the cAST/LI chunk that covers it.
- *   4. Injects those chunks into the candidate set with a baseline
- *      lexical-anchor score, deduped against existing fused results.
- *
  * The downstream pipeline (entity-kind preference, name precision,
  * doc/test demotion, MMR) then ranks the augmented candidate set
  * using its existing rules. IAR is purely additive — it can only
@@ -117,18 +108,6 @@ function readUniquenessCeil(opts) {
   return n; // 0 means "no gate"
 }
 
-/**
- * Find the LI chunk that covers a given (filePath, startLine, endLine)
- * region. Linear scan over the LI document Map — typical projects have
- * a few hundred to a few thousand chunks; this runs in microseconds.
- *
- * Prefers the SMALLEST containing chunk when several overlap (canonical
- * symbol-aligned chunk vs an enclosing parent chunk).
- *
- * @param {object} liIndex - LateInteractionIndex instance with .documents Map
- * @param {{ filePath: string, startLine: number, endLine: number }} entity
- * @returns {{ id: string, metadata: object, content?: string, text?: string }|null}
- */
 // Bucket the LI documents Map by file in ONE pass, preserving per-file
 // iteration order, so findChunkForEntity scans only entity.filePath's chunks
 // instead of the whole index per entity.
@@ -145,6 +124,18 @@ function bucketDocsByFile(liIndex) {
   return byFile;
 }
 
+/**
+ * Find the LI chunk that covers a given (filePath, startLine, endLine)
+ * region. Linear scan over the LI document Map — typical projects have
+ * a few hundred to a few thousand chunks; this runs in microseconds.
+ *
+ * Prefers the SMALLEST containing chunk when several overlap (canonical
+ * symbol-aligned chunk vs an enclosing parent chunk).
+ *
+ * @param {object} liIndex - LateInteractionIndex instance with .documents Map
+ * @param {{ filePath: string, startLine: number, endLine: number }} entity
+ * @returns {{ id: string, metadata: object, content?: string, text?: string }|null}
+ */
 function findChunkForEntity(liIndex, entity, docsByFile = null) {
   if (!liIndex || !entity) return null;
   let best = null;
@@ -290,8 +281,9 @@ export function injectAnchorCandidates(fused, query, opts = {}) {
   // the bare name. Cleaner to skip the hint entirely than to inject a
   // possibly-wrong "canonical" entity. Mirrors the existing ref-count homonym
   // gate (file-kind-ranking.js, env SWEET_SEARCH_REF_BOOST_QUERY_HOMONYM_DISABLE,
-  // default 12). IAR uses a tighter default (8) because anchor injection is
-  // more sensitive to homonym noise than ref-count rescaling.
+  // default 12). Anchor injection is more sensitive to homonym noise than
+  // ref-count rescaling, so an enabled ceiling should be tighter (8); the shipped default
+  // is 0 (gate off, see DEFAULT_UNIQUENESS_CEIL).
   //
   // Override env: SWEET_SEARCH_IAR_UNIQUENESS_CEIL=N. Set to 0 to disable.
   const ceil = readUniquenessCeil(opts);
@@ -411,7 +403,6 @@ export function injectAnchorCandidates(fused, query, opts = {}) {
     };
   }
 
-  // Index existing fused results by chunk key for dedup and existing-boost.
   const fusedByKey = new Map();
   for (const r of fused) fusedByKey.set(chunkKey(r), r);
 

@@ -1,8 +1,7 @@
 /**
  * Best-effort resident search-daemon registry (footprint cap support).
  *
- * Backs the optional SWEET_SEARCH_MAX_DAEMONS cap (Part 2 of the daemon
- * footprint work). Each warm search daemon, WHEN the cap is opted into,
+ * Backs the optional SWEET_SEARCH_MAX_DAEMONS cap. Each warm search daemon, WHEN the cap is opted into,
  * upserts a single entry describing itself into one shared JSON file and
  * refreshes it on a coarse timer. A daemon enforcing the cap reads the file,
  * prunes entries whose process is gone or whose socket no longer answers, and
@@ -193,7 +192,6 @@ async function writeRegistryAtomic(daemons, env = process.env) {
   }
 }
 
-/** Insert/replace this daemon's entry. */
 export async function upsertSelf(entry, env = process.env) {
   const daemons = await readRegistry(env);
   daemons[String(entry.pid)] = { ...entry };

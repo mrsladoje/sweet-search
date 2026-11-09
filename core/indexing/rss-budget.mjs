@@ -123,7 +123,6 @@ export function budgetBytes(env = process.env, totalMem = os.totalmem()) {
   return Math.min(MAINTAINER_FLEET_BUDGET_MAX_BYTES, Math.floor(f * totalMem));
 }
 
-/** Total RSS over budget? Pure predicate (testable without any I/O). */
 export function isOverBudget(totalRssBytes, budgetBytesValue) {
   return (
     Number.isFinite(totalRssBytes) &&
@@ -133,9 +132,7 @@ export function isOverBudget(totalRssBytes, budgetBytesValue) {
   );
 }
 
-// =============================================================================
 // D.5: per-process maintainer RSS recycle ceiling
-// =============================================================================
 //
 // The fleet budget above evicts the longest-IDLE daemon, so a single fat
 // ACTIVE maintainer can legitimately ride up to the whole fleet budget
@@ -197,14 +194,13 @@ export function maintainerRssCeilingBytes(env = process.env, totalMem = os.total
   return Math.min(MAINTAINER_RSS_CEILING_MAX_BYTES, Math.max(MAINTAINER_RSS_CEILING_MIN_BYTES, scaled));
 }
 
-/** Minimum uptime before an RSS recycle may fire. */
 export function maintainerRssMinUptimeMs(env = process.env) {
   const raw = Number(env.SWEET_SEARCH_MAINTAINER_RSS_MIN_UPTIME_MS);
   return Number.isFinite(raw) && raw >= 0 ? raw : MAINTAINER_RSS_MIN_UPTIME_MS_DEFAULT;
 }
 
 /**
- * Pure recycle decision — evaluated at tick boundaries only.
+ * Evaluated at tick boundaries only.
  * @returns {{recycle: boolean, reason: string}}
  */
 export function shouldRecycleForRss({ rssBytes, ceilingBytes, uptimeMs, minUptimeMs, ticksCompleted }) {
@@ -227,7 +223,6 @@ export function shouldRecycleForRss({ rssBytes, ceilingBytes, uptimeMs, minUptim
  *   - macOS / BSD: `ps -o rss= -p <pid>` (KiB) × 1024.
  *   - Windows / others: 0 (no cheap spawn-free reader; native addon later).
  *
- * @param {number} pid
  * @returns {Promise<number>} RSS in bytes (0 when unknown).
  */
 export async function readProcessRss(pid) {
@@ -296,7 +291,7 @@ export async function readLinuxMemoryPressure() {
   }
 }
 
-// --- shared-registry I/O (best-effort, atomic; mirrors daemon-registry.js) ---
+// Shared-registry I/O: best-effort, atomic; mirrors daemon-registry.js.
 
 async function readRssRegistry(env = process.env) {
   try {
@@ -409,7 +404,7 @@ export async function runEvictionTick({
     const live = await pruneRegistry(env, aliveProbe);
     result.liveCount = live.length;
 
-    // Sum RSS, stamping each entry so selectEvictionTargets sees fresh data.
+    // Each entry is stamped so selectEvictionTargets sees fresh data.
     // A maintainer's encoder child (childPids) counts toward its entry: the
     // child holds the models, and evicting the maintainer stops it too.
     let total = 0;
@@ -452,15 +447,13 @@ export async function runEvictionTick({
   }
 }
 
-// --- public registration API (the seam G4 wired in index-maintainer.mjs) ---
-
 /** Module-level coordinator handle so multiple registrations share ONE timer. */
 let coordinatorTimer = null;
 let registeredCount = 0;
 
 /**
- * Register THIS daemon with the RSS-budget coordinator. Matches the seam G4
- * wired into index-maintainer.mjs:
+ * Register THIS daemon with the RSS-budget coordinator. index-maintainer.mjs
+ * uses it like this:
  *
  *     const mod = await import('./rss-budget.mjs');
  *     rssRegistration = await mod.registerDaemon({ pid, stateDir, kind });
@@ -477,11 +470,7 @@ let registeredCount = 0;
  * Best-effort: with the gate off this is a no-op returning a harmless handle, so
  * the caller's teardown (`rssRegistration?.unregister?.()`) is always safe.
  *
- * @param {object} opts
- * @param {number} opts.pid
- * @param {string} [opts.stateDir]
  * @param {string} [opts.kind]  'maintainer' | 'search' | etc. (diagnostic only)
- * @param {object} [opts.env]
  * @returns {Promise<{ unregister: () => Promise<void>, touch: (ms?: number) => Promise<void> }>}
  */
 export async function registerDaemon({ pid = process.pid, stateDir = null, kind = 'unknown', env = process.env } = {}) {

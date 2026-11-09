@@ -79,14 +79,6 @@ export const SPAWN_CLAIM_TTL_MS = 5_000;
  */
 const SUPERVISION_MIN_INTERVAL_MS = 15_000;
 
-/**
- * Background-priority gate (research §4.A A.2/A.3). Default ON — this is a
- * Tier-1, output-identical lever (only *when* CPU/IO is granted to the child
- * changes). Honors a canonical off-token (`0`/`false`/`off`) to disable.
- *
- * @param {NodeJS.ProcessEnv} env
- * @returns {boolean}
- */
 // V8's optimizing WebAssembly tier keeps ~570 MB after it compiles the
 // JavaScript/TSX tree-sitter grammars (the maintainer parses every edited JS
 // file for the graph and the chunker). Baseline (Liftoff) code parses a file
@@ -137,9 +129,10 @@ export function _resetMaintainerNodeFlagsForTests() {
   liftoffSupported = undefined;
 }
 
+// Background priority only changes WHEN CPU/IO is granted to the child, not its output.
 function bgPriorityEnabled(env) {
   const raw = env.SWEET_SEARCH_MAINTAINER_BG_PRIORITY;
-  if (raw == null || raw === '') return true; // default-on
+  if (raw == null || raw === '') return true;
   const normalized = String(raw).trim().toLowerCase();
   return !(normalized === '0' || normalized === 'false' || normalized === 'off');
 }
@@ -178,7 +171,6 @@ function openMaintainerLog(stateDir) {
   }
 }
 
-/** Default maintainer entry: the sibling daemon in this same context. */
 export function defaultMaintainerEntry() {
   return join(__dirname, 'index-maintainer.mjs');
 }
@@ -280,7 +272,6 @@ export function launchMaintainer(options = {}) {
   const env = options.env || process.env;
   const cwd = options.cwd || process.cwd();
   const verbose = options.verbose ?? !!env.SWEET_SEARCH_PREWARM_VERBOSE;
-  // stdout-clean: log only to stderr, only when verbose.
   const log = options.log
     || ((msg) => { if (verbose) process.stderr.write(`[sweet-search maintainer-launch] ${msg}\n`); });
 
@@ -341,9 +332,7 @@ export function launchMaintainer(options = {}) {
     // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set):
     // lets the harness that caused this spawn find and stop the detached child.
     recordSpawn({ pid: child.pid, role: 'maintainer', projectRoot: env.SWEET_SEARCH_PROJECT_ROOT || cwd, env });
-    // Demote the detached child to OS background priority (best-effort, never
-    // throws). Runs in this foreground caller, targeting the child by pid, so
-    // only the child is demoted. Gate default-on (Tier-1, output-identical).
+    // Best-effort, never throws; targets the child by pid, so only the child is demoted.
     if (bgPriorityEnabled(env)) {
       applyBackgroundPriority(child.pid);
     }
@@ -366,10 +355,6 @@ export function launchMaintainer(options = {}) {
     }
   }
 }
-
-// =============================================================================
-// SUPERVISION
-// =============================================================================
 
 /**
  * Is automatic reconcile work paused for this state dir?

@@ -3,13 +3,11 @@ import { existsSync } from 'node:fs';
 
 /**
  * Generic project boundary detection using marker files.
- * Replaces hardcoded directory detection with auto-discovery.
  *
  * Works by walking up from a file path to find the nearest directory
  * containing a project marker file (package.json, pom.xml, build.gradle, etc.)
  */
 
-// Project marker files that indicate a project boundary
 const PROJECT_MARKERS = [
   'package.json',
   'pom.xml',
@@ -29,8 +27,6 @@ const PROJECT_MARKERS = [
 const _boundaryCache = new Map();
 
 /**
- * Detect the nearest project boundary for a given file path.
- *
  * @param {string} filePath - Absolute file path to analyze
  * @param {string} projectRoot - The top-level project root (stop boundary)
  * @returns {{ name: string, path: string }} Project name (kebab-cased dir name) and path
@@ -56,7 +52,6 @@ function _walkUpForBoundary(dir, projectRoot) {
   const normalizedRoot = path.resolve(projectRoot);
   let current = path.resolve(dir);
 
-  // Walk up from file directory to project root
   while (current.length >= normalizedRoot.length) {
     // Don't check the project root itself — we want sub-project boundaries
     if (current !== normalizedRoot) {
@@ -69,11 +64,10 @@ function _walkUpForBoundary(dir, projectRoot) {
     }
 
     const parent = path.dirname(current);
-    if (parent === current) break; // filesystem root
+    if (parent === current) break;
     current = parent;
   }
 
-  // Fallback: use the top-level directory name from project root
   const rootName = toKebabCase(path.basename(normalizedRoot));
   return { name: rootName, path: normalizedRoot };
 }
@@ -92,9 +86,6 @@ function toKebabCase(str) {
     .toLowerCase();
 }
 
-/**
- * Clear the boundary cache (useful for testing or after project structure changes).
- */
 export function clearBoundaryCache() {
   _boundaryCache.clear();
 }

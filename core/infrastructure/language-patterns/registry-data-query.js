@@ -1,10 +1,4 @@
-// =============================================================================
-// Data and Query Language Registry
-// =============================================================================
-// Structured data, query, and schema-oriented formats.
-// Data-only module consumed by `registry.js`.
 export const DATA_QUERY_LANGUAGES = {
-  // ─── SQL ───────────────────────────────────────────────────────────────────
   sql: {
     indentBased: false,
     endKeyword: null,
@@ -29,7 +23,6 @@ export const DATA_QUERY_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── GraphQL ───────────────────────────────────────────────────────────────
   graphql: {
     indentBased: false,
     endKeyword: null,
@@ -59,7 +52,6 @@ export const DATA_QUERY_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── JSON ──────────────────────────────────────────────────────────────────
   json: {
     indentBased: false,
     endKeyword: null,
@@ -81,7 +73,6 @@ export const DATA_QUERY_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── YAML ──────────────────────────────────────────────────────────────────
   yaml: {
     indentBased: true,
     endKeyword: null,
@@ -105,7 +96,6 @@ export const DATA_QUERY_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── TOML ──────────────────────────────────────────────────────────────────
   toml: {
     indentBased: false,
     endKeyword: null,
@@ -127,7 +117,6 @@ export const DATA_QUERY_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── XML ───────────────────────────────────────────────────────────────────
   xml: {
     indentBased: false,
     endKeyword: null,

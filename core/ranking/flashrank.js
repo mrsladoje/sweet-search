@@ -19,10 +19,6 @@ import { fetchModel, getModelCacheDir } from '../infrastructure/model-fetcher.js
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
 import { initOrt, buildFeed } from '../infrastructure/ort-pipeline.js';
 
-// =============================================================================
-// FLASHRANK RERANKER
-// =============================================================================
-
 const FLASHRANK_MODEL_ID = 'Xenova/ms-marco-TinyBERT-L-2-v2';
 
 export class FlashRankReranker {
@@ -34,8 +30,6 @@ export class FlashRankReranker {
   }
 
   /**
-   * Initialize the reranker model
-   *
    * CRITICAL: Uses feature-extraction pipeline with CLS pooling, NOT text-classification.
    * The MS-MARCO cross-encoder outputs raw logit scores via CLS token, not probabilities.
    *
@@ -51,7 +45,6 @@ export class FlashRankReranker {
     if (this.session) return;
 
     try {
-      // Fetch model files to managed cache
       await fetchModel('ms-marco-tinybert');
 
       const cacheDir = getModelCacheDir(FLASHRANK_MODEL_ID);
@@ -84,24 +77,18 @@ export class FlashRankReranker {
     }
   }
 
-  /**
-   * Rerank documents using local cross-encoder
-   */
   async rerank(query, documents, topK = 10) {
     const start = Date.now();
 
-    // CRITICAL: Initialize model BEFORE checking this.session
-    // Previously init() was inside if(this.session), so it never ran on cold call
+    // Must run before checking this.session, or a cold call never initializes.
     await this.init();
 
-    // Prepare query-document pairs
     const pairs = documents.map((doc, index) => ({
       index,
       text: typeof doc === 'string' ? doc : doc.content || doc.text || '',
       original: doc,
     }));
 
-    // Truncate documents for efficiency
     const truncatedPairs = pairs.map(p => ({
       ...p,
       text: p.text.slice(0, this.maxDocLength),
@@ -110,42 +97,35 @@ export class FlashRankReranker {
     let scores;
 
     if (this.session) {
-      // Use cross-encoder model with CLS pooling
       // Output is raw logit score (higher = more relevant, typically [-10, -5] range)
-
-      // Process sequentially with global ONNX mutex to prevent concurrent inference crashes
+      // Sequential under the global ONNX mutex: concurrent inference crashes.
       scores = await withOnnxMutex(async () => {
         const results = [];
         for (const pair of truncatedPairs) {
           try {
-            // Cross-encoder takes query + document as input
             const input = `${query} [SEP] ${pair.text}`;
             const tokenized = this.tokenizer(input, { padding: true, truncation: true, max_length: 512 });
             const feed = buildFeed(tokenized, this.session.inputNames);
             const output = await this.session.run(feed);
             const tensor = output[this.session.outputNames[0]];
 
-            // CLS token is the first token's hidden state
             const score = tensor.data?.[0] ?? -10;
             results.push({ ...pair, score });
           } catch (err) {
-            results.push({ ...pair, score: -10 });  // Low score on error
+            results.push({ ...pair, score: -10 });
           }
         }
         return results;
       });
     } else {
-      // Fallback: simple keyword matching score
       scores = truncatedPairs.map(pair => {
         const score = this.simpleScore(query, pair.text);
         return { ...pair, score };
       });
     }
 
-    // Sort by score
     scores.sort((a, b) => b.score - a.score);
 
-    // Return top K results
     const results = scores.slice(0, topK).map((item, rank) => ({
       ...item.original,
       flashRankScore: item.score,
@@ -163,22 +143,17 @@ export class FlashRankReranker {
     };
   }
 
-  /**
-   * Simple keyword-based scoring fallback
-   */
   simpleScore(query, document) {
     const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
     const docLower = document.toLowerCase();
 
     let score = 0;
     for (const word of queryWords) {
-      // Count occurrences
       const regex = new RegExp(word, 'gi');
       const matches = docLower.match(regex);
       if (matches) {
         score += matches.length;
 
-        // Bonus for exact word match
         const wordRegex = new RegExp(`\\b${word}\\b`, 'gi');
         const exactMatches = docLower.match(wordRegex);
         if (exactMatches) {
@@ -187,28 +162,13 @@ export class FlashRankReranker {
       }
     }
 
-    // Normalize by query length
     return score / queryWords.length;
   }
 
-  /**
-   * Batched reranking - true transformer batch inference
-   *
-   * Uses transformers.js native batching for significant speedup.
-   * Instead of N forward passes, processes all documents in batches.
-   *
-   * Expected improvement: 10-20x faster than sequential rerank()
-   *
-   * @param {string} query - Search query
-   * @param {Array} documents - Documents to rerank
-   * @param {number} topK - Number of results to return
-   * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
-   */
   async rerankBatched(query, documents, topK = 10) {
     const start = Date.now();
     await this.init();
 
-    // Prepare query-document pairs
     const pairs = documents.map((doc, index) => ({
       index,
       text: (typeof doc === 'string' ? doc : doc.content || doc.text || '').slice(0, this.maxDocLength),
@@ -218,8 +178,7 @@ export class FlashRankReranker {
     let scores;
 
     if (this.session) {
-      // Process inputs with CLS pooling for cross-encoder logit scores
-      // Use global ONNX mutex to prevent concurrent inference crashes
+      // Global ONNX mutex: concurrent inference crashes.
       const inputs = pairs.map(pair => `${query} [SEP] ${pair.text}`);
 
       const allResults = await withOnnxMutex(async () => {
@@ -238,23 +197,19 @@ export class FlashRankReranker {
         return results;
       });
 
-      // Map results back to pairs
       scores = pairs.map((pair, i) => ({
         ...pair,
         score: allResults[i] ?? -10,
       }));
     } else {
-      // Fallback to simple scoring
       scores = pairs.map(pair => ({
         ...pair,
         score: this.simpleScore(query, pair.text),
       }));
     }
 
-    // Sort by score
     scores.sort((a, b) => b.score - a.score);
 
-    // Return top K results
     const results = scores.slice(0, topK).map((item, rank) => ({
       ...item.original,
       flashRankScore: item.score,
@@ -273,10 +228,6 @@ export class FlashRankReranker {
   }
 }
 
-// =============================================================================
-// VOYAGE AI RERANKER
-// =============================================================================
-
 export class VoyageReranker {
   constructor(options = {}) {
     this.model = options.model || RERANK_CONFIG.voyage.model;
@@ -285,28 +236,17 @@ export class VoyageReranker {
     this.maxDocuments = options.maxDocuments || RERANK_CONFIG.voyage.maxDocuments;
   }
 
-  /**
-   * Check if Voyage AI is available
-   */
   isAvailable() {
     return this.apiKey && this.apiKey.length > 0;
   }
 
   /**
-   * Rerank documents using Voyage AI
+   * Request timeout (default 30s) via AbortController; retries 5xx and network
+   * errors with exponential backoff.
    *
-   * Features:
-   * - Request timeout (default 30s) via AbortController
-   * - Retry with exponential backoff for transient failures
-   * - Input validation for query and documents
-   *
-   * @param {string} query - Search query
-   * @param {Array} documents - Documents to rerank
-   * @param {number} topK - Number of results to return
    * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
    */
   async rerank(query, documents, topK = 10) {
-    // Input validation
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       throw new Error('Query must be a non-empty string');
     }
@@ -323,7 +263,7 @@ export class VoyageReranker {
     const retryDelay = RERANK_CONFIG.retryDelayMs || 100;
     const maxDocLength = RERANK_CONFIG.maxDocTruncation?.voyage || 4000;
 
-    // Prepare documents (truncate to avoid token limits)
+    // Truncated to stay under token limits
     const preparedDocs = documents.slice(0, this.maxDocuments).map(doc => {
       const text = typeof doc === 'string' ? doc : doc.content || doc.text || '';
       return text.slice(0, maxDocLength);
@@ -355,17 +295,16 @@ export class VoyageReranker {
 
         if (!response.ok) {
           const errorText = await response.text();
-          // Don't retry on 4xx errors (client errors)
+          // 4xx is not retried; the catch below retries everything else.
           if (response.status >= 400 && response.status < 500) {
             throw new Error(`Voyage API error (${response.status}): ${errorText}`);
           }
-          // Retry on 5xx or network errors (will be caught and retried)
           throw new Error(`Voyage API error (${response.status}): ${errorText}`);
         }
 
         const result = await response.json();
 
-        // Voyage API returns 'data' array with index + relevance_score
+        // Voyage returns 'data' with index + relevance_score
         const rankedData = result.data || result.results || [];
         const results = rankedData.map((r, rank) => ({
           ...documents[r.index],
@@ -384,14 +323,12 @@ export class VoyageReranker {
         clearTimeout(timeoutId);
         lastError = err;
 
-        // Don't retry on abort (timeout) or client errors
         if (err.name === 'AbortError') {
           const error = new Error(`Voyage reranking timed out after ${timeout}ms`);
           error.cause = err;
           throw error;
         }
 
-        // Retry on network errors or 5xx with exponential backoff
         if (attempt < maxRetries) {
           const delay = retryDelay * Math.pow(2, attempt);
           await new Promise(r => setTimeout(r, delay));
@@ -400,16 +337,11 @@ export class VoyageReranker {
       }
     }
 
-    // All retries exhausted
     const error = new Error(`Voyage reranking failed after ${maxRetries + 1} attempts: ${lastError?.message}`);
     error.cause = lastError;
     throw error;
   }
 }
-
-// =============================================================================
-// JINA RERANKER v3
-// =============================================================================
 
 export class JinaReranker {
   constructor(options = {}) {
@@ -419,32 +351,20 @@ export class JinaReranker {
     this.maxDocuments = options.maxDocuments || RERANK_CONFIG.jina.maxDocuments;
   }
 
-  /**
-   * Check if Jina Reranker is available
-   */
   isAvailable() {
     return this.apiKey && this.apiKey.length > 0;
   }
 
   /**
-   * Rerank documents using Jina Reranker v3
-   *
    * API: POST https://api.jina.ai/v1/rerank
    * Body: {model, query, documents, top_n, return_documents}
    * Response: {results: [{index, relevance_score}, ...]}
+   * Request timeout (default 30s) via AbortController; retries 5xx and network
+   * errors with exponential backoff.
    *
-   * Features:
-   * - Request timeout (default 30s) via AbortController
-   * - Retry with exponential backoff for transient failures
-   * - Input validation for query and documents
-   *
-   * @param {string} query - Search query
-   * @param {Array} documents - Documents to rerank
-   * @param {number} topK - Number of results to return
    * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
    */
   async rerank(query, documents, topK = 10) {
-    // Input validation
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       throw new Error('Query must be a non-empty string');
     }
@@ -493,17 +413,15 @@ export class JinaReranker {
 
         if (!response.ok) {
           const errorText = await response.text();
-          // Don't retry on 4xx errors (client errors)
+          // 4xx is not retried; the catch below retries everything else.
           if (response.status >= 400 && response.status < 500) {
             throw new Error(`Jina API error (${response.status}): ${errorText}`);
           }
-          // Retry on 5xx or network errors (will be caught and retried)
           throw new Error(`Jina API error (${response.status}): ${errorText}`);
         }
 
         const result = await response.json();
 
-        // Jina API returns 'results' array with index + relevance_score
         const rankedData = result.results || [];
         if (!rankedData.length && documents.length > 0) {
           throw new Error('Jina API returned empty results');
@@ -526,14 +444,12 @@ export class JinaReranker {
         clearTimeout(timeoutId);
         lastError = err;
 
-        // Don't retry on abort (timeout) or client errors
         if (err.name === 'AbortError') {
           const error = new Error(`Jina reranking timed out after ${timeout}ms`);
           error.cause = err;
           throw error;
         }
 
-        // Retry on network errors or 5xx with exponential backoff
         if (attempt < maxRetries) {
           const delay = retryDelay * Math.pow(2, attempt);
           await new Promise(r => setTimeout(r, delay));
@@ -542,16 +458,11 @@ export class JinaReranker {
       }
     }
 
-    // All retries exhausted
     const error = new Error(`Jina reranking failed after ${maxRetries + 1} attempts: ${lastError?.message}`);
     error.cause = lastError;
     throw error;
   }
 }
-
-// =============================================================================
-// UNIFIED RERANKER
-// =============================================================================
 
 export class Reranker {
   constructor(options = {}) {
@@ -559,9 +470,8 @@ export class Reranker {
     this.jinaReranker = new JinaReranker(options);
     this.flashRankReranker = new FlashRankReranker(options);
     this.localReranker = getGlobalLocalReranker();
-    // All rerankers OFF by default — having a JINA_API_KEY / VOYAGEAI_API_KEY
-    // in the environment no longer auto-enables remote CE rerank.
-    // Opt in explicitly per-provider:
+    // All rerankers OFF by default: a JINA_API_KEY / VOYAGEAI_API_KEY in the
+    // environment does not auto-enable remote CE rerank. Opt in per provider:
     //   SWEET_SEARCH_ENABLE_LOCAL_RERANKER=1  (local gte-reranker-modernbert-base)
     //   SWEET_SEARCH_ENABLE_JINA_RERANKER=1   (remote Jina)
     //   SWEET_SEARCH_ENABLE_VOYAGE_RERANKER=1 (remote Voyage)
@@ -578,9 +488,6 @@ export class Reranker {
    * Rerank documents using the best available direct cross-encoder.
    * FlashRank is intentionally excluded from the default path.
    *
-   * @param {string} query
-   * @param {Array} documents
-   * @param {number} topK
    * @param {object} options - { forceLocal, forceJina }
    */
   async rerank(query, documents, topK = 10, options = {}) {
@@ -589,13 +496,12 @@ export class Reranker {
       forceJina = false,
     } = options;
 
-    // Preserve the explicit/manual FlashRank escape hatch.
+    // Explicit/manual FlashRank escape hatch.
     if (forceLocal) {
       await this.flashRankReranker.init();
       return await this.flashRankReranker.rerank(query, documents, topK);
     }
 
-    // Force Jina for testing
     if (forceJina && this.jinaReranker.isAvailable()) {
       return await this.jinaReranker.rerank(query, documents, topK);
     }
@@ -606,11 +512,8 @@ export class Reranker {
   /**
    * Direct cross-encoder reranking, bypassing FlashRank.
    * Uses the best available code-aware reranker: local ModernBERT > Jina > Voyage.
-   * Called by the cascaded scorer (Section 26) for ambiguous/unscored candidates.
+   * Called by the cascaded scorer for ambiguous/unscored candidates.
    *
-   * @param {string} query
-   * @param {Array} documents
-   * @param {number} topK
    * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
    */
   async rerankDirect(query, documents, topK = 10) {
@@ -647,9 +550,6 @@ export class Reranker {
     return false;
   }
 
-  /**
-   * Get reranker status
-   */
   getStatus() {
     return {
       voyageAvailable: this.voyageReranker.isAvailable(),
@@ -665,10 +565,6 @@ export class Reranker {
     };
   }
 }
-
-// =============================================================================
-// CLI
-// =============================================================================
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
@@ -700,7 +596,6 @@ Options:
       } else if (command === 'test') {
         console.log('\nRunning reranker performance test...\n');
 
-        // Sample documents
         const documents = [
           'AuthService handles user authentication and login',
           'The database connection pool manages MySQL connections',
@@ -719,7 +614,6 @@ Options:
         console.log(`Query: "${query}"`);
         console.log(`Documents: ${documents.length}`);
 
-        // Test FlashRank
         console.log('\n--- FlashRank (Local) ---');
         const flashStart = Date.now();
         const flashResult = await reranker.flashRankReranker.rerank(query, documents, 5);
@@ -731,7 +625,6 @@ Options:
           console.log(`  ${i + 1}. [${r.flashRankScore.toFixed(4)}] ${text.slice(0, 50)}...`);
         });
 
-        // Test Voyage if available
         if (reranker.voyageReranker.isAvailable()) {
           console.log('\n--- Voyage AI ---');
           const voyageResult = await reranker.voyageReranker.rerank(query, documents, 5);
@@ -747,7 +640,6 @@ Options:
           console.log('Not available (VOYAGEAI_API_KEY not set)');
         }
 
-        // Test Jina if available
         if (reranker.jinaReranker.isAvailable()) {
           console.log('\n--- Jina Reranker v3 ---');
           const jinaResult = await reranker.jinaReranker.rerank(query, documents, 5);
@@ -769,7 +661,6 @@ Options:
         const useJina = args.includes('--jina');
         const useLocal = args.includes('--local');
 
-        // Sample documents for testing
         const documents = [
           'User authentication is handled by AuthService',
           'Database queries are optimized for performance',

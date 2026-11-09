@@ -5,8 +5,6 @@
  * ripgrep fixed-string prefiltering or the sparse trigram index to narrow the
  * file set before the full regex scan.  Keeps the hot-path fast by skipping
  * files that cannot possibly match.
- *
- * Split from search-pattern.js for the 500-line-limit rule.
  */
 
 import {
@@ -52,17 +50,9 @@ import { DB_PATHS } from '../infrastructure/config/index.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 import { callMemo } from '../infrastructure/call-context.js';
 
-// =============================================================================
-// Case-insensitive flag detection
-// =============================================================================
-
 export function hasCaseInsensitiveRegexFlag(regex) {
   return /\(\?[a-z-]*i[a-z-]*:?/.test(regex);
 }
-
-// =============================================================================
-// Literal extraction from regex patterns
-// =============================================================================
 
 /**
  * Substrings that EVERY match of `regex` must contain, for the literal prefilter (ripgrep -F)
@@ -267,11 +257,6 @@ export function normalizeLiteralClauses(clauses) {
   return normalized;
 }
 
-
-// =============================================================================
-// Alternation soundness guard
-// =============================================================================
-//
 // THE DEFECT. A literal prefilter is sound only when EVERY string the regex can match
 // contains at least one clause's literals. The native extractor silently drops an
 // alternation branch that carries no usable literal:
@@ -531,10 +516,6 @@ function extractLiteralClausesUncached(regex, options) {
   return extractClausesDirect(regex, options);
 }
 
-// =============================================================================
-// Literal prefiltering via ripgrep fixed-string mode
-// =============================================================================
-
 /**
  * Run literal prefilter for a single AND-clause of literals.
  *
@@ -603,10 +584,6 @@ export async function runLiteralPrefilterClauses(clauses, searchDir, files = nul
 
   return [...combined];
 }
-
-// =============================================================================
-// Sparse gram index candidate lookup
-// =============================================================================
 
 export function ensureSparseGramIndex(searcher, options = {}) {
   if (!searcher) return null;

@@ -5,8 +5,6 @@
  * binary), detecting --and support, ARG_MAX-safe file batching, and the three
  * core spawn wrappers: executeRipgrep (JSON), runRipgrepFilesWithMatches
  * (files-with-matches), and runRipgrepJson (JSON output).
- *
- * Split from search-pattern.js for the 500-line-limit rule.
  */
 
 import { spawn, execFileSync } from 'child_process';
@@ -14,10 +12,6 @@ import { existsSync, realpathSync, readdirSync } from 'fs';
 import { StringDecoder } from 'string_decoder';
 import path from 'path';
 import { RIPGREP_CODE_TYPE_GLOB } from '../infrastructure/constants.js';
-
-// =============================================================================
-// Module-level state — ripgrep binary cache and capabilities
-// =============================================================================
 
 let _rgCheckPromise = null;
 let _rgBinary = null; // Resolved path to rg binary
@@ -27,9 +21,7 @@ const RIPGREP_CODE_TYPE = RIPGREP_CODE_TYPE_GLOB;
 const RIPGREP_MAX_BATCH_FILES = 500;
 const RIPGREP_MAX_BATCH_ARG_BYTES = 96 * 1024;
 
-// =============================================================================
 // Ripgrep detection (race-safe: caches the promise, not just the result)
-// =============================================================================
 
 /**
  * Find the ripgrep binary. Tries:
@@ -43,14 +35,13 @@ function _findRg() {
   if (_rgBinary !== null) return _rgBinary || null;
 
   const candidates = [
-    'rg', // Direct PATH
+    'rg',
   ];
 
   // Claude Code multicall binary: ARGV0=rg makes it act as ripgrep
   const claudeVersionsDir = path.join(
     process.env.HOME || '', '.local', 'share', 'claude', 'versions'
   );
-  // Enumerate available versions instead of hardcoding a specific version
   if (process.env.CLAUDE_VERSION) {
     const versionedBin = path.join(claudeVersionsDir, process.env.CLAUDE_VERSION);
     if (existsSync(versionedBin)) candidates.push(versionedBin);
@@ -63,7 +54,6 @@ function _findRg() {
     } catch { /* versions dir unreadable */ }
   }
 
-  // Common homebrew / system paths
   candidates.push('/opt/homebrew/bin/rg', '/usr/local/bin/rg', '/usr/bin/rg');
 
   for (const bin of candidates) {
@@ -97,10 +87,6 @@ export function _resetRgCache() {
   _rgCapabilities = null;
 }
 
-// =============================================================================
-// Ripgrep capability detection
-// =============================================================================
-
 export function _getRgCapabilities() {
   const rgBin = _findRg();
   if (!rgBin) {
@@ -124,10 +110,6 @@ export function _getRgCapabilities() {
 
   return _rgCapabilities;
 }
-
-// =============================================================================
-// Path normalization and file batching
-// =============================================================================
 
 export function normalizeSearchPath(searchDir, filePath) {
   if (!filePath) return null;
@@ -185,10 +167,6 @@ export function chunkRipgrepFiles(files) {
 
   return batches;
 }
-
-// =============================================================================
-// Ripgrep runner — core spawn wrappers
-// =============================================================================
 
 async function executeRipgrep({
   patterns,
@@ -360,10 +338,6 @@ async function executeRipgrep({
   });
 }
 
-// =============================================================================
-// Streaming ripgrep JSON — incremental line-by-line parse with early-exit
-// =============================================================================
-
 /**
  * Streaming ripgrep JSON executor. Parses rg --json output line-by-line as it
  * arrives on stdout, avoiding the Buffer.concat + toString + split overhead of
@@ -483,7 +457,6 @@ async function executeRipgrepStreaming({
 
     proc.on('close', (code) => {
       if (!killed) {
-        // Flush decoder and process any remaining partial line
         partial += decoder.end();
         if (partial) {
           try {
@@ -622,14 +595,9 @@ export async function runRipgrepJson(regex, searchDir, opts = {}) {
   return allMatches;
 }
 
-// =============================================================================
-// Streaming ripgrep JSON — parallel batches with early-exit support
-// =============================================================================
-
 /**
  * Streaming variant of runRipgrepJson. Parses rg output incrementally and
- * supports an onMatch callback for early-exit. Batches run in parallel
- * (unlike the original sequential loop in runRipgrepJson).
+ * supports an onMatch callback for early-exit. Batches run in parallel.
  *
  * @param {string} regex - Regex pattern
  * @param {string} searchDir - Directory to search

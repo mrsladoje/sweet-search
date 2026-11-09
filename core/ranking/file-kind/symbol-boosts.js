@@ -3,8 +3,7 @@
 import { resolveFilePath, resolveResultName } from './result-fields.js';
 import { looksLikeStrictIdentifier, spellStem, splitIdentifierName } from './query-analysis.js';
 
-// =============================================================================
-// F9 (2026-05-12): additional_symbols re-anchoring for cAST sibling-merged
+// F9: additional_symbols re-anchoring for cAST sibling-merged
 // chunks. JS/TS-gated. Pure ranking-time metadata fix — no chunk regeneration,
 // no reindex required.
 //
@@ -15,7 +14,7 @@ import { looksLikeStrictIdentifier, spellStem, splitIdentifierName } from './que
 // structurally PARTIAL — file is correct, symbol is the wrong sibling.
 //
 // The chunker already records secondary boundary names in
-// `metadata.additional_symbols` (tree-sitter-provider.js:928-934). F9
+// `metadata.additional_symbols` (core/infrastructure/tree-sitter-provider.js). F9
 // promotes the best-matching sibling to the chunk's primary label when the
 // query references it more strongly than the original primary.
 //
@@ -30,7 +29,6 @@ import { looksLikeStrictIdentifier, spellStem, splitIdentifierName } from './que
 // language but per-language gating limits the validation surface for the
 // initial rollout. Promote to additional languages once probes confirm gain
 // on JS/TS with zero regressions on JS/TS + GCSN.
-// =============================================================================
 
 const JSTS_LANGS = new Set(['javascript', 'typescript', 'tsx', 'jsx']);
 const JSTS_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts']);
@@ -61,8 +59,8 @@ function splitCamelCaseTokens(name) {
   if (!name) return [];
   return String(name)
     .replace(/\$/g, '')                          // strip $ (zod-style prefix)
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')      // camelCase boundary
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')   // PascalCase run boundary
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .replace(/[_\-]/g, ' ')
     .toLowerCase()
     .split(/\s+/)
@@ -81,7 +79,6 @@ function splitCamelCaseTokens(name) {
 function tokenMatches(token, queryWord) {
   if (!token || !queryWord) return false;
   if (token === queryWord) return true;
-  // For very short tokens, require exact only
   if (token.length < 3 || queryWord.length < 3) return false;
   const shorter = token.length <= queryWord.length ? token : queryWord;
   const longer = token.length > queryWord.length ? token : queryWord;
@@ -118,7 +115,6 @@ function scoreNameMatchTiered(name, queryWordsArr, queryWordsSet) {
   if (queryWordsSet.has(nLowerRaw) || queryWordsSet.has(nLowerStripped)) {
     return { tier: 2, tokens: tokens.length };
   }
-  // Tier 1: all camelCase tokens covered
   for (const t of tokens) {
     let found = false;
     for (let i = 0; i < queryWordsArr.length; i++) {
@@ -146,7 +142,7 @@ function scoreNameMatchTiered(name, queryWordsArr, queryWordsSet) {
  * second-guess them at relabel time).
  */
 export function findAdditionalSymbolRelabel(result, queryWordsArr, queryWordsSet, opts) {
-  // 2026-05-13: widened from JS/TS-only to all languages. The cAST sibling-
+  // Widened from JS/TS-only to all languages. The cAST sibling-
   // merge phenomenon F9 addresses is universal — Java/C#/Lua/Python classes
   // and namespaces also produce one-chunk-per-N-siblings outputs that label
   // with the first entity. The `findEntitiesInRange` + tiered match logic
@@ -168,7 +164,6 @@ export function findAdditionalSymbolRelabel(result, queryWordsArr, queryWordsSet
   const el = Number(result?.endLine ?? meta.endLine ?? meta.line_end);
   if (!fp || !Number.isFinite(sl) || !Number.isFinite(el)) return null;
 
-  // Cache per (file, range) — entities don't change within a query call.
   const cache = opts._entityNameCache;
   const entitiesCacheKey = cache ? `${fp}|${sl}|${el}|f9-entities` : null;
   let entities;
@@ -252,8 +247,7 @@ export function identifierMentionBoost(result, mentions, opts = {}) {
   const skipTarget = opts._symbolExactTarget ? String(opts._symbolExactTarget).toLowerCase() : '';
   const norm = (s) => s.replace(/[_-]/g, '').toLowerCase();
 
-  // Path 1 — direct symbol comparison (existing behaviour). Fires when the
-  // chunk has a populated label that lexically matches a query mention.
+  // Path 1: the chunk's populated label lexically matches a query mention.
   if (symbol) {
     const symLower = String(symbol).toLowerCase();
     const symNorm = norm(symLower);
@@ -264,15 +258,14 @@ export function identifierMentionBoost(result, mentions, opts = {}) {
         return boost;
       }
     }
-    // No Path 1 match — fall through to Path 2 (code-graph fallback). The
-    // chunk's labeled symbol didn't match any mention, but a contained
-    // sibling entity might (cAST sibling-merge case: chunk labeled with
+    // No Path 1 match: a contained sibling entity might still match (cAST
+    // sibling-merge case: chunk labeled with
     // the FIRST entity in the merged group while query references a
     // later sibling, e.g. Java chunk 121-168 labeled `verifyNoTypeVariable`
     // but containing the gold's `getType` at 166-168).
   }
 
-  // Path 2 — code-graph fallback (2026-05-13). Two scenarios:
+  // Path 2 — code-graph fallback. Two scenarios:
   //   1. Null-name LI metadata — some indexes were built without populated
   //      `metadata.name` (e.g. the typescript ast-tester repo has every doc
   //      carrying `name: null`). Path 1 short-circuits via `if (symbol)`
@@ -343,8 +336,7 @@ export function pathTokenBoost(result, pathTokens, opts = {}) {
   if (boost === 1.0) return 1.0;
   const path = String(result?.file || result?.metadata?.file || '').toLowerCase();
   if (!path) return 1.0;
-  // Match token as path component (separator-bounded) — avoid spurious
-  // substring matches like "iter" matching inside "literator".
+  // Separator-bounded: avoids "iter" matching inside "literator".
   for (const tok of pathTokens) {
     const re = new RegExp('(^|[/_-])' + tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[/_.-])');
     if (re.test(path)) return boost;
@@ -373,6 +365,46 @@ export function qualifiedMemberMismatch(result, target, mentions, opts = {}) {
   return true;
 }
 
+/**
+ * Symbol-exact-match boost for definition-style queries.
+ *
+ * Both diagnoses (FreshStack uv #1, 60-probe new-set #1)
+ * converged on this as the highest-impact fix. When a query has the shape
+ * "show me X struct/enum/class/function/...", chunks where the symbol name
+ * EQUALS X (case-insensitive, after stemming s/es/ing suffixes) should
+ * dominate the lexical-collision sibling chunk that the encoder happens
+ * to score nearby.
+ *
+ * Diagnosed cases (combined): Cache vs CacheArgs (UV-DEF-1), Resolver vs
+ * Resolution (UV-DEF-4), ContentTypeParser vs ContentType (S6-Q2),
+ * Flask vs App (S6-Q9), buildErrorHandler vs setErrorHeaders (S6-Q3),
+ * Set method vs Value method (S3-Q6), get_send_file_max_age vs
+ * send_static_file (S3-Q9). 8+ failures in the new-probe set, 4 in
+ * FreshStack — strong evidence of a real systematic gap.
+ *
+ * SOTA precedent: BM25F field-weighted boosting on the symbol field
+ * (canonical IR move when one field carries decisive signal); ColBERTv2
+ * "expansion-aware reranking" with identifier prior; Sourcegraph Cody's
+ * "hint" tokens that bias toward exact symbol matches in graph-aware
+ * retrieval (Cody arXiv 2408.05344).
+ *
+ * Trigger pattern (conservative — only fires on UNAMBIGUOUS definition
+ * queries):
+ *   /\b(show|give|find|describe|display|fetch).+?(?:the\s+)?(\w+)\s+
+ *    (struct|enum|class|fn|function|method|trait|type|interface|impl|
+ *     definition|signature|prototype|constructor)\b/i
+ *
+ * Plus a "WHAT IS X TYPE" alternate trigger:
+ *   /\bwhat\s+(?:is|does)\s+(?:the\s+)?(\w+)\s+
+ *    (struct|enum|class|function|method|type)\b/i
+ *
+ * Boost: 1.30× when chunk.symbol case-insensitive-equals the captured
+ * identifier. Capped at 1.30 (mild — definition queries account for ≤25%
+ * of probe traffic so a stronger boost risks breaking non-DEF queries).
+ *
+ * Override env: SWEET_SEARCH_SYMBOL_EXACT_BOOST (default 1.30, set to 1.0
+ * to disable). `ablations: ['no-symbol-exact-boost']` also disables.
+ */
 export function symbolExactMatchBoost(result, target, opts = {}) {
   if (!target) return 1.0;
   const raw = process.env.SWEET_SEARCH_SYMBOL_EXACT_BOOST;
@@ -395,7 +427,7 @@ export function symbolExactMatchBoost(result, target, opts = {}) {
     if (sLower === tLower) return boost;
     if (norm(sLower) === norm(tLower)) return boost;
   }
-  // F7 (2026-05-07): chunk's labeled symbol may not match the target, but a
+  // F7: chunk's labeled symbol may not match the target, but a
   // sibling entity contained inside the chunk range may match. Diagnosed from
   // S6-Q3 (fastify): chunk 103-150 contains both fallbackErrorHandler AND
   // buildErrorHandler at lines 142-150; chunker labeled it fallbackErrorHandler.

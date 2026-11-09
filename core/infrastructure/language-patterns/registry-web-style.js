@@ -1,10 +1,4 @@
-// =============================================================================
-// Web and Stylesheet Language Registry
-// =============================================================================
-// Markup and stylesheet-centric languages.
-// Data-only module consumed by `registry.js`.
 export const WEB_STYLE_LANGUAGES = {
-  // ─── HTML / Templating ─────────────────────────────────────────────────────
   html: {
     indentBased: false,
     endKeyword: null,
@@ -33,7 +27,6 @@ export const WEB_STYLE_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── CSS ───────────────────────────────────────────────────────────────────
   css: {
     indentBased: false,
     endKeyword: null,
@@ -61,7 +54,6 @@ export const WEB_STYLE_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── SCSS ──────────────────────────────────────────────────────────────────
   scss: {
     indentBased: false,
     endKeyword: null,
@@ -91,7 +83,6 @@ export const WEB_STYLE_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── Sass (indent-based) ──────────────────────────────────────────────────
   sass: {
     indentBased: true,
     endKeyword: null,
@@ -115,7 +106,6 @@ export const WEB_STYLE_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── LESS ──────────────────────────────────────────────────────────────────
   less: {
     indentBased: false,
     endKeyword: null,

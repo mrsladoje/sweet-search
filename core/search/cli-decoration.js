@@ -12,10 +12,6 @@
 import path from 'node:path';
 import { createDecorationWriter, detectOutputPolicy } from './output-policy.js';
 
-// =============================================================================
-// CLI STYLING (ANSI truecolor w/ fallback)
-// =============================================================================
-
 export const STYLE = (() => {
   // 5 shades of dark blue (edge -> center)
   const colors = {
@@ -37,9 +33,7 @@ export const STYLE = (() => {
     b: Math.round(c1.b + (c2.b - c1.b) * t),
   });
 
-  // Convert RGB to xterm-256 color code (fallback for terminals without truecolor)
   const rgbToAnsi256 = (r, g, b) => {
-    // Grayscale range
     if (r === g && g === b) {
       if (r < 8) return 16;
       if (r > 248) return 231;
@@ -115,14 +109,12 @@ export const PLAIN_STYLE = {
   headerStyle: STYLE.headerStyle,
 };
 
-// Default line writer for decoration when no policy writer is supplied: stdout.
 const _stdoutLine = (line = '') => process.stdout.write(`${line}\n`);
 
 // 2-line pixel art using half-blocks - SWEET SEARCH
 const SWEET_SEARCH_L1 = '█▀▀ █ █ █ █▀▀ █▀▀ ▀█▀  █▀▀ █▀▀ ▄▀▄ █▀▄ █▀▀ █▄█';
 const SWEET_SEARCH_L2 = '▄▄█ ▀▄█▄▀ ██▄ ██▄  █   ▄▄█ ██▄ █▀█ ██▄ █▄▄ █▀█';
 
-// Per-tool glyphs so each of the six tools is recognizable at a glance.
 const TOOL_ICONS = {
   search: '✨',
   lexical: '⚡',

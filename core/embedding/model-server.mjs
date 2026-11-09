@@ -61,7 +61,7 @@ export async function computeEmbeddingsForRequest(texts, providerOptions = {}) {
 
 /**
  * Handle one decoded request frame for a connected client. Writes exactly one
- * reply frame back. Pure wire glue around `computeEmbeddingsForRequest`.
+ * reply frame back.
  */
 async function handleRequestFrame(socket, header) {
   if (!header || typeof header !== 'object') return;
@@ -194,7 +194,6 @@ export async function startModelServer(opts = {}) {
   return { socketPath, server, close };
 }
 
-// ── CLI entrypoint ────────────────────────────────────────────────────────
 // Allow `node core/embedding/model-server.mjs` to run a standalone server.
 // Guarded so importing this module (tests, launcher) never auto-binds.
 const _isMain = (() => {

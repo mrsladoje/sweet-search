@@ -38,11 +38,6 @@
  * worker prunes rows whose `epoch_retired` is older than `minLiveEpoch`.
  */
 
-/**
- * Ensure the HCGS sidecar schema exists.
- *
- * @param {import('better-sqlite3').Database} db
- */
 export function ensureHcgsSidecarSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS hcgs_summary_metadata (
@@ -71,8 +66,6 @@ export function ensureHcgsSidecarSchema(db) {
  * Plan § 7.7 step 1. Caller commits within the per-file transaction so the
  * sidecar can't be in disagreement with the entity row.
  *
- * @param {import('better-sqlite3').Database} db
- * @param {string} entityId
  * @param {{sourceEntityIds:string[], sourceChunkStructIds:string[], sourceHashes:object, epoch:number}} payload
  */
 export function recordSummary(db, entityId, payload) {
@@ -103,9 +96,7 @@ export function recordSummary(db, entityId, payload) {
  * from the graph + vector deltas. Plan § 7.7 step 2 fires the
  * retirement in the same manifest epoch.
  *
- * @param {import('better-sqlite3').Database} db
  * @param {{retiredEntityIds:Set<string>|Array<string>, retiredChunkStructIds:Set<string>|Array<string>}} sources
- * @param {number} epoch
  * @returns {number}  How many summaries were retired.
  */
 export function retireDependentSummaries(db, sources, epoch) {
@@ -149,9 +140,6 @@ export function retireDependentSummaries(db, sources, epoch) {
  *
  * Returns `epoch_written <= :manifestEpoch
  *           AND (epoch_retired IS NULL OR epoch_retired > :manifestEpoch)`.
- *
- * @param {string} [alias]
- * @returns {string}
  */
 export function summaryVisibilityPredicate(alias = '') {
   const normalizedAlias = String(alias || '').endsWith('.') ? String(alias).slice(0, -1) : String(alias || '');
@@ -164,10 +152,6 @@ export function summaryVisibilityPredicate(alias = '') {
 
 /**
  * Drop retired rows older than the prune frontier. Plan § 8.1.1 step 4.
- *
- * @param {import('better-sqlite3').Database} db
- * @param {number} pruneFrontier
- * @returns {number}
  */
 export function pruneRetiredSummaries(db, pruneFrontier) {
   if (!Number.isInteger(pruneFrontier)) {

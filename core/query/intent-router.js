@@ -7,10 +7,6 @@
  * limits, and chunk-type / edge-type preferences.
  */
 
-// ---------------------------------------------------------------------------
-// Intents
-// ---------------------------------------------------------------------------
-
 export const INTENTS = {
   API_LOOKUP: 'api_lookup',
   BUG_FIX: 'bug_fix',
@@ -18,10 +14,6 @@ export const INTENTS = {
   SECURITY: 'security',
   GENERAL: 'general',
 };
-
-// ---------------------------------------------------------------------------
-// Keyword banks (lowercase)
-// ---------------------------------------------------------------------------
 
 const INTENT_KEYWORDS = {
   [INTENTS.API_LOOKUP]: [
@@ -43,9 +35,6 @@ const INTENT_KEYWORDS = {
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Keyword matching
-// ---------------------------------------------------------------------------
 //
 // Keywords match whole words only. Substring matching let "move" fire inside
 // "moved" / "removed", "fix" inside "prefix", "auth" inside "author", "type"
@@ -111,10 +100,6 @@ export function isBehaviourQuestion(query) {
 // sentence is weaker evidence, and confidence says so.
 const FULL_EVIDENCE_SCORE = 1.0;
 
-// ---------------------------------------------------------------------------
-// Classifier
-// ---------------------------------------------------------------------------
-
 /**
  * Classify the intent of a search query using keyword heuristics.
  *
@@ -126,9 +111,7 @@ const FULL_EVIDENCE_SCORE = 1.0;
  * Confidence = share × strength, where share is the winning score over the
  * sum of all scores (how unambiguous the winner is) and strength is
  * min(1, winning score / FULL_EVIDENCE_SCORE) (how much evidence there is).
- * The old share-only confidence gave 1.0 to any single keyword anywhere.
  *
- * @param {string} query - The user search query
  * @returns {{ intent: string, confidence: number, scores: Record<string, number> }}
  */
 export function classifyIntent(query) {
@@ -149,9 +132,7 @@ export function classifyIntent(query) {
       if (!m) continue;
       const idx = m.index;
 
-      // Position weight: earlier matches score higher (1.0 → 0.5)
       const positionWeight = 1.0 - 0.5 * (idx / queryLen);
-      // Multi-word bonus
       const multiWordBonus = kw.includes(' ') ? 1.5 : 1.0;
 
       score += positionWeight * multiWordBonus;
@@ -173,10 +154,6 @@ export function classifyIntent(query) {
 
   return { intent: bestIntent, confidence, scores };
 }
-
-// ---------------------------------------------------------------------------
-// Retrieval Policies
-// ---------------------------------------------------------------------------
 
 const POLICIES = {
   [INTENTS.API_LOOKUP]: {

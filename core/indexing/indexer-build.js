@@ -1,8 +1,3 @@
-/**
- * Indexer Build - Code graph building, vector schema, vector insertion, pipelined embed+write.
- * Extracted from index-codebase-v21.js for file size compliance (<500 lines).
- */
-
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
@@ -22,10 +17,6 @@ import { IndexSchemaError, vectorSchemaVersion } from '../infrastructure/index-s
 import { chunkTextFtsWriter, ensureChunkTextFts } from './chunk-text-fts.js';
 import { chunkFilePath, chunkIdOf, embedTextCap, embedTextOf } from './chunk-embed-text.js';
 
-// =============================================================================
-// CHUNK ENRICHMENT — scope chains + imports from code-graph.db
-// =============================================================================
-
 function closeWithOptimize(db, label) {
   try {
     db.pragma('optimize');
@@ -37,11 +28,6 @@ function closeWithOptimize(db, label) {
 }
 
 /**
- * Enrich chunks with scope chain and import context from the code graph.
- * Queries entities (by file path + line range overlap) and import relationships,
- * then calls ASTChunker.enrichEmbeddingText() to rebuild each chunk's embedding_text.
- *
- * @param {Array} chunks - All chunks from ASTChunker.parseFile()
  * @param {typeof import('../../ast-chunker.js').ASTChunker} ASTChunker - ASTChunker class (for static method)
  * @returns {Promise<number>} Number of chunks enriched
  */
@@ -52,7 +38,6 @@ async function enrichChunksFromGraph(chunks, ASTChunker) {
   applyReadPragmas(db);
 
   try {
-    // Pre-fetch entities and imports grouped by file
     const entityStmt = db.prepare(
       'SELECT type, name, start_line, end_line FROM entities WHERE file_path = ? ORDER BY start_line ASC'
     );
@@ -62,7 +47,6 @@ async function enrichChunksFromGraph(chunks, ASTChunker) {
        ORDER BY target_name`
     );
 
-    // Cache per-file lookups
     const entityCache = new Map();
     const importCache = new Map();
 
@@ -76,13 +60,11 @@ async function enrichChunksFromGraph(chunks, ASTChunker) {
       const symbol = chunk.metadata?.symbol;
       if (!symbol || symbol === 'unknown') continue;
 
-      // Get entities for this file (cached)
       if (!entityCache.has(filePath)) {
         entityCache.set(filePath, entityStmt.all(filePath));
       }
       const entities = entityCache.get(filePath);
 
-      // Get imports for this file (cached)
       if (!importCache.has(filePath)) {
         // The file node's id (GraphExtractor.makeId(filePath, 'file', basename)):
         // the source_id of the file's import rows.
@@ -92,19 +74,16 @@ async function enrichChunksFromGraph(chunks, ASTChunker) {
       }
       const imports = importCache.get(filePath);
 
-      // Build scope chain: find entities whose line range contains this chunk
       const chunkStart = chunk.metadata?.line_start || 0;
       const chunkEnd = chunk.metadata?.line_end || chunkStart;
       const scopeChain = [];
 
       for (const entity of entities) {
-        // Entity contains this chunk (or overlaps significantly)
         if (entity.start_line <= chunkStart && entity.end_line >= chunkEnd) {
           scopeChain.push(entity.name);
         }
       }
 
-      // Only enrich if we found scope or import context
       if (scopeChain.length > 0 || imports.length > 0) {
         ASTChunker.enrichEmbeddingText(chunk, scopeChain, imports);
         enriched++;
@@ -116,10 +95,6 @@ async function enrichChunksFromGraph(chunks, ASTChunker) {
     db.close();
   }
 }
-
-// =============================================================================
-// PHASE 1: CODE GRAPH INDEXING
-// =============================================================================
 
 export async function buildCodeGraph(files, dryRun = false) {
   log('\n━━━ Phase 1: Code Graph ━━━', 'bright');
@@ -226,8 +201,7 @@ export async function buildCodeGraph(files, dryRun = false) {
     log(`⚠ PageRank population failed (non-fatal): ${err.message}`, 'yellow');
   }
 
-  // Update query planner statistics before closing (SQLite 3.46+).
-  // Best-effort only; failure should not strand the temp DB handle.
+  // Best-effort only (SQLite 3.46+ query planner statistics); failure should not strand the temp DB handle.
   closeWithOptimize(db, 'code graph build');
 
   await atomicSwapDatabase(tmpPath, DB_PATHS.codeGraph);
@@ -243,10 +217,6 @@ export async function buildCodeGraph(files, dryRun = false) {
     unresolvedTotal: resolutionStats.total - resolutionStats.resolved
   };
 }
-
-// =============================================================================
-// PHASE 2: VECTOR EMBEDDINGS
-// =============================================================================
 
 /**
  * The vectors table in its final shape (no migrations), stamped with SCHEMA_VERSION in
@@ -428,9 +398,9 @@ function prepareVectorInsert(db) {
 }
 
 /**
- * Insert alias rows that reuse their exemplar's embedding instead of running
- * the embedding model. The exemplar must already be in the `vectors` table;
- * call this AFTER pipelinedEmbedAndInsert has written the exemplar rows.
+ * Alias rows reuse their exemplar's embedding instead of running the model.
+ * The exemplar must already be in the `vectors` table: call this AFTER
+ * pipelinedEmbedAndInsert has written the exemplar rows.
  * Returns the number of alias rows inserted.
  */
 export function insertAliasVectors(db, aliases, modelInfo, options = {}) {
@@ -583,7 +553,6 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
     const batchChunks = allChunks.slice(i, i + batchSize);
     const batchAnnotations = allAnnotations.slice(i, i + batchSize);
 
-    // Overlap: flush accumulated writes while embedding is in-flight
     const batchResultsPromise = getEmbeddings(batch, progressOptions);
 
     if (writeBuffer.length >= writeFlushRows) {
@@ -607,17 +576,11 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
     }
   }
 
-  // Flush remaining buffered writes
   flushWriteBuffer();
 
   return embeddingCount;
 }
 
-/**
- * Parse and enrich files into chunks + embedding texts.
- * Extracted so both vector and late interaction encoding can share chunks
- * when running in parallel mode (see PARALLEL_INDEXING_PLAN.md).
- */
 export async function chunkFiles(files) {
   const { ASTChunker } = await import('./ast-chunker.js');
   const chunker = new ASTChunker({ projectRoot: PROJECT_ROOT });
@@ -693,8 +656,8 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
     ({ allChunks, texts } = await chunkFiles(files));
   }
 
-  // Dedup: if chunks were annotated by runDedupPhase, embed only exemplars;
-  // aliases get their exemplar's embedding copied after the main embed pass.
+  // Chunks annotated by runDedupPhase: embed only exemplars; aliases get
+  // their exemplar's embedding copied after the main embed pass.
   let embedChunks = allChunks;
   let embedTexts = texts;
   let aliasChunks = [];
@@ -846,7 +809,7 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
       log(`  ✓ Inserted ${aliasInserted} alias vector(s) (embeddings copied from exemplars)`, 'dim');
     }
 
-    // Flush WAL before downstream reads (HNSW build streams from this DB)
+    // HNSW build streams from this DB
     checkpointWal(db);
 
     log(`\n✓ Generated ${embeddingCount} embeddings (${effectiveEmbeddingDimension}d)`, 'green');

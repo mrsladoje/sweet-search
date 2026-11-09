@@ -1,17 +1,6 @@
 /**
- * Search Semantic Module
- *
- * Extracted from sweet-search.js (SOLID refactor).
- * Contains the 3-stage semantic search pipeline and standard semantic search.
- *
  * Functions that use `this` are regular function declarations (not arrows)
  * so they work correctly when wired onto SweetSearch.prototype.
- *
- * Rescoring Fix changes:
- *   Phase 0: Enhanced per-stage instrumentation, score-distribution signals
- *   Phase 1: Batched normalized-dot Stage 2 scoring (no per-candidate norms)
- *   Phase 2: Fixed Stage 2.5 dimension mismatch, float store direct access
- *   Phase 3: Adaptive oversampling (replaces fixed 200/200 pools)
  */
 
 import {
@@ -138,10 +127,6 @@ function fullVectorStageWanted(options) {
   return options.format !== 'agent' && !hasAblation(options.ablations, 'no-full-vector-stage-rescore');
 }
 
-// =============================================================================
-// Phase 0: Score-Spread Analysis (shared signal source)
-// =============================================================================
-
 // Thresholds shared between shouldSkipRerank and adaptive pool sizing.
 // Single source of truth — no parallel heuristic stacks.
 const SCORE_SPREAD = {
@@ -207,10 +192,6 @@ function spreadFromStats(count, stats, off) {
   };
 }
 
-// =============================================================================
-// Phase 3: Adaptive Pool Sizing
-// =============================================================================
-
 /**
  * Stage-1 result count: the configured floor, raised for a large k to
  * 1.5 x max(minStage2, k x oversample1), capped at maxStage2 (k>=27: 400).
@@ -221,7 +202,6 @@ function stage1Count(floor, k, config) {
 }
 
 /**
- * Compute adaptive Stage 2.5 pool size.
  * Always smaller than Stage 2 pool — float rescoring is more expensive.
  */
 function adaptiveStage2_5Pool(k, analysis, config) {
@@ -241,21 +221,17 @@ function adaptiveStage2_5Pool(k, analysis, config) {
   return { size: Math.min(base, maxStage2_5), reason: 'default' };
 }
 
-// =============================================================================
-// 3-Stage Semantic Search
-// =============================================================================
-
 /**
  * 3-Stage Semantic Search Pipeline
  *
- * Performance targets (after rescoring fix):
+ * Performance targets:
  *   Stage 1 (Binary): ~100us for 1000 candidates
  *   Stage 2 (Int8):   ~200-500us for adaptive candidates (batched normalized dot)
  *   Stage 2.5 (Float): ~500us for adaptive candidates (direct-access store)
  *   Stage 3 (Rerank): ~50-100ms for 20 candidates
  *   Total: <150ms end-to-end
  *
- * Returns: { results: Array, stats: Object } with embedding/rerank stats for CostTracker
+ * Returns: { results: Array, stats: Object } with embedding/rerank stats
  *
  * Uses `this` extensively.
  */
@@ -264,13 +240,11 @@ export async function semanticSearch3Stage(query, options = {}) {
   const stats = { stages: {} };
   const adaptiveConfig = BINARY_HNSW_CONFIG.retrieval.adaptive || {};
 
-  // Generate binary embedding (with caching)
   const embedStart = performance.now();
   const embedResult = await getBinaryEmbedding(query);
   stats.embed_us = Math.round((performance.now() - embedStart) * 1000);
   this.log(`Embedding: ${stats.embed_us}us (${embedResult.source})`);
 
-  // P0 FIX: Add embedding stats for CostTracker
   stats.embedding = {
     source: embedResult.source || (embedResult.cached ? 'cache' : 'api'),
     tokens: embedResult.tokens || Math.ceil(query.length / 4),
@@ -280,7 +254,6 @@ export async function semanticSearch3Stage(query, options = {}) {
   };
   stats.queryFloat = embedResult.float || null;
 
-  // Stage 1: Binary HNSW search
   // Pass floatQuery for asymmetric distance during graph traversal
   const useBatchedDot = BINARY_HNSW_CONFIG.retrieval.useBatchedDot !== false;
   // Native stages 1 and 2 in one synchronous span (searchCascade): the same
@@ -386,20 +359,15 @@ export async function semanticSearch3Stage(query, options = {}) {
       return { results: [], stats };
     }
 
-    // -------------------------------------------------------------------------
-    // Stage 2: Int8 Rescore (Phase 1 — batched normalized dot product)
-    //
-    // Key optimization: use normalizedFloatToInt8 (matches index-time quantizer)
+    // Int8 rescore: use normalizedFloatToInt8 (matches index-time quantizer)
     // and raw dot product scoring. Since both query and document int8 vectors
     // are quantized from L2-normalized floats, dot/(127²) ≈ cosine.
     // No per-candidate norm computation needed.
-    // -------------------------------------------------------------------------
     const stage2Start = performance.now();
 
     // Every stage-1 candidate (as in the fused path).
     const stage2Count = stage1Found;
 
-    // Collect int8 vectors for scoring
     const stage2Candidates = stage1Lazy
       ? stage1Result.materialize(stage2Count)
       : stage1Result.results.slice(0, stage2Count);
@@ -447,7 +415,6 @@ export async function semanticSearch3Stage(query, options = {}) {
       }
 
       if (useBatchedDot) {
-        // Phase 1 NEW PATH: Batched normalized dot product
         // Use same quantizer as index time. No per-candidate norms.
         const queryInt8 = normalizedFloatToInt8(truncatedFloat);
         stats.queryInt8 = queryInt8;
@@ -458,7 +425,6 @@ export async function semanticSearch3Stage(query, options = {}) {
           }
         }
       } else {
-        // Phase 1 OLD PATH (fallback): Per-candidate int8 cosine similarity
         const queryInt8 = floatToInt8(truncatedFloat);
         stats.queryInt8 = queryInt8;
         for (let j = 0; j < validIndices.length; j++) {
@@ -471,7 +437,6 @@ export async function semanticSearch3Stage(query, options = {}) {
       this.log(`Warning: ${missingInt8Count} candidates missing int8 vectors (given neutral score)`);
     }
 
-    // Sort by int8 score
     scoredCandidates = [...stage2Candidates];
     scoredCandidates.sort((a, b) => b.int8Score - a.int8Score);
 
@@ -488,15 +453,11 @@ export async function semanticSearch3Stage(query, options = {}) {
     this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored (pool: ${stage2Count}, ${useBatchedDot ? 'batched' : 'legacy'})`);
   }
 
-  // -------------------------------------------------------------------------
-  // Stage 2.5: Float Rescore (Phase 2 — fixed dimension, direct-access store)
-  //
   // Fixes from the plan:
   // 1. Query and document vectors scored at same intended dimension
   //    (both use truncateForHNSW output, no silent Math.min truncation)
   // 2. Float vectors loaded from direct-access store (not SQLite)
   // 3. SQLite retained as fallback if float store not available
-  // -------------------------------------------------------------------------
   const stage2_5Pool = adaptiveStage2_5Pool(k, int8Analysis, adaptiveConfig);
   const stage2_5Count = Math.min(stage2_5Pool.size, scoredCandidates.length);
 
@@ -511,7 +472,6 @@ export async function semanticSearch3Stage(query, options = {}) {
     const stage2_5Start = performance.now();
     try {
       const pool = scoredCandidates.slice(0, stage2_5Count);
-      // Phase 2 fix: query at intended dimension (truncated + normalized)
       const queryFloat = truncatedFloat ?? truncateForHNSW(embedResult.float);
       const poolIds = pool.map(c => c.id);
 
@@ -519,7 +479,6 @@ export async function semanticSearch3Stage(query, options = {}) {
       let floatSource = 'none';
       let missingFloatCount = 0;
 
-      // Prefer direct-access float store (Phase 2)
       if (this.floatVectorStore && this.floatVectorStore.loaded) {
         const result = this.floatVectorStore.batchScore(queryFloat, poolIds);
         if (result.scores.size > 0) {
@@ -537,7 +496,6 @@ export async function semanticSearch3Stage(query, options = {}) {
         }
       }
 
-      // Fallback: SQLite _loadFloatVectors (if float store unavailable)
       if (floatSource === 'none' && this._loadFloatVectors) {
         floatVectors = await this._loadFloatVectors(poolIds);
         if (floatVectors && floatVectors.size > 0) {
@@ -597,7 +555,6 @@ export async function semanticSearch3Stage(query, options = {}) {
     }
   }
 
-  // CASCADE MODE: Return broad candidate set, let postprocess handle scoring.
   if (!fullDone && fullVectorStageWanted(options)) {
     const fullVectorStage = applyFullVectorStageRescore(
       scoredCandidates,
@@ -613,11 +570,6 @@ export async function semanticSearch3Stage(query, options = {}) {
     return cascadeDefer(scoredCandidates, stats, 'semantic-3stage', options.cascadeK);
   }
 
-  // =========================================================================
-  // FLAG OFF: Existing Stage 3 rerank path, completely unchanged.
-  // =========================================================================
-
-  // EARLY EXIT: Use score spread analysis to skip reranking
   const topCandidatesWithInt8 = scoredCandidates
     .slice(0, Math.min(10, scoredCandidates.length))
     .filter(c => !c.missingInt8);
@@ -649,14 +601,12 @@ export async function semanticSearch3Stage(query, options = {}) {
   // See search-postprocess.js — runs after graph expansion so expanded
   // candidates also benefit from MaxSim scoring.
 
-  // Stage 3: Rerank (if enabled AND a reranker is actually available)
   let results = scoredCandidates;
   if (rerank && scoredCandidates.length > k && this.reranker.isAnyAvailable?.()) {
     try {
       const stage3Start = performance.now();
       const topCandidates = scoredCandidates.slice(0, this.stage3Candidates);
 
-      // Load full document content for reranking
       const documents = await this.loadDocumentContent(topCandidates);
 
       const rerankResult = await this.reranker.rerank(query, documents, k);
@@ -718,18 +668,13 @@ export async function semanticSearch3Stage(query, options = {}) {
       searchPath: 'semantic-3stage',
     }));
 
-  // Return both results and stats for proper propagation
   return { results: formattedResults, stats };
 }
-
-// =============================================================================
-// Standard Semantic Search (fallback)
-// =============================================================================
 
 /**
  * Standard Semantic Search (fallback when binary index not available)
  *
- * Returns: { results: Array, stats: Object } with embedding/rerank stats for CostTracker
+ * Returns: { results: Array, stats: Object } with embedding/rerank stats
  *
  * Uses `this` extensively.
  */
@@ -737,7 +682,6 @@ export async function semanticSearchStandard(query, options = {}) {
   const { k = 10, rerank = true } = options;
   const stats = { stages: {} };
 
-  // Generate query embedding (with caching)
   const embedStart = performance.now();
   const embedResult = await getEmbedding(query, { isQuery: true });
   const fullEmbedding = embedResult.embedding || embedResult; // Handle both new and old API
@@ -745,7 +689,6 @@ export async function semanticSearchStandard(query, options = {}) {
   const cacheStatus = embedResult.source || 'unknown';
   this.log(`Embedding: ${embedLatency_us}us (${cacheStatus})`);
 
-  // P0 FIX: Add embedding stats for CostTracker
   stats.embedding = {
     source: embedResult.source || (embedResult.cached ? 'cache' : 'api'),
     tokens: embedResult.tokens || Math.ceil(query.length / 4),
@@ -796,11 +739,6 @@ export async function semanticSearchStandard(query, options = {}) {
     return cascadeDefer(candidates, stats, 'semantic');
   }
 
-  // =========================================================================
-  // FLAG OFF: Existing rerank path, completely unchanged.
-  // =========================================================================
-
-  // EARLY EXIT: Use score spread analysis to skip reranking
   const topScores = candidates.slice(0, Math.min(10, candidates.length)).map(c => c.score);
   const skipAnalysis = this.shouldSkipRerank(topScores, { highConfidence: 0.92 });
 
@@ -825,13 +763,11 @@ export async function semanticSearchStandard(query, options = {}) {
     return { results, stats };
   }
 
-  // Rerank if requested and we have candidates
   let results = candidates;
   if (rerank && candidates.length > k && this.reranker.isAnyAvailable?.()) {
     try {
       const rerankStart = Date.now();
 
-      // Prepare documents for reranking
       const documents = await this.loadDocumentContent(candidates);
 
       const rerankResult = await this.reranker.rerank(query, documents, k);
@@ -881,10 +817,6 @@ export async function semanticSearchStandard(query, options = {}) {
   return { results: formattedResults, stats };
 }
 
-// =============================================================================
-// Helpers
-// =============================================================================
-
 /**
  * Score spread analysis for intelligent rerank skipping.
  * Pure function — does not reference `this`. On prototype for call-site convenience.
@@ -907,22 +839,19 @@ export function shouldSkipRerank(scores, options = {}) {
   const spread = sorted[0] - sorted[sorted.length - 1];
   const topScores = sorted.slice(0, Math.min(3, sorted.length));
 
-  // Check 0: Never skip if scores are too low
+  // Never skip if scores are too low
   if (sorted[0] < minScoreThreshold) {
     return { skip: false, reason: `low_scores (max=${sorted[0].toFixed(3)}, threshold=${minScoreThreshold})` };
   }
 
-  // Check 1: Clear winner
   if (topGap > topGapThreshold) {
     return { skip: true, reason: `clear_winner (gap=${topGap.toFixed(3)})` };
   }
 
-  // Check 2: Tight cluster
   if (spread < spreadThreshold) {
     return { skip: true, reason: `tight_cluster (spread=${spread.toFixed(3)})` };
   }
 
-  // Check 3: All high confidence matches
   if (topScores.every(s => s > highConfidence)) {
     return { skip: true, reason: `high_confidence (min=${Math.min(...topScores).toFixed(3)})` };
   }

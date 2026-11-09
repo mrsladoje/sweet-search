@@ -48,16 +48,13 @@ export function nextInterval(input) {
   const reasons = [];
   let target = input.currentMs || NOMINAL_MS;
 
-  // 1. Tick wallclock guard: if the last tick used more than
-  //    TARGET_TICK_WALLCLOCK_FRACTION of the interval, double the
-  //    interval so we don't overrun.
+  // Tick wallclock guard: double the interval so a slow tick does not overrun.
   if (input.lastTickMs > target * TARGET_TICK_WALLCLOCK_FRACTION) {
     target = Math.min(target * 2, maxMs);
     reasons.push('last-tick-wallclock');
   }
 
-  // 2. Dirty-churn: if the dirty set is large, shorten so we drain
-  //    faster.
+  // Dirty-churn: if the dirty set is large, shorten so we drain faster.
   if (input.dirtyAtTickStart > 50) {
     target = Math.max(target * 0.75, minMs);
     reasons.push('dirty-churn');
@@ -66,7 +63,6 @@ export function nextInterval(input) {
     reasons.push('idle');
   }
 
-  // 3. CPU pressure: load average per core > 0.8 → loosen.
   if (input.cpuLoadAvg > 0.8) {
     target = Math.min(target * 1.25, maxMs);
     reasons.push('cpu-pressure');
@@ -75,7 +71,7 @@ export function nextInterval(input) {
     reasons.push('cpu-headroom');
   }
 
-  // 4. Maintenance backlog: don't tick faster than the queue can drain.
+  // Maintenance backlog: don't tick faster than the queue can drain.
   if (input.maintenanceBacklog > 4) {
     target = Math.min(target * 1.5, maxMs);
     reasons.push('maintenance-backlog');

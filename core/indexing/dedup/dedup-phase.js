@@ -80,7 +80,6 @@ export async function runDedupPhase(allChunks, config = DEDUP_CONFIG) {
  * byte-identical annotations.
  */
 export function annotateDedupClusters(items, fingerprints, clusters, config = DEDUP_CONFIG) {
-  // Seed every item with simhash + self-exemplar defaults.
   for (let i = 0; i < items.length; i++) {
     const meta = (items[i].metadata = items[i].metadata || {});
     meta.simhash = fingerprints[i].simhashHex;
@@ -160,9 +159,6 @@ export function annotateDedupClusters(items, fingerprints, clusters, config = DE
   };
 }
 
-/**
- * Build a one-line human summary of dedup stats for indexer logs.
- */
 export function formatDedupSummary(result) {
   if (result.skipped) return `Dedup skipped (${result.reason})`;
   const { clustersWithSiblings, totalAliases, liEligibleAliases, totalChunks, bytesSaved } = result.stats;

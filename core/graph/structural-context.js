@@ -402,10 +402,10 @@ export function modeSectionShares(shares, mode) {
   return { target: shares.target, callers: 0, callees: 0, impact: 0, [mode]: 1 - shares.target };
 }
 
-/** Most caller / callee rows a section of `budget` tokens lists. */
 // Rows per section when the trace prints rows only (compact ss-trace).
 const ROWS_ONLY_ITEM_LIMIT = 40;
 
+/** Most caller / callee rows a section of `budget` tokens lists. */
 export function sectionItemLimit(budget) {
   return Math.max(3, Math.min(40, Math.floor(budget / 90)));
 }
@@ -684,7 +684,6 @@ function parameterRange(source, name) {
   return [min, variadic ? Infinity : params.length];
 }
 
-/** Callers whose call lines all pass an argument count of another overload are dropped. */
 // Languages where an argument can sit outside the parentheses: a trailing block / lambda
 // (`retry(3) { }`), or Elixir's pipe (`conn |> put_status(404)` passes conn first; `=` in
 // its parameters is a pattern match, not a default). The parenthesised count is not the
@@ -710,6 +709,7 @@ function argumentCountAt(repo, file, line, name) {
   return callArguments(repo.readFileRange(file, line, line + 4) || '', name)?.length ?? null;
 }
 
+/** Callers whose call lines all pass an argument count of another overload are dropped. */
 function dropOtherOverloadCalls(repo, target, rows) {
   if (!target?.name || !target.filePath || typeof repo.readFileRange !== 'function') return rows;
   if (TRAILING_BLOCK_FILE.test(target.filePath)) return rows;

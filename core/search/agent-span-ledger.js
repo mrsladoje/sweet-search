@@ -185,7 +185,7 @@ export function collectAgentShownSpans(results, { projectRoot } = {}) {
  * from and which part (the result body or its continuation block) it covers. Used by the
  * SS_FIX_ALREADY_SHOWN omission, which must know which printed block a decision is for.
  * `include(resultIndex, part)` keeps only the blocks the caller prints (applied before the
- * per-call span cap). collectAgentShownSpans itself is unchanged.
+ * per-call span cap).
  *
  * @returns {Array<{span: object, resultIndex: number, part: 'result'|'continuation'}>}
  */

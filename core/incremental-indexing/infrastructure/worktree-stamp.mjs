@@ -40,7 +40,6 @@ function stampPath(stateDir) {
  * Resolve `git rev-parse --git-common-dir` for the given project root.
  * Returns `null` when not a git repo or git is unavailable.
  *
- * @param {string} projectRoot
  * @returns {string|null}
  */
 export function gitCommonDir(projectRoot) {
@@ -61,7 +60,6 @@ export function gitCommonDir(projectRoot) {
 /**
  * Read the stamp from disk, returning `null` when missing.
  *
- * @param {string} stateDir
  * @returns {{projectRoot:string, gitCommonDir:string|null, stampedAt:string}|null}
  */
 export function readStamp(stateDir) {
@@ -77,9 +75,6 @@ export function readStamp(stateDir) {
 /**
  * Write a stamp for the current project. Caller invokes on first daemon
  * start after a freshly initialised `.sweet-search/` dir.
- *
- * @param {string} stateDir
- * @param {string} projectRoot
  */
 export function writeStamp(stateDir, projectRoot) {
   fs.mkdirSync(stateDir, { recursive: true });
@@ -101,8 +96,6 @@ export function writeStamp(stateDir, projectRoot) {
  *   - on absent stamp → call `writeStamp` to mint one;
  *   - on mismatch → log ERROR with the remediation message and exit.
  *
- * @param {string} stateDir
- * @param {string} projectRoot
  * @returns {{ok:boolean, reason?:string, expected?:object, actual?:object}}
  */
 export function verifyStamp(stateDir, projectRoot) {

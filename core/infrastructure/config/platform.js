@@ -1,8 +1,3 @@
-/**
- * Platform Configuration — PROJECT_ROOT, DB_PATHS, platform detection, logging.
- * Split from core/config.js during DDD migration.
- */
-
 import path from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -33,28 +28,19 @@ function resolveProjectRoot() {
       return dir;
     }
     const parent = path.dirname(dir);
-    if (parent === dir) break; // filesystem root
+    if (parent === dir) break;
   }
 
-  // Fallback to cwd if no project marker found
   return cwd;
 }
 
-// Project root detection
 export const PROJECT_ROOT = resolveProjectRoot();
 
-// =============================================================================
-// ENVIRONMENT & API KEYS
-// =============================================================================
-
-// Load .env file if exists (check both local and project root)
 try {
   const { existsSync, readFileSync } = await import('fs');
 
-  // Priority 1: Local .env (in sweet-search directory)
-  // __dirname is now core/infrastructure/config/, so go up 3 levels
+  // __dirname is core/infrastructure/config/, so go up 3 levels
   const localEnvPath = path.join(__dirname, '..', '..', '..', '.env');
-  // Priority 2: Project root .env
   const projectEnvPath = path.join(PROJECT_ROOT, '.env');
 
   const dotenvPath = existsSync(localEnvPath) ? localEnvPath : projectEnvPath;
@@ -70,11 +56,6 @@ try {
   }
 } catch (e) { /* .env loading is optional */ }
 
-// =============================================================================
-// DATABASE PATHS
-// =============================================================================
-
-// Data directory: SWEET_SEARCH_DATA_DIR env or default .sweet-search
 const DATA_DIR_NAME = (() => {
   if (process.env.SWEET_SEARCH_DATA_DIR) {
     return process.env.SWEET_SEARCH_DATA_DIR;
@@ -111,10 +92,6 @@ export const DB_PATHS = {
   vocabulary: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'query-vocabulary.json'),
 
 };
-
-// =============================================================================
-// PLATFORM DETECTION
-// =============================================================================
 
 /**
  * Platform-aware indexer defaults for local embedding.
@@ -169,10 +146,6 @@ export function detectIndexerProfile(overrides) {
   };
 }
 
-// =============================================================================
-// MODEL DELIVERY CONFIGURATION
-// =============================================================================
-
 function envBool(name, defaultValue) {
   const raw = (process.env[name] ?? '').trim().toLowerCase();
   if (raw === '0' || raw === 'false' || raw === 'off') return false;
@@ -184,11 +157,10 @@ export const MODEL_DELIVERY_CONFIG = {
   // Allow models to be downloaded at runtime.
   // Priority: explicit env var > init config (.sweet-search/config.json) > default true.
   allowRuntimeModelDownload: (() => {
-    // Explicit env var always wins
     if (process.env.SWEET_SEARCH_ALLOW_RUNTIME_DOWNLOAD !== undefined) {
       return envBool('SWEET_SEARCH_ALLOW_RUNTIME_DOWNLOAD', true);
     }
-    // Check init config written by `sweet-search init`
+    // Init config written by `sweet-search init`
     try {
       const initConfigPath = path.join(PROJECT_ROOT, DATA_DIR_NAME, 'config.json');
       if (existsSync(initConfigPath)) {
@@ -201,17 +173,12 @@ export const MODEL_DELIVERY_CONFIG = {
     return true; // backward-compatible default
   })(),
 
-  // Managed model cache root directory
   modelCacheRoot: process.env.SWEET_SEARCH_MODEL_CACHE
     || path.join(os.homedir(), '.cache', 'sweet-search', 'models'),
 
   // HuggingFace endpoint (overrideable for enterprise mirrors/proxies)
   hfEndpoint: process.env.SWEET_SEARCH_HF_ENDPOINT || 'https://huggingface.co',
 };
-
-// =============================================================================
-// LOGGING
-// =============================================================================
 
 // Global quiet mode flag - set by CLI tools when --quiet is passed
 let _quietMode = false;
@@ -221,23 +188,16 @@ let _quietMode = false;
  * - timing logs are suppressed
  * - verbose logs are suppressed
  * - Only errors and essential output are shown
- *
- * @param {boolean} enabled - Whether quiet mode should be enabled
  */
 export function setQuietMode(enabled) {
   _quietMode = enabled;
 }
 
-/**
- * Check if quiet mode is currently enabled.
- * @returns {boolean} - True if quiet mode is enabled
- */
 export function isQuietMode() {
   return _quietMode;
 }
 
 export const LOGGING = {
-  // Verbose logging (detailed operation info)
   get verbose() {
     return !_quietMode && process.env.SEARCH_VERBOSE === 'true';
   },
@@ -248,7 +208,6 @@ export const LOGGING = {
     return !_quietMode && process.env.SEARCH_TIMING === 'true';
   },
 
-  // Debug logs (developer debugging)
   get debug() {
     return process.env.SEARCH_DEBUG === 'true';
   },

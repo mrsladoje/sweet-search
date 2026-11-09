@@ -73,9 +73,6 @@ export function fileStateExists(stateDir) {
 
 /**
  * Open the store. `readonly` opens an existing store only (null when there is none).
- *
- * @param {string} stateDir
- * @param {{readonly?: boolean}} [opts]
  */
 export function openFileState(stateDir, { readonly = false } = {}) {
   const file = fileStatePath(stateDir);

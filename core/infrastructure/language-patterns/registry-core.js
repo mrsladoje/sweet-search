@@ -1,10 +1,4 @@
-// =============================================================================
-// Core Language Registry
-// =============================================================================
-// Foundational, widely-used programming languages.
-// Data-only module consumed by `registry.js`.
 export const CORE_LANGUAGES = {
-  // ─── JavaScript / TypeScript ───────────────────────────────────────────────
   javascript: {
     indentBased: false,
     endKeyword: null,
@@ -45,7 +39,6 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["console", "Math", "JSON", "Object", "Array", "Promise", "process", "Buffer", "Date"],
     },
   },
-  // ─── TypeScript ────────────────────────────────────────────────────────────
   typescript: {
     indentBased: false,
     endKeyword: null,
@@ -113,7 +106,6 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["console", "Math", "JSON", "Object", "Array", "Promise", "process", "Buffer", "Date"],
     },
   },
-  // ─── Java ──────────────────────────────────────────────────────────────────
   java: {
     indentBased: false,
     endKeyword: null,
@@ -151,7 +143,6 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["System", "log", "LOG", "logger", "String", "Integer", "Long", "Boolean", "Double", "Float"],
     },
   },
-  // ─── Python ────────────────────────────────────────────────────────────────
   python: {
     indentBased: true,
     endKeyword: null,
@@ -186,7 +177,6 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["super", "print", "len", "range", "str", "int", "list", "dict", "set", "type"],
     },
   },
-  // ─── Go ────────────────────────────────────────────────────────────────────
   go: {
     indentBased: false,
     endKeyword: null,
@@ -222,7 +212,6 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["fmt", "log", "os", "io", "strings", "strconv", "math", "time", "sort", "sync"],
     },
   },
-  // ─── Rust ──────────────────────────────────────────────────────────────────
   rust: {
     indentBased: false,
     endKeyword: null,
@@ -263,7 +252,6 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["std", "println", "eprintln", "format", "vec", "String"],
     },
   },
-  // ─── C ─────────────────────────────────────────────────────────────────────
   c: {
     indentBased: false,
     endKeyword: null,
@@ -299,7 +287,6 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["printf", "fprintf", "sprintf", "malloc", "free", "sizeof", "memcpy", "memset", "strlen"],
     },
   },
-  // ─── C++ ───────────────────────────────────────────────────────────────────
   cpp: {
     indentBased: false,
     endKeyword: null,
@@ -359,7 +346,6 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["std", "cout", "cerr", "endl", "printf", "fprintf", "malloc", "free"],
     },
   },
-  // ─── C# ────────────────────────────────────────────────────────────────────
   csharp: {
     indentBased: false,
     endKeyword: null,

@@ -1,10 +1,6 @@
-// core/coreml-provider.js
-// CoreML execution provider detection and configuration for macOS Apple Silicon.
-
 import os from 'os';
 
 /**
- * Check if running on macOS Apple Silicon (ARM64).
  * CoreML EP only benefits Apple Silicon; on Intel Macs it falls back to CPU anyway.
  */
 export function isAppleSilicon() {
@@ -39,8 +35,6 @@ export async function isCoreMLProviderAvailable() {
  * "auto" (default): enable on Apple Silicon when provider is available.
  * "on"/"1"/"true": force enable (still gated to darwin+arm64).
  * "off"/"0"/"false": force disable.
- *
- * @param {boolean} providerAvailable - result of isCoreMLProviderAvailable()
  */
 export function shouldUseCoreML(providerAvailable) {
   const raw = (process.env.SWEET_SEARCH_USE_COREML ?? '').trim().toLowerCase();
@@ -65,8 +59,6 @@ export function shouldUseCoreML(providerAvailable) {
  *
  * ORT 1.24+ uses lowercase backend names ('cpu', 'coreml', 'webgpu').
  * The legacy PascalCase names ('CPUExecutionProvider') are NOT recognized.
- *
- * @param {boolean} useMLProgram - true for MLProgram format, false for NeuralNetwork
  */
 export function getCoreMLExecutionProviders(useMLProgram = true) {
   return [
@@ -75,7 +67,7 @@ export function getCoreMLExecutionProviders(useMLProgram = true) {
   ];
 }
 
-/** Reset cached state (for testing and A/B benchmark pass switching). */
+/** For testing and A/B benchmark pass switching. */
 export function _resetCoreMLCache() {
   _coremlAvailable = null;
 }

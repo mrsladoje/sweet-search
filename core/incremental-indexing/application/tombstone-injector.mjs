@@ -31,7 +31,6 @@ const DEFAULT_SEED = 42;
  * Deterministic 32-bit PRNG (mulberry32). Seeded with an integer, returns
  * a function producing floats in [0, 1).
  *
- * @param {number} seed
  * @returns {() => number}
  */
 function mulberry32(seed) {
@@ -46,8 +45,6 @@ function mulberry32(seed) {
 }
 
 /**
- * Inject tombstones at the requested fraction.
- *
  * @param {object} options
  * @param {import('better-sqlite3').Database} options.db   The `codebase.db` vectors database.
  * @param {number} options.fraction        0 < fraction <= 0.5
@@ -77,7 +74,6 @@ export function injectTombstones({ db, fraction, epoch, seed = DEFAULT_SEED, ses
   }
   const target = Math.floor(total * fraction);
 
-  // Fisher-Yates sample without replacement.
   const indices = new Array(total);
   for (let i = 0; i < total; i++) indices[i] = i;
   for (let i = total - 1; i > 0; i--) {

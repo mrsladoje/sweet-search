@@ -50,10 +50,7 @@ const EXECUTABLE_DECLARATION_RE = /\b(function|class|struct|interface|enum|trait
  */
 export function detectFileKind(filePath, opts) {
   if (!filePath || typeof filePath !== 'string') return 'implementation';
-  // Per-call cache. Each filePath produces a deterministic kind; calling
-  // 5 regex tests + an isTestSupportFile path-rule scan per result × per
-  // demotion site burns cycles redundantly when only ~10-20 unique files
-  // live in a result set. Cache keyed by file path; verdict reused.
+  // Only ~10-20 unique files live in a result set, so the regex scans are cached per path.
   const cache = opts && opts._fileKindCache;
   // The agent format classifies more paths as tests: one cache entry per format.
   const cacheKey = opts?.agentFormat ? `agent\u0000${filePath}` : filePath;
@@ -85,10 +82,6 @@ export function detectFileKind(filePath, opts) {
 
 export function isTestChunk(r, opts = {}) {
   const filePath = resolveFilePath(r);
-  // Per-chunk verdict cache. isTestChunk fires once per result inside the
-  // demotion loop, but its inputs (filePath, chunk text, chunk name) are
-  // immutable for a given (file, start, end). Cache the boolean to skip the
-  // 4 chunk-text regexes + name regex on cache hits.
   const verdictCache = opts._isTestChunkCache;
   let chunkKey = null;
   if (verdictCache) {
@@ -109,13 +102,8 @@ function isTestChunkUncached(r, opts, filePath) {
   const fileKind = detectFileKind(filePath, opts);
   if (fileKind === 'tests') return true;
   if (!hasAblation(opts.ablations, 'no-test-support-detection')) {
-    // Per-file verdict cache. isTestSupportFile is deterministic in
-    // (filePath, file content) and the file content is immutable for the
-    // duration of one search() call. Without this cache, the text-scan
-    // path (split/filter/per-line-regex over hundreds of lines) ran on
-    // every result, dominated by ~100 results × 100µs = 10ms per
-    // applyResultDemotions call. Cached, the verdict is computed at most
-    // once per unique file path.
+    // File content is immutable for one search() call. Uncached, the text scan
+    // cost ~100 results × 100µs = 10ms per applyResultDemotions call.
     const verdictCache = opts._isTestSupportCache;
     let supportVerdict;
     if (verdictCache && verdictCache.has(filePath)) {
@@ -130,17 +118,11 @@ function isTestChunkUncached(r, opts, filePath) {
     if (supportVerdict) return true;
   }
 
-  // Combined alternation over the four prior single-pattern tests:
+  // One alternation regex instead of four scans (~30-100µs saved per result):
   //   #[cfg(test)] / #[test]  (Rust attribute)
   //   func Test<X>             (Go testing)
   //   def test_<X>             (Python unittest/pytest)
   //   it/test/describe(...)    (JS/TS suite frameworks)
-  // V8 compiles a single alternation regex into one DFA pass over the text;
-  // running four `.test()` calls forced four separate scans even when the
-  // first three short-circuited successfully. Per result the saving is
-  // ~30-100µs, which compounds across the per-call window (~100 results)
-  // and is the dominant remaining cost in rule:testName after the verdict
-  // caches eliminated repeats.
   const text = resolveResultText(r, opts);
   if (TEST_CHUNK_BODY_RE.test(text)) return true;
 
@@ -162,9 +144,7 @@ export function isTestSupportFile(filePath, content = '') {
   ];
   if (pathRules.some(re => re.test(filePath))) return true;
 
-  // Lazy content getter: caller passes a thunk to avoid reading the file
-  // when path rules already determine the answer. Plain string still
-  // accepted for back-compat with non-applyResultDemotions callers.
+  // Content may be a thunk so the file is not read when the path rules decide.
   const text = typeof content === 'function' ? content() : content;
   if (!text) return false;
   if (/^\s*#!\[cfg\s*\(\s*test\s*\)/m.test(text)) return true;

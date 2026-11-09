@@ -9,11 +9,7 @@ export function resolveEntityKindInfo(r, opts = {}) {
   const meta = r?.metadata || {};
   const start = r?.startLine ?? r?.start_line ?? meta.startLine ?? meta.start_line;
   const end = r?.endLine ?? r?.end_line ?? meta.endLine ?? meta.end_line ?? start;
-  // Intra-call memoization: this function is invoked 4-7x per result by
-  // different multipliers (buildRefCountMap, entityKindMultiplier,
-  // namePrecisionMultiplier, bodyDensityMultiplier, megaEntityPenalty,
-  // referenceCountBoost, the main loop). With ~100 results that's
-  // 400-1400 SQLite round-trips. Cache by (file, start, end).
+  // Invoked 4-7x per result by different multipliers: ~100 results = 400-1400 SQLite round-trips uncached.
   const cache = opts._entityKindCache;
   let cacheKey = null;
   if (cache && file && Number.isFinite(start)) {
@@ -32,7 +28,6 @@ export function resolveEntityKindInfo(r, opts = {}) {
         if (first?.type) result = first;
       }
     } catch {
-      // Fall through to source-span inference.
     }
   }
   if (!result) {
@@ -125,8 +120,6 @@ export function refineContainedAdoption(r, entity, opts) {
   return firstCallable ? { entity: firstCallable, labelOnly: true } : { entity: null, labelOnly: true };
 }
 
-// Pure function of `preferred` (static ENTITY_KIND_KEYWORDS table) — memoize
-// the last kind so the per-result demotion loop reuses one Set.
 let _kindKeywordSetKey;
 let _kindKeywordSet;
 function kindKeywordSet(preferred) {

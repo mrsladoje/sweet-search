@@ -95,7 +95,7 @@ import {
 // the virtual process (core/agent-tools/virtual-process.js) sends every console.log of a
 // call to that call's stderr, which the agent sees only on a non-zero exit.
 
-// 8-char SHA1 prefix is enough for grouping identical queries across
+// 16-char SHA1 prefix is enough for grouping identical queries across
 // benchmark runs without bloating artifacts.
 function shortQueryHash(q) {
   try { return createHash('sha1').update(String(q)).digest('hex').slice(0, 16); }
@@ -110,9 +110,6 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 // `span.text` raw while `ss-read` numbered, so 27-36% of delivered code lines arrived
 // unnumbered and 5-10% of edits anchored on them. A model that has to strip a prefix on
 // some blocks and not others is being handed two formats for one job.
-//
-// `search-server.js` and `search-read-semantic.js` already number on the daemon path; this
-// closes the CLI path so the two agree.
 function gutter(text, startLine) {
   return (lineGutterEnabled() && text) ? numberCodeLines(text, startLine || 1) : text;
 }
@@ -136,8 +133,6 @@ function loadSearchServerModule() {
  *   host.assertProjectRoot(r)   throws when this call belongs to another repository's daemon
  */
 export async function runAgentTool(subcommand, rest, host = {}) {
-// Every tool's output opens with the chained-call boundary (chain.js) when it is a later
-// call of one shell command.
 if (AGENT_TOOL_SUBCOMMANDS.has(subcommand)) process.stdout.write(chainBoundary(subcommand, rest, process.env));
 // The agent's cwd is the target repo. SWEET_SEARCH_PROJECT_ROOT must point
 // at the repo so DB_PATHS resolves to the repo's own .sweet-search/.
@@ -285,9 +280,9 @@ function resolvePositional(args, usage) {
  */
 function looksLikeTraceOptionValue(args, i) {
   const token = String(args[i] ?? '');
-  if (token.startsWith('-')) return true;                     // a flag, not a positional
+  if (token.startsWith('-')) return true;
   const prev = String(args[i - 1] ?? '');
-  return prev.startsWith('-') && !prev.includes('=');         // the previous flag's value
+  return prev.startsWith('-') && !prev.includes('=');
 }
 
 function failUsage(message, usage) {
@@ -426,8 +421,7 @@ function globDirNote(stats) {
 
 // Grep muscle memory writes `ss-grep "pat" src/foo` with the scope as a bare
 // positional instead of `--in src/foo`. Absorb any such trailing positional that
-// resolves to a real path under the project (pure logic lives in argparse.mjs so
-// it is unit-tested; the path predicate is injected here).
+// resolves to a real path under the project.
 function absorbPositionalPaths(args, inPaths) {
   absorbPositionalPathsPure(args, inPaths,
     (tok) => existsSync(path.isAbsolute(tok) ? tok : path.resolve(FILE_ROOT, cwdPath(tok))));
@@ -649,8 +643,6 @@ function writeRegexDialectHintAfterRepair(stats, repaired) {
   if (!repaired || stats?.regexDialectHint?.retryAttempted) writeRegexDialectHint(stats);
 }
 
-// --- subcommands ----------------------------------------------------------
-
 const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [-E] [-l|-c|-o] [--in <path>]... '
   + "[-g|--glob '<glob>']... [-k N] [-A N] [-B N] [-C N]\n"
   + "  -g '*.h' searches only matching files; -g '!tests/**' excludes (exclusion wins). Also --include <glob>, --exclude <glob>, --exclude-dir <dir>.\n"
@@ -688,9 +680,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   const context = parseContextFlags(args);
   if (context.error) failUsage(context.error, GREP_USAGE);
   const withContext = context.before > 0 || context.after > 0;
-  // Drill-in scope: restrict matches to the named files or directories (the
-  // recovery affordance the diversified output advertises when it truncates a
-  // flooded file). Repeatable — one path per flag, every one applied.
+  // The recovery affordance the diversified output advertises when it truncates a flooded file.
   const inPaths = readRepeatedValueFlag(args, '--in', GREP_USAGE);
   // -g include / !exclude globs, ANDed with --in; evaluated by the engine on the native path.
   const globs = readGlobFlags(args, GREP_USAGE, { resolve: !fromFind });
@@ -839,7 +829,6 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   const dirScoped = inPaths.length > 0 && FIX.grepAlloc && missingScopes(inPaths).length === 0
     && typedFiles(inPaths).length < inPaths.length;
   if (inPaths.length > 0 && !dirScoped) {
-    // Scoped: flat output, depth up to k across the named scopes.
     const fileFilter = inPaths.length === 1 ? inPaths[0] : inPaths;
     const fetchScoped = async (rx) => {
       try {
@@ -895,10 +884,8 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     if (outsideLine) process.stdout.write(`${outsideLine}\n`);
     let zeroExplained = false;
     if (result.results.length === 0) {
-      // A scope that does not exist on disk is the loudest case (exitScopeNotFound).
       const missing = missingScopes(inPaths);
       if (missing.length) await exitScopeNotFound(missing);
-      // Then globs that removed every match in the scope.
       const globNote = globExcludedNote(result.stats, globs);
       // Then a scope the index cannot answer for: an agent that scoped to a bundle needs to
       // know that before it decides the pattern is absent.
@@ -1239,7 +1226,6 @@ async function cmdFind(rawArgs) {
       compact: FIX.compact, omitted: alreadyShown, dropRestatingSummary: false, gutter, typed: typedFiles(inPaths),
     }));
   } else {
-  // Per-result blocks — identical shape to ss-search's agent packaging.
   for (const r of response.results || []) {
     const sym = r.symbol ? ` [${r.symbolType || 'code'}: ${r.symbol}]` : '';
     const kind = r.expansionKind ? ` kind=${r.expansionKind}` : '';
@@ -1400,7 +1386,6 @@ async function cmdRead(rawArgs) {
   }
 
   const { readFile, renderUnreadBelow, renderUnreadAbove, renderEnclosingStart, renderInterfaceImpls, renderConfigKeyRefs, fenceBody, numberCodeLines, resolveSymbolRead, definitionNamesInFile } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
-  // ss-read <file> <symbol>: the definition's lines, from its doc comment to its end.
   let symbolNote = '';
   if (symbolSpec) {
     const sym = await resolveSymbolRead(FILE_ROOT, file, symbolSpec);
@@ -1442,8 +1427,7 @@ async function cmdRead(rawArgs) {
     }
     process.exit(1);
   }
-  // A start past the last line selects nothing: say how long the file is (it used to
-  // print the whole file under "lines 400-293 of 293").
+  // A start past the last line selects nothing: say how long the file is.
   if (r.range && r.range.startLine > r.totalLines) {
     process.stderr.write(`[ss-read] the file has ${r.totalLines} lines; line ${r.range.startLine} is past the end\n`);
     process.exit(1);
@@ -1499,11 +1483,9 @@ async function cmdRead(rawArgs) {
   ].filter(Boolean).join('; ');
   // The interface-call line sits first after the code: the call it names is in view.
   const implLine = renderInterfaceImpls(r);
-  // Config files that declare a key the window reads (its defaults, its schema).
   const configLine = renderConfigKeyRefs(r);
   const tail = [implLine, configLine, symbolNote, aboveLine, remainder].filter(Boolean).map((l) => `${l}\n`).join('');
   if (!r.text) {
-    // An empty file (or a window of nothing) prints no empty fence.
     process.stdout.write(`${resolvedLine}${head}# empty file\n${tail}`);
     process.exit(0);
   }
@@ -1594,7 +1576,6 @@ async function cmdAgentSearch(rawArgs) {
       `but server reports serverProjectRoot=${serverProjectRoot ?? '<null>'}. ` +
       `Refusing to surface cross-repo results.\n`
     );
-    // Emit a route trailer so the mismatch remains explicit in agent output.
     const failMeta = {
       query,
       queryHash: shortQueryHash(query),
@@ -1651,7 +1632,6 @@ async function cmdAgentSearch(rawArgs) {
   const neighborCount = (response.results || []).reduce((acc, r) => acc + (r.neighbors?.count || 0), 0);
   const headerCount = (response.results || []).filter(r => r.headerContext).length;
 
-  // Header (visible to agent)
   // SS_FIX_A: no query header (the agent wrote the query), the compact `# sufficient=YES` line
   // instead of the confidence line; the route trailer goes to stderr (below).
   const conf = routeConfidence != null ? ` conf=${routeConfidence.toFixed(2)}` : '';
@@ -1672,7 +1652,6 @@ async function cmdAgentSearch(rawArgs) {
   // that names the same file + symbol as an entry above, is dropped; a summary line that only
   // restates its own header (`file:line — symbol (kind)`) is not printed.
   const seenSpans = [];
-  // Per-result blocks
   if (renderFix) {
     process.stdout.write(renderFixedBlocks(response.results || [], plan, {
       compact: FIX.compact, omitted: alreadyShown, dropRestatingSummary: DEDUPE, gutter,
@@ -1800,7 +1779,6 @@ async function cmdSemantic(rawArgs) {
     process.exit(2);
   }
   {
-    // A short path naming one indexed file: answer from it and print its full path first.
     const short = await resolveShortFile(inFile ?? args[0], file, 'ss-semantic');
     if (short.resolved) { file = short.file; process.stdout.write(`# ${file}\n`); }
   }
@@ -1954,9 +1932,7 @@ async function cmdTrace(rawArgs) {
   if (queryHint) opts.queryHint = queryHint;
   // SS_FIX_TRACE_MODE_BUDGET (default ON since 2026-10-03; 0 = legacy): the one section the mode word prints takes the budget.
   if (FIX.traceModeBudget && mode) opts.modeSection = mode;
-  // The compact rendering prints no path through a definition outside the repository.
   if (FIX.traceCompact) opts.inRepoImpactOnly = true;
-  // ... and no code: rows only, at most 40 per section.
   if (FIX.traceCompact) opts.rowsOnly = true;
   if (depth != null) opts.maxDepth = depth;
   // Budget-sweep experiment hook: env sets the default; explicit --budget wins.

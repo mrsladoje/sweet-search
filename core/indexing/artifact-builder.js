@@ -1,21 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Artifact Builder for Binary HNSW + Int8 Quantization (SOTA December 2025)
+ * Artifact Builder for Binary HNSW + Int8 Quantization
  *
  * Builds optimized index artifacts for 3-stage retrieval:
  *   Stage 1: Binary HNSW (1000 candidates, ~100μs, 32x memory reduction)
  *   Stage 2: Int8 rescore (100 candidates, ~1ms, 4x memory reduction)
  *   Stage 3: Rerank (top 20 → k)
  *
- * Artifacts produced:
- *   - .sweet-search/codebase-binary-hnsw.idx (+ .meta.json, .vectors.json, .graph.json, .int8.json)
- *
- * CANONICAL INT8 STORAGE (Workstream H resolution):
- *   Int8 vectors are stored in .int8.json sidecar file alongside the binary HNSW index.
- *   This is the ONLY source of int8 vectors for stage-2 rescoring in sweet-search.
- *   Rationale: O(1) Map lookup vs O(log n) + I/O for SQLite, loaded with HNSW index.
- *   The SQLite approach (codebase-int8.db) was REMOVED as it was never used by search.
+ * Artifact produced: .sweet-search/codebase-binary-hnsw.idx. The int8 rows for
+ * stage-2 rescoring live in that same file and are loaded with the HNSW index
+ * (O(1) lookup, no SQLite round trip).
  *
  * Reference: https://huggingface.co/blog/embedding-quantization
  *
@@ -31,15 +26,11 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { DB_PATHS, BINARY_HNSW_CONFIG, EMBEDDING_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 
-// =============================================================================
-// THRESHOLD CONFIGURATION
-// =============================================================================
-
 /**
  * Threshold configuration for skipping binary artifact rebuilds.
  *
  * Skip rebuild if: changedFiles < SKIP_THRESHOLD
- * This saves ~30s+ for small incremental updates while Float HNSW serves search.
+ * This saves ~30s+ for small incremental updates.
  */
 export const ARTIFACT_THRESHOLDS = {
   /** Minimum changed files to trigger binary artifact rebuild */
@@ -61,14 +52,7 @@ function liveVectorSql(db, alias = '') {
   return `${prefix}epoch_retired IS NULL`;
 }
 
-// =============================================================================
-// THRESHOLD CHECKING FUNCTIONS
-// =============================================================================
 
-/**
- * Load artifact rebuild state from disk.
- * @returns {Promise<{lastRebuildTimestamp: number, accumulatedChanges: number}>}
- */
 async function loadArtifactState() {
   const statePath = path.resolve(PROJECT_ROOT, ARTIFACT_THRESHOLDS.stateFile);
   try {
@@ -80,15 +64,10 @@ async function loadArtifactState() {
       };
     }
   } catch (err) {
-    // Ignore errors, return defaults
   }
   return { lastRebuildTimestamp: 0, accumulatedChanges: 0 };
 }
 
-/**
- * Save artifact rebuild state to disk.
- * @param {object} state - State to save
- */
 async function saveArtifactState(state) {
   const statePath = path.resolve(PROJECT_ROOT, ARTIFACT_THRESHOLDS.stateFile);
   try {
@@ -109,8 +88,6 @@ async function saveArtifactState(state) {
  * - changedFiles < skipThreshold AND
  * - time since last rebuild < maxAgeSinceRebuild
  *
- * Float HNSW can serve search in the interim.
- *
  * @param {object} options - Options
  * @param {number} options.changedFiles - Number of files changed in this indexing run
  * @param {boolean} options.force - Force rebuild regardless of thresholds
@@ -123,7 +100,6 @@ export async function shouldSkipArtifactRebuild(options = {}) {
   const timeSinceRebuild = now - state.lastRebuildTimestamp;
   const accumulatedTotal = state.accumulatedChanges + changedFiles;
 
-  // Force rebuild if requested
   if (force) {
     return {
       shouldSkip: false,
@@ -132,7 +108,6 @@ export async function shouldSkipArtifactRebuild(options = {}) {
     };
   }
 
-  // Force rebuild if accumulated changes exceed threshold
   if (accumulatedTotal >= ARTIFACT_THRESHOLDS.skipThreshold) {
     return {
       shouldSkip: false,
@@ -141,7 +116,6 @@ export async function shouldSkipArtifactRebuild(options = {}) {
     };
   }
 
-  // Force rebuild if max age exceeded
   if (state.lastRebuildTimestamp > 0 && timeSinceRebuild >= ARTIFACT_THRESHOLDS.maxAgeSinceRebuild) {
     return {
       shouldSkip: false,
@@ -150,7 +124,6 @@ export async function shouldSkipArtifactRebuild(options = {}) {
     };
   }
 
-  // Force rebuild if no artifacts exist
   if (!binaryHnswIndexExists(DB_PATHS.binaryHnswIndex)) {
     return {
       shouldSkip: false,
@@ -159,7 +132,6 @@ export async function shouldSkipArtifactRebuild(options = {}) {
     };
   }
 
-  // Skip - not enough changes, artifacts exist, within time window
   return {
     shouldSkip: true,
     reason: `Only ${changedFiles} files changed (threshold: ${ARTIFACT_THRESHOLDS.skipThreshold})`,
@@ -180,13 +152,11 @@ export async function updateArtifactState(options = {}) {
   const { rebuilt, changedFiles = 0, previousState = {} } = options;
 
   if (rebuilt) {
-    // Reset accumulated changes after rebuild
     await saveArtifactState({
       lastRebuildTimestamp: Date.now(),
       accumulatedChanges: 0,
     });
   } else {
-    // Accumulate changes for next threshold check
     const accumulated = (previousState.accumulatedChanges || 0) + changedFiles;
     await saveArtifactState({
       lastRebuildTimestamp: previousState.lastRebuildTimestamp || 0,
@@ -195,42 +165,19 @@ export async function updateArtifactState(options = {}) {
   }
 }
 
-// =============================================================================
-// QUANTIZATION FUNCTIONS
-// =============================================================================
-
 /**
- * Quantize float32 array to int8 (-128 to 127)
- * Uses linear quantization with clipping to preserve relative distances.
- *
- * Memory reduction: 4x (32-bit float → 8-bit int)
- * Accuracy loss: <1% for normalized embeddings
- *
- * @param {Float32Array|number[]} float32Array - Input float embedding (assumed normalized -1 to 1)
- * @returns {Int8Array} Quantized int8 embedding
- */
-/**
- * Quantize float32 to int8. Delegates to the canonical implementation in
- * embedding-service.normalizedFloatToInt8 — single source of truth.
+ * Quantize float32 to int8 (-128 to 127), linear with clipping. 4x smaller,
+ * <1% accuracy loss for normalized embeddings (input assumed in -1..1).
+ * Delegates to normalizedFloatToInt8, the single source of truth.
  */
 export function quantizeToInt8(float32Array) {
   return normalizedFloatToInt8(float32Array);
 }
 
-/**
- * Quantize float32 array to binary (1 bit per dimension).
- * Delegates to infrastructure/quantization.js floatToBinary (single source of truth).
- */
 export function quantizeToBinary(float32Array) {
   return floatToBinary(float32Array);
 }
 
-/**
- * Batch quantize embeddings to int8
- *
- * @param {Float32Array[]|number[][]} embeddings - Array of float embeddings
- * @returns {{int8Embeddings: Int8Array[], stats: {count: number, dimension: number}}}
- */
 export function batchQuantizeToInt8(embeddings) {
   const int8Embeddings = embeddings.map(emb => quantizeToInt8(emb));
 
@@ -246,12 +193,6 @@ export function batchQuantizeToInt8(embeddings) {
   };
 }
 
-/**
- * Batch quantize embeddings to binary
- *
- * @param {Float32Array[]|number[][]} embeddings - Array of float embeddings
- * @returns {{binaryEmbeddings: Uint8Array[], stats: {count: number, dimension: number}}}
- */
 export function batchQuantizeToBinary(embeddings) {
   const binaryEmbeddings = embeddings.map(emb => quantizeToBinary(emb));
 
@@ -271,17 +212,6 @@ export function batchQuantizeToBinary(embeddings) {
   };
 }
 
-// =============================================================================
-// HNSW INDEX BUILDING
-// =============================================================================
-
-/**
- * Build Binary HNSW index from embeddings
- *
- * @param {Array<{id: string, embedding: number[], metadata?: object}>} items - Items to index
- * @param {object} options - Build options
- * @returns {Promise<BinaryHNSWIndex>}
- */
 export async function buildHnswIndex(items, options = {}) {
   const {
     M = BINARY_HNSW_CONFIG.M,
@@ -294,7 +224,6 @@ export async function buildHnswIndex(items, options = {}) {
   } = options;
   // int8 rows may use another prefix width than the codes (bench K4: 512 or all dims); default the same.
   const int8Dimension = options.int8Dimension || floatDimension;
-  // Derive binary dimension from float dimension (not from global default)
   const dimension = options.dimension || Math.ceil(floatDimension / 8);
 
   const index = new BinaryHNSWIndex({
@@ -308,7 +237,6 @@ export async function buildHnswIndex(items, options = {}) {
 
   index.resetForBuild();
 
-  // Truncate all embeddings once — reused for per-item encoding
   const truncated = items.map(item => truncateForHNSW(item.embedding, floatDimension));
 
   // Shuffled insertion order (index permutation keeps items↔embeddings paired).
@@ -322,7 +250,6 @@ export async function buildHnswIndex(items, options = {}) {
     const item = items[idx];
     const binary = floatToBinary(truncated[idx]);
 
-    // Optionally include int8 for rescoring
     const int8 = includeInt8
       ? quantizeToInt8(int8Dimension === floatDimension ? truncated[idx] : truncateForHNSW(item.embedding, int8Dimension))
       : null;
@@ -449,22 +376,10 @@ async function buildHnswIndexFromDb(db, options = {}) {
   };
 }
 
-// =============================================================================
-// ARTIFACT MANAGEMENT
-// =============================================================================
-
 /**
- * Build all artifacts from embeddings stored in codebase.db
+ * Build all artifacts from embeddings stored in codebase.db. Int8 rows go into
+ * the binary HNSW index file.
  *
- * Int8 vectors are stored in .int8.json sidecar alongside the binary HNSW index.
- * This is the canonical storage for stage-2 rescoring (no separate SQLite DB).
- *
- * IMPORTANT: Return shape for callers (e.g., index-codebase-v21.js Phase 5):
- *
- * @param {string} codebaseDbPath - Path to codebase.db with float embeddings
- * @param {object} options - Build options
- * @param {string} [options.hnswIndexPath] - Path for HNSW index output
- * @param {number} [options.floatDimension] - Float dimension for embeddings
  * @param {function} [options.onProgress] - Progress callback (phase, current, total)
  * @returns {Promise<{
  *   hnsw: {
@@ -494,7 +409,6 @@ async function buildHnswIndexFromDb(db, options = {}) {
  *   }
  * }>}
  */
-/** Build and save a FloatVectorStore by streaming from SQLite cursor. */
 async function buildAndSaveFloatStoreFromDb(db, floatDimension, floatStorePath) {
   const vectorWhere = liveVectorSql(db);
   const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${vectorWhere}`).get().c;
@@ -564,7 +478,6 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   });
   process.stdout.write('\n');
 
-  // Save HNSW index (includes .int8.json sidecar for stage-2 rescoring)
   console.log(`Saving HNSW index + Int8 sidecar to ${hnswIndexPath}...`);
   await hnswIndex.save(hnswIndexPath);
 
@@ -607,19 +520,13 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   };
 }
 
-/**
- * Get artifact statistics
- *
- * Int8 vectors are now stored in .int8.json sidecar (canonical source),
- * not in a separate SQLite database.
- */
 export async function getArtifactStats() {
   const stats = {
     binaryHnsw: null,
     int8Sidecar: null,
   };
 
-  // Check HNSW index (header only; int8 rows are in the same file)
+  // header only; int8 rows are in the same file
   const head = readIndexHeader(DB_PATHS.binaryHnswIndex);
   if (head) {
     const { header } = head;
@@ -642,11 +549,6 @@ export async function getArtifactStats() {
   return stats;
 }
 
-/**
- * Verify artifact integrity
- *
- * Tests both the binary HNSW index and the int8 sidecar (canonical source).
- */
 export async function verifyArtifacts() {
   const results = {
     binaryHnsw: { valid: false, error: null },
@@ -654,12 +556,10 @@ export async function verifyArtifacts() {
     stage2Rescore: { valid: false, error: null },
   };
 
-  // Verify HNSW index
   try {
     const hnswIndex = new BinaryHNSWIndex();
     await hnswIndex.load();
 
-    // Run a test search
     if (hnswIndex.size > 0) {
       const testVector = hnswIndex.nodeBinary(0);
       const searchResult = await hnswIndex.search(testVector, 1);
@@ -673,7 +573,6 @@ export async function verifyArtifacts() {
       results.binaryHnsw.vectorCount = 0;
     }
 
-    // Verify the int8 rows (loaded with the HNSW index)
     const int8Count = hnswIndex.int8Count();
     results.int8Sidecar.count = int8Count;
     results.int8Sidecar.valid = true;
@@ -685,7 +584,6 @@ export async function verifyArtifacts() {
       results.int8Sidecar.note = 'Loaded from the index file (canonical source)';
     }
 
-    // Verify stage-2 rescoring works end-to-end
     if (hnswIndex.size > 0 && int8Count > 0) {
       const testId = hnswIndex.nodeId(0);
       const int8Vec = hnswIndex.getInt8Vector(testId);
@@ -711,10 +609,6 @@ export async function verifyArtifacts() {
 
   return results;
 }
-
-// =============================================================================
-// CLI
-// =============================================================================
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
@@ -797,7 +691,6 @@ Note: Int8 vectors are stored in .int8.json sidecar alongside HNSW index.
           vectors.push(new Array(dim).fill(0).map(() => Math.random() * 2 - 1));
         }
 
-        // Int8 quantization
         console.log('\nInt8 quantization...');
         let start = performance.now();
         const { int8Embeddings, stats: int8Stats } = batchQuantizeToInt8(vectors);
@@ -806,7 +699,6 @@ Note: Int8 vectors are stored in .int8.json sidecar alongside HNSW index.
         console.log(`  Original: ${(int8Stats.originalSizeBytes / 1024 / 1024).toFixed(2)} MB`);
         console.log(`  Quantized: ${(int8Stats.quantizedSizeBytes / 1024 / 1024).toFixed(2)} MB`);
 
-        // Binary quantization
         console.log('\nBinary quantization...');
         start = performance.now();
         const { binaryEmbeddings, stats: binaryStats } = batchQuantizeToBinary(vectors);
@@ -829,21 +721,14 @@ Note: Int8 vectors are stored in .int8.json sidecar alongside HNSW index.
 }
 
 export default {
-  // Quantization
   quantizeToInt8,
   quantizeToBinary,
   batchQuantizeToInt8,
   batchQuantizeToBinary,
-
-  // HNSW building
   buildHnswIndex,
-
-  // Artifact management
   buildFromCodebaseDb,
   getArtifactStats,
   verifyArtifacts,
-
-  // Threshold-based skip optimization
   shouldSkipArtifactRebuild,
   updateArtifactState,
   ARTIFACT_THRESHOLDS,

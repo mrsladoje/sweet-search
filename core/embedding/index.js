@@ -8,17 +8,13 @@
  * so we do NOT also export * from embedding-telemetry.js (ESM ambiguity).
  */
 
-// Facade (has default export)
 export { default } from './embedding-service.js';
 export * from './embedding-service.js';
 
-// Remote (circuit breaker, rate limiters, API clients)
 export * from './embedding-remote.js';
 
-// Local model (ONNX inference)
 export * from './embedding-local-model.js';
 
-// Cache (LRU, vocabulary, semantic cache, deduplication)
 // NOTE: embedding-cache.js re-exports telemetry symbols from embedding-telemetry.js
 export * from './embedding-cache.js';
 

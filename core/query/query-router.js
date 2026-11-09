@@ -21,16 +21,8 @@ import { createRequire } from 'module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// =============================================================================
-// CONSTANTS
-// =============================================================================
-
 /** Maximum query length to prevent DoS attacks */
 const MAX_QUERY_LENGTH = 100000; // 100KB
-
-// =============================================================================
-// WASM MODULE LOADING
-// =============================================================================
 
 let wasmModule = null;
 let wasmLoadError = null;
@@ -55,19 +47,12 @@ function loadWasm() {
   }
 }
 
-// =============================================================================
-// QUERY ROUTER CLASS
-// =============================================================================
-
 export class QueryRouter {
   constructor(options = {}) {
     this.wasm = null;
     this.initialized = false;
   }
 
-  /**
-   * Ensure WASM module is loaded.
-   */
   ensureLoaded() {
     if (!this.wasm) {
       this.wasm = loadWasm();
@@ -77,8 +62,6 @@ export class QueryRouter {
   }
 
   /**
-   * Route a query to the optimal search path.
-   *
    * Pipeline:
    *   1. Input validation - Handles null, undefined, empty, too-long queries
    *   2. File path check (~0.1μs) - Fast path for file extensions
@@ -86,14 +69,11 @@ export class QueryRouter {
    *
    * Structural mode is opt-in only (explicit --structural flag).
    *
-   * @param {string} query - The search query
    * @returns {{mode: string, confidence: number, method: string, routingLatency_us: number}}
    */
   route(query) {
     const start = performance.now();
 
-    // === INPUT VALIDATION ===
-    // Handle null, undefined, and non-string inputs
     if (query == null || typeof query !== 'string') {
       return {
         mode: 'hybrid',
@@ -104,7 +84,7 @@ export class QueryRouter {
       };
     }
 
-    // Handle queries exceeding maximum length (DoS protection)
+    // DoS protection
     if (query.length > MAX_QUERY_LENGTH) {
       return {
         mode: 'hybrid',
@@ -117,7 +97,6 @@ export class QueryRouter {
 
     const trimmed = query.trim();
 
-    // Handle empty or whitespace-only queries
     if (trimmed.length === 0) {
       return {
         mode: 'hybrid',
@@ -127,7 +106,6 @@ export class QueryRouter {
       };
     }
 
-    // === FILE PATH CHECK (~0.1μs) ===
     // File extensions and paths route to lexical via the file_pattern
     // fast-path. The previous heuristic (`/[/\\]/.test(query)`) fired on
     // ANY slash, which mis-routed natural-language phrases like
@@ -143,7 +121,6 @@ export class QueryRouter {
       };
     }
 
-    // === WASM CATBOOST ML (~10μs) ===
     let result = null;
     try {
       const wasm = this.ensureLoaded();
@@ -166,7 +143,6 @@ export class QueryRouter {
         routingLatency_us: Math.round((performance.now() - start) * 1000),
       };
     } catch (err) {
-      // Fallback to hybrid if WASM fails
       console.error(`[QueryRouter] WASM error: ${err.message}`);
       return {
         mode: 'hybrid',
@@ -187,10 +163,6 @@ export class QueryRouter {
   }
 }
 
-// =============================================================================
-// PATH-LIKENESS HEURISTIC
-// =============================================================================
-
 const FILE_EXT_RE = /\.(java|js|jsx|ts|tsx|mjs|cjs|py|go|rs|kt|swift|rb|php|c|cpp|h|hpp|proto|json|xml|yml|yaml|md|sql|toml|ini|conf|cfg|sh|bash|zsh|env|lock|gitignore|gitattributes|dockerfile|makefile|rake|gemspec|cargo)$/i;
 
 /**
@@ -208,9 +180,6 @@ const FILE_EXT_RE = /\.(java|js|jsx|ts|tsx|mjs|cjs|py|go|rs|kt|swift|rb|php|c|cp
  *   4. anything else (plain identifiers, NL phrases including ones that
  *      contain slashes like "HTTP/2 server setup", "TCP/IP stack")
  *      → NOT a path; let the WASM router decide.
- *
- * @param {string} query
- * @returns {boolean}
  */
 export function looksLikePath(query) {
   if (typeof query !== 'string') return false;
@@ -227,16 +196,9 @@ export function looksLikePath(query) {
   return false;
 }
 
-// =============================================================================
-// CONVENIENCE EXPORTS
-// =============================================================================
-
-// Default singleton instance
 const defaultRouter = new QueryRouter();
 
 /**
- * Route a query using the default router.
- * @param {string} query - The search query
  * @returns {{mode: string, confidence: number, method: string, routingLatency_us: number}}
  */
 export function routeQuery(query) {
@@ -244,12 +206,10 @@ export function routeQuery(query) {
 }
 
 /**
- * Extract features from a query (for debugging/testing).
- * @param {string} query - The query to extract features from
+ * For debugging/testing.
  * @returns {Float32Array|null} - Feature vector, or null for invalid input
  */
 export function extractFeatures(query) {
-  // Input validation
   if (query == null || typeof query !== 'string') {
     return null;
   }

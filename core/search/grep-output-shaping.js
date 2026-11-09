@@ -73,11 +73,6 @@ function isAbsolutePath(value) {
  *   DIRECTORY from root   tests   ·   tests/testthat   ·   tests/testthat/
  *   DIRECTORY by name     testthat
  *
- * The two directory rows are the fix. The previous rule required the run to end
- * at the final segment, so a directory scope matched nothing at all: `ss-grep
- * … --in tests/testthat` printed "(no matches)" — indistinguishable from a
- * regex that genuinely misses — instead of scoping to the directory.
- *
  * ROOT-ANCHORED FIRST. A relative scope that exists at the repository root
  * (`GRDB/Core/TransactionObserver.swift`, `src`) means that path, as `grep -r … <path>`
  * does: it matches the path itself and what lies under it, never a nested copy of
@@ -182,8 +177,6 @@ function withNeedle(scope, matches) {
   const needle = scope.reduce((longest, seg) => (seg.length > longest.length ? seg : longest), '');
   return { needle, matches };
 }
-
-
 
 /**
  * Streaming per-file diversification of a (file,line)-sorted match list.
@@ -926,13 +919,6 @@ function renderGrepFileBody(out, file, hits, more, { before, after, getLines, ma
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-/**
- * `# +6 more files with 10 hits: a.go, b.go, c.go` — the matching files the listing does not
- * show (more files than -k, or past the engine's file bound), with up to three of them by name.
- * Null when every matching file shows.
- */
-// --- grep's output modes: -l, -c, -o -------------------------------------------------------
-
 /** The `# +N more files (raise -k)` line under a -l or -c listing cut at k files, or null. */
 function moreFilesLine(more) {
   return more > 0 ? `# +${more} more ${more === 1 ? 'file' : 'files'} (raise -k)` : null;
@@ -986,6 +972,11 @@ export function renderGrepOnlyMatching(rows, matchesOf, { typed = [] } = {}) {
   return out;
 }
 
+/**
+ * `# +6 more files with 10 hits: a.go, b.go, c.go` — the matching files the listing does not
+ * show (more files than -k, or past the engine's file bound), with up to three of them by name.
+ * Null when every matching file shows.
+ */
 export function renderGrepHiddenFiles(hidden) {
   if (!hidden || !(hidden.files > 0)) return null;
   const sample = Array.isArray(hidden.sample) && hidden.sample.length ? `: ${hidden.sample.join(', ')}` : '';

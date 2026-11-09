@@ -46,10 +46,6 @@ function cosine(a, b) {
 
 /**
  * Check one list of unit vectors. Appends reasons; returns nothing.
- * @param {ArrayLike<number>[]} vectors
- * @param {number} dim
- * @param {string} label
- * @param {string[]} reasons
  */
 function checkUnitVectors(vectors, dim, label, reasons) {
   if (!vectors || vectors.length === 0) {

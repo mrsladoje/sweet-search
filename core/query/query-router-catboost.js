@@ -1,22 +1,18 @@
 /**
  * CatBoost Query Router - Production ML Router with Reject Option
  *
- * This router uses the trained CatBoost model (v45_depth4) with proper
+ * This router uses the trained CatBoost model (v46_router_d4) with proper
  * uncertainty-based reject option to improve utility accuracy.
  *
  * Performance: ~50μs inference (vs 1.8μs ID3, but higher accuracy)
  * Utility Accuracy: 98%+ on 255-query benchmark (3-class, with reject option)
  */
 
-// Import the trained CatBoost router
 import { routeQueryCatBoost, LABELS } from '../training/query-router/output/v46_router_d4.js';
 
 // Import the feature extractor (must match training features)
 import { extractAllFeatures } from '../training/query-router/features/extractor.js';
 
-// =============================================================================
-// REJECT OPTION CONFIGURATION
-// =============================================================================
 // When model confidence/margin is low, fall back to HYBRID (safe max-recall)
 // Thresholds tuned to maximize utility accuracy on 315-query benchmark
 
@@ -36,16 +32,8 @@ const REJECT_OPTION = {
 /** Maximum query length to prevent DoS attacks */
 const MAX_QUERY_LENGTH = 100000; // 100KB
 
-// =============================================================================
-// SOFTMAX AND POST-PROCESSING
-// =============================================================================
-
 /**
- * Compute softmax probabilities from raw scores.
  * Uses stable softmax to avoid numerical overflow.
- *
- * @param {number[]} scores - Raw scores from CatBoost
- * @returns {number[]} - Probability distribution
  */
 function softmax(scores) {
   const maxScore = Math.max(...scores);
@@ -55,29 +43,22 @@ function softmax(scores) {
 }
 
 /**
- * Apply reject option: route to HYBRID when uncertain.
- *
  * @param {{mode: string, confidence: number, scores: number[]}} result - CatBoost result
- * @returns {string} - Final routing mode
  */
 function applyRejectOption(result) {
   if (!REJECT_OPTION.enabled) return result.mode;
 
   const { mode, scores } = result;
 
-  // Already HYBRID - no change
   if (mode === 'HYBRID') return mode;
 
-  // Compute softmax probabilities from scores
   const probs = softmax(scores);
   const modeIdx = LABELS.indexOf(mode);
   const confidence = probs[modeIdx];
 
-  // Get thresholds for this prediction class
   const thresholds = REJECT_OPTION.thresholds[mode];
   if (!thresholds) return mode;
 
-  // Check confidence threshold
   if (confidence < thresholds.confidence) {
     return 'HYBRID';
   }
@@ -92,18 +73,10 @@ function applyRejectOption(result) {
   return mode;
 }
 
-// =============================================================================
-// PUBLIC API
-// =============================================================================
-
 /**
- * Extract features for CatBoost routing.
- *
- * @param {string} query - The query to route
  * @returns {number[]|null} - Feature vector for CatBoost, or null for invalid input
  */
 export function extractCatBoostFeatures(query) {
-  // Input validation
   if (query == null || typeof query !== 'string') {
     return null;
   }
@@ -114,13 +87,9 @@ export function extractCatBoostFeatures(query) {
 }
 
 /**
- * Route query using CatBoost ML model with reject option.
- *
- * @param {string} query - The search query
  * @returns {{mode: string, confidence: number, rawMode: string, rejected: boolean, scores: number[], error?: string}}
  */
 export function routeQueryCatBoostWithReject(query) {
-  // Input validation
   if (query == null || typeof query !== 'string') {
     return {
       mode: 'hybrid',
@@ -163,12 +132,10 @@ export function routeQueryCatBoostWithReject(query) {
   const features = extractAllFeatures(trimmed);
   const result = routeQueryCatBoost(features);
 
-  // Compute proper confidence from softmax
   const probs = softmax(result.scores);
   const modeIdx = LABELS.indexOf(result.mode);
   const confidence = probs[modeIdx];
 
-  // Apply reject option
   const finalMode = applyRejectOption({ ...result, confidence });
   const rejected = finalMode !== result.mode;
 
@@ -184,20 +151,16 @@ export function routeQueryCatBoostWithReject(query) {
 }
 
 /**
- * Route query using CatBoost (simplified interface, compatible with ID3 router).
- *
- * @param {number[]} features - Pre-extracted features (if available)
+ * @param {number[]} features - Pre-extracted features
  * @returns {{mode: string, confidence: number, method: string}}
  */
 export function routeQueryML(features) {
   const result = routeQueryCatBoost(features);
 
-  // Compute proper confidence from softmax
   const probs = softmax(result.scores);
   const modeIdx = LABELS.indexOf(result.mode);
   const confidence = probs[modeIdx];
 
-  // Apply reject option
   const finalMode = applyRejectOption({ ...result, confidence });
 
   return {
@@ -207,7 +170,6 @@ export function routeQueryML(features) {
   };
 }
 
-// Re-export LABELS for compatibility
 export { LABELS };
 
 // Confidence threshold for fallback (not used directly with reject option)

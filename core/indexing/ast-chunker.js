@@ -32,24 +32,14 @@ const DEFAULT_MAX_REGEX_LINE_LENGTH = 4000;
 // `key: |`, `key: >-`, `- run: |2` — the line opens a YAML block scalar.
 const YAML_BLOCK_SCALAR_RE = /:\s+[|>][-+1-9]*\s*(?:#.*)?$/;
 
-// =============================================================================
-// Embedding-text cap — RESEARCH / ABLATION INFRASTRUCTURE
-// =============================================================================
-//
-// Production default: 2000, byte-identical to shipped v6.2.
-//
-
 export { JAVA_FAMILY, normalizePathSlug };
 
-// =============================================================================
-// Embedding-text variant switch — RESEARCH / ABLATION INFRASTRUCTURE
-// =============================================================================
+// Embedding-text variant switch: RESEARCH / ABLATION INFRASTRUCTURE
 //
 // Production behavior is fixed at variant=current and is byte-identical to
 // shipped v6.2. None of the alternative variants below are recommended for
 // production; an isolated R1 ablation in May 2026 found no variant beats
-// shipped on total MRR@10 (see docs/JS_CHUNK_BLEEDING_ANALYSIS.md for the
-// full table). The switch and helpers are kept ONLY so future R1
+// shipped on total MRR@10. The switch and helpers are kept ONLY so future R1
 // experiments can be re-run without re-implementing the scaffolding.
 //
 // Default: SWEET_SEARCH_EMBED_TEXT_VARIANT unset → 'current' →
@@ -228,7 +218,7 @@ function buildEmbeddingText({ variant: variantOverride, content, relativePath, l
  *   - Python: no path line (at 97% MRR ceiling; path duplicated funcname).
  *   - Java family (Java, PHP, C#, Kotlin, Scala): slug-stripped path.
  *   - Everything else: full path. (For JS family, Ruby, Go, C/C++/Rust
- *     and unknown languages, the LI input router in indexer-ann.js
+ *     and unknown languages, the LI input router (pickLiInput in chunk-embed-text.js)
  *     bypasses li_text entirely and reads chunk.embedding_text directly,
  *     so this branch only matters as a fallback if those routes ever
  *     fail to find embedding_text.)
@@ -270,7 +260,6 @@ function buildLiText({ content, relativePath, language, chunkType, symbol, hiera
   if (hierarchyInfo?.parentSymbol) {
     lines.push(`# Parent: ${hierarchyInfo.parentType} ${hierarchyInfo.parentSymbol}`);
   }
-  // Mirror the Ruby method header carve-out used by embedding_text.
   const isRubyMethodChunk = language === 'ruby'
     && (chunkType === 'method' || chunkType === 'singleton_method');
   if (symbol && symbol !== 'unknown' && !isRubyMethodChunk) {
@@ -311,7 +300,6 @@ export class ASTChunker {
   }
 
   async parseFile(filePath, content) {
-    // Dispatch document files (markdown, plaintext) to DocumentChunker
     const ext = path.extname(filePath).toLowerCase();
     if (ext === '.md' || ext === '.mdx' || ext === '.rst' || ext === '.txt') {
       if (!this._docChunker) {
@@ -354,7 +342,6 @@ export class ASTChunker {
       return this.parseGenericFile(filePath, content, langInfo?.id || 'text');
     }
 
-    // Try tree-sitter WASM first for supported languages
     if (this._useTreeSitter) {
       try {
         const tsChunks = await this._parseWithTreeSitter(filePath, content, langInfo);
@@ -364,7 +351,6 @@ export class ASTChunker {
       }
     }
 
-    // Fallback: regex-based parsing
     const { id: language, chunker: patterns, indentBased, endKeyword, comment, blockKeywords } = langInfo;
 
     const multiLine = !!langInfo.multiLinePatterns;
@@ -378,7 +364,6 @@ export class ASTChunker {
     return this.parseBraceBasedFile(filePath, content, language, patterns, comment, multiLine);
   }
 
-  /** Attempt tree-sitter WASM parse, returns chunks array or null */
   async _parseWithTreeSitter(filePath, content, langInfo) {
     const { getTreeSitterProvider } = await import('../infrastructure/tree-sitter-provider.js');
     const provider = getTreeSitterProvider();
@@ -461,7 +446,6 @@ export class ASTChunker {
       if (matched) {
         currentChunk = { type: matchType, name: matched };
         chunkStart = i;
-        // Skip lines consumed by cross-line joining so they aren't double-processed
         if (joinedLines > 0) {
           // Count braces on the skipped lines to keep depth accurate
           for (let s = 1; s <= joinedLines; s++) {
@@ -503,7 +487,6 @@ export class ASTChunker {
       }
       const opensBlockScalar = isYaml && YAML_BLOCK_SCALAR_RE.test(trimmed);
 
-      // If we're inside a chunk and hit a line at the same or lesser indent, close
       if (currentChunk && indent <= chunkIndent && i > chunkStart) {
         const chunkContent = lines.slice(chunkStart, i).join('\n');
         if (chunkContent.trim().length > MIN_CONTENT_LENGTH) {
@@ -535,7 +518,6 @@ export class ASTChunker {
         currentChunk = { type: matchType, name: matched };
         chunkStart = i;
         chunkIndent = indent;
-        // Skip lines consumed by cross-line joining so they aren't double-processed
         if (joinedLines > 0) {
           i += joinedLines;
         }
@@ -550,8 +532,7 @@ export class ASTChunker {
     const chunks = [];
     const lines = content.split('\n');
     const endRe = new RegExp(`^\\s*${endKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
-    // Build regex to detect non-boundary block-start keywords (if/case/while etc.)
-    // These increment depth but don't start new chunks
+    // Non-boundary block-start keywords (if/case/while etc.) increment depth but don't start new chunks
     const blockStartRe = blockKeywords?.length
       ? new RegExp(`^\\s*(?:${blockKeywords.join('|')})\\b`)
       : null;
@@ -577,12 +558,10 @@ export class ASTChunker {
           chunkStart = i;
         }
         depth++;
-        // Skip lines consumed by cross-line joining so they aren't double-processed
         if (joinedLines > 0) {
           i += joinedLines;
         }
       } else if (blockStartRe && blockStartRe.test(line)) {
-        // Non-boundary block opener (if/case/while etc.) — track depth
         depth++;
       }
 
@@ -608,12 +587,7 @@ export class ASTChunker {
    * (up to 3 ahead) when the line ends with `(`, `,`, or `\` and the language
    * opts in via `multiLinePatterns`.
    *
-   * @param {string} line - Current source line
-   * @param {object} patterns - Chunker boundary patterns
-   * @param {string} language - Language ID
    * @param {string[]|null} [lines] - Full lines array (enables cross-line matching)
-   * @param {number|null} [lineIndex] - Current index into lines
-   * @param {boolean} [multiLine] - Whether cross-line matching is enabled for this language
    * @returns {{ name: string|null, type: string|null, joinedLines?: number }}
    */
   _matchBoundary(line, patterns, language, lines, lineIndex, multiLine) {
@@ -623,7 +597,6 @@ export class ASTChunker {
       return { name: null, type: null };
     }
 
-    // Cross-line joining: if enabled and line ends with continuation char
     if (multiLine && lines && lineIndex != null) {
       const trimmedEnd = line.trimEnd();
       const lastChar = trimmedEnd[trimmedEnd.length - 1];
@@ -647,7 +620,6 @@ export class ASTChunker {
       }
     }
 
-    // Single-line match (original behavior)
     for (const [type, pattern] of Object.entries(patterns)) {
       const match = trimmed.match(pattern);
       if (match) {
@@ -709,7 +681,6 @@ export class ASTChunker {
     for (let i = 0; i < line.length; i++) {
       const ch = line[i];
 
-      // In block comment → scan for block-close delimiter
       if (state.inBlockComment) {
         if (blockClose && line.startsWith(blockClose, i)) {
           state.inBlockComment = false;
@@ -718,7 +689,6 @@ export class ASTChunker {
         continue;
       }
 
-      // In template/raw literal body
       if (state.inTemplateLiteral) {
         if (hasTemplateInterpolation && ch === '\\') {
           i++;
@@ -737,21 +707,16 @@ export class ASTChunker {
         continue;
       }
 
-      // Code mode
-
-      // Block comment open
       if (blockOpen && line.startsWith(blockOpen, i)) {
         state.inBlockComment = true;
         i += blockOpen.length - 1;
         continue;
       }
 
-      // Line comment
       if (lineComment && line.startsWith(lineComment, i)) {
         break;
       }
 
-      // Double-quoted string
       if (ch === '"') {
         for (i++; i < line.length; i++) {
           if (line[i] === '\\') { i++; continue; }
@@ -760,7 +725,6 @@ export class ASTChunker {
         continue;
       }
 
-      // Single-quoted string
       if (ch === "'") {
         for (i++; i < line.length; i++) {
           if (line[i] === '\\') { i++; continue; }
@@ -769,13 +733,11 @@ export class ASTChunker {
         continue;
       }
 
-      // Backtick string
       if (ch === '`') {
         state.inTemplateLiteral = true;
         continue;
       }
 
-      // Closing brace in template interpolation
       if (ch === '}' && state.interpolationDepth > 0) {
         state.interpolationDepth--;
         if (state.interpolationDepth === 0) {
@@ -786,7 +748,6 @@ export class ASTChunker {
         continue;
       }
 
-      // Opening brace in template interpolation
       if (ch === '{' && state.interpolationDepth > 0) {
         state.interpolationDepth++;
       }
@@ -815,11 +776,6 @@ export class ASTChunker {
    * Post-process regex-produced chunks: split oversized ones at depth boundaries.
    * Approximates cAST recursive split for the regex fallback tier.
    *
-   * @param {Array} chunks - Chunks from brace/indent/end-keyword parsing
-   * @param {string} filePath - Source file path
-   * @param {string} language - Language ID
-   * @param {object} patterns - Chunker boundary patterns for sub-boundary detection
-   * @param {object} comment - Comment syntax config
    * @returns {Array} Chunks with oversized ones split and parent_chunk_id linked
    */
   _splitOversizedRegexChunks(chunks, filePath, language, patterns, comment) {
@@ -832,7 +788,6 @@ export class ASTChunker {
         continue;
       }
 
-      // Oversized chunk: attempt to split at sub-boundary points
       parentCounter++;
       const parentId = `rx-p${parentCounter}`;
       const parentSymbol = chunk.metadata.symbol;
@@ -847,7 +802,6 @@ export class ASTChunker {
       if (subChunks.length > 1) {
         result.push(...subChunks);
       } else {
-        // Couldn't split further — emit as-is
         result.push(chunk);
       }
     }
@@ -855,10 +809,6 @@ export class ASTChunker {
     return result;
   }
 
-  /**
-   * Split oversized content at sub-boundary points (brace depth transitions,
-   * boundary pattern matches within the chunk).
-   */
   _splitAtSubBoundaries(content, filePath, language, patterns, comment, lineOffset, parentId, parentSymbol, parentType) {
     const lines = content.split('\n');
     const subChunks = [];
@@ -894,7 +844,6 @@ export class ASTChunker {
         : this._matchBoundary(stripped, patterns, language, lines, i, false);
       const isSubBoundary = matched && i > segStart;
 
-      // Split condition: at a sub-boundary, or accumulated segment exceeds max
       if ((isSubBoundary || (segSize + lineSize > MAX_CHUNK_SIZE && segSize > 0)) && i > segStart) {
         const segContent = lines.slice(segStart, i).join('\n');
         if (segContent.trim().length > MIN_CONTENT_LENGTH) {
@@ -914,7 +863,6 @@ export class ASTChunker {
       segSize += lineSize;
     }
 
-    // Flush remaining
     if (segStart < lines.length) {
       const segContent = lines.slice(segStart).join('\n');
       if (segContent.trim().length > MIN_CONTENT_LENGTH) {
@@ -1010,7 +958,6 @@ export class ASTChunker {
       hash,
     };
 
-    // Hierarchical chunk linking (cAST parent/child)
     if (hierarchyInfo?.chunkId) {
       metadata.chunk_id = hierarchyInfo.chunkId;
     }
@@ -1097,11 +1044,8 @@ export class ASTChunker {
     parts.push(chunk.content);
     const enriched = parts.join('\n').slice(0, embedTextCap());
 
-    // Always update the byte-stable LI passthrough form.
     chunk.li_greedy_text = enriched;
 
-    // Only update embedding_text when the active variant participates
-    // in post-build enrichment.
     if (shouldRunEnrichment()) {
       chunk.embedding_text = enriched;
     }

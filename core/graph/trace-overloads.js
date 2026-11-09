@@ -288,8 +288,6 @@ export function selectOverload(candidates, written, readParameters, owner = null
   return { candidates: [...fitting, ...rest].map((x) => x.c), matched: true };
 }
 
-// ── Call sites: which overload a call's argument types fit ────────────────────────────
-
 const PRIMITIVES = new Set(['int', 'uint', 'long', 'ulong', 'short', 'ushort', 'byte', 'sbyte', 'char', 'bool', 'boolean', 'string', 'float', 'double', 'decimal', 'nint', 'nuint']);
 const NUMERIC = new Set(['int', 'uint', 'long', 'ulong', 'short', 'ushort', 'byte', 'sbyte', 'float', 'double', 'decimal', 'nint', 'nuint']);
 const NOT_A_TYPE = /^(?:return|new|var|out|ref|in|is|as|await|yield|case|else|throw|using|goto|const|static|readonly|public|private|protected|internal|virtual|override|sealed|abstract|async|unsafe|extern|params|this|base|typeof|sizeof|nameof|default|not|and|or|when|from|where|select|let|fixed|lock|delete|operator|import|package|throws)$/;
@@ -516,12 +514,6 @@ function relation(argType, paramType, hierarchy = null) {
 
 const REF_KIND = (text) => /^\s*(ref|out)\b/.exec(String(text || ''))?.[1] || null;
 
-/**
- * The overload a call with these argument types binds to: the one whose parameter count
- * fits and whose parameters no known argument type contradicts, or, among several, the
- * one with the most exact type matches. Null when that is not one overload.
- * `overloads`: [{ key, params: declared parameter texts }].
- */
 /** The overloads that take `n` arguments with these argument names (null names: positional). */
 export function overloadsTaking(n, overloads, argNames = []) {
   // A named argument (`additionalTexts: null`) needs a parameter of that name.
@@ -534,14 +526,6 @@ export function overloadsTaking(n, overloads, argNames = []) {
   });
 }
 
-/**
- * The overload a call binds to, or null when that is not certain. `site`: { names
- * (named arguments), mods (`ref` / `out` written at each argument) }. The overloads that
- * take the count and names are scored by the known argument types: a conflict removes
- * one; the winner must match at least one argument exactly (or by a known supertype),
- * have no uncertain argument, and beat the next one on the compiler's order (exact
- * matches, then the nearest supertypes, then the fewest type parameters).
- */
 /**
  * The overloads a call can reach by the compiler's shape rules alone: the argument count,
  * the named arguments, and `ref` / `out` written exactly where a parameter has it.
@@ -558,6 +542,14 @@ export function overloadsCallable(n, overloads, argNames = [], mods = []) {
   });
 }
 
+/**
+ * The overload a call binds to, or null when that is not certain. `site`: { names
+ * (named arguments), mods (`ref` / `out` written at each argument) }. The overloads that
+ * take the count and names are scored by the known argument types: a conflict removes
+ * one; the winner must match at least one argument exactly (or by a known supertype),
+ * have no uncertain argument, and beat the next one on the compiler's order (exact
+ * matches, then the nearest supertypes, then the fewest type parameters).
+ */
 export function overloadForArguments(argTypes, overloads, argNames = [], hierarchy = null, site = {}) {
   const n = argTypes.length;
   const fits = overloadsCallable(n, overloads, argNames, site.mods || []);

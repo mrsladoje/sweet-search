@@ -65,7 +65,6 @@ export class CodebaseRepository {
     return this._manifestEpoch;
   }
 
-  /** Lazy read-only connection with optimized pragmas. */
   _open() {
     this._syncAdjacentManifest();
     if (!this._db) {

@@ -57,9 +57,6 @@ const FIELDS = [
   { key: 'version', reason: 'state_version_changed', label: 'index state format' },
 ];
 
-/**
- * Build the fingerprint for the running code + configuration.
- */
 export function buildConfigFingerprint() {
   return {
     provider: EMBEDDING_CONFIG.provider,

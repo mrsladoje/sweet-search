@@ -113,13 +113,8 @@ function alreadyQueued(stateDir) {
 /**
  * Diff the working tree against merkle-state.json and append dirty hints.
  *
- * @param {object} opts
- * @param {string} opts.projectRoot
- * @param {string} opts.stateDir
  * @param {object} [opts.admissionPolicy]   Shared admission policy (created from projectRoot if omitted).
  * @param {(rel:string)=>boolean} [opts.isExcluded]   Extra deny predicate layered on the policy.
- * @param {number} [opts.maxEnqueue]
- * @param {(phase:string)=>void} [opts.onProgress]
  * @returns {Promise<{enqueued:number, added:number, modified:number, deleted:number, retired:number, files:string[]}>}
  */
 export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPolicy, isExcluded, maxEnqueue = DEFAULT_MAX_ENQUEUE, onProgress = null }) {
@@ -141,9 +136,8 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
     return r === stateDirResolved || r.startsWith(stateDirResolved + path.sep);
   };
 
-  // 1. Full walk: classify every present file; prune denied directories so we
-  //    never descend node_modules/.git/etc. `present` keeps shape-rejected
-  //    merkle files too (they must be retired).
+  // Denied directories are pruned so the walk never descends node_modules/.git/etc.
+  // `present` keeps shape-rejected merkle files too (they must be retired).
   const present = new Map(); // rel -> { isNew, changed, shapeOk, sizeOk }
   const stack = [projectRoot];
   while (stack.length) {
@@ -200,9 +194,8 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
     }
   }
 
-  // 2. Gitignore: ONE batched check over admissible (shape+size OK) files. This
-  //    catches both new files dropped into a gitignored path and previously
-  //    indexed files whose `.gitignore` status changed.
+  // ONE batched gitignore check. It catches both new files dropped into a gitignored
+  // path and previously indexed files whose `.gitignore` status changed.
   const gitCandidates = [];
   for (const [rel, v] of present) {
     if (v.shapeOk && v.sizeOk) gitCandidates.push(rel);
@@ -211,8 +204,6 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
   const gitignored = await policy.gitignoredSet(gitCandidates);
   progress('dirty-scan:decide');
 
-  // 3. Decide enqueues. Admitted+changed → reindex; previously-indexed but no
-  //    longer admitted → retire.
   const toEnqueue = [];
   let added = 0;
   let modified = 0;
@@ -254,8 +245,8 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
     }
   }
 
-  // 4. Merkle-known files not seen in the walk: deleted (gone) or living under a
-  //    directory that just became denied. Either way, retire.
+  // Merkle-known files not seen in the walk are deleted or live under a directory that
+  // just became denied. Either way, retire.
   for (const rel of Object.keys(merkle)) {
     if (toEnqueue.length >= maxEnqueue) break;
     if (present.has(rel) || queued.has(rel)) continue;
@@ -268,7 +259,7 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
     }
   }
 
-  // 5. Grep-only files: in the sparse-gram corpus, outside embedding admission (vendor/,
+  // Grep-only files: in the sparse-gram corpus, outside embedding admission (vendor/,
   //    LICENSE, *.csv ...), so the walk above never admits them. Known ones are stat'ed;
   //    new ones come from the VCS file list (the walk does not descend denied directories).
   //    The consumer decides grep-only versus embedding (readDirtySet).

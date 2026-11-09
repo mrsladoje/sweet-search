@@ -1,10 +1,4 @@
-// =============================================================================
-// Object-Oriented Language Registry
-// =============================================================================
-// Object-oriented and strongly-typed ecosystems.
-// Data-only module consumed by `registry.js`.
 export const OBJECT_ORIENTED_LANGUAGES = {
-  // ─── Protobuf ──────────────────────────────────────────────────────────────
   proto: {
     indentBased: false,
     endKeyword: null,
@@ -31,7 +25,6 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── PHP ───────────────────────────────────────────────────────────────────
   php: {
     indentBased: false,
     endKeyword: null,
@@ -63,7 +56,6 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       skipCallObjects: ["parent", "echo", "print", "var_dump"],
     },
   },
-  // ─── Ruby ──────────────────────────────────────────────────────────────────
   ruby: {
     indentBased: false,
     endKeyword: "end",
@@ -102,7 +94,6 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       skipCallObjects: ["puts", "print", "p", "raise", "require", "attr_accessor", "attr_reader", "attr_writer"],
     },
   },
-  // ─── Kotlin ────────────────────────────────────────────────────────────────
   kotlin: {
     indentBased: false,
     endKeyword: null,
@@ -140,7 +131,6 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       skipCallObjects: ["println", "print", "require", "check", "assert", "listOf", "mapOf", "setOf"],
     },
   },
-  // ─── Swift ─────────────────────────────────────────────────────────────────
   swift: {
     indentBased: false,
     endKeyword: null,
@@ -176,7 +166,6 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       skipCallObjects: ["print", "fatalError", "precondition", "assert", "String", "Int", "Double"],
     },
   },
-  // ─── Scala ─────────────────────────────────────────────────────────────────
   scala: {
     indentBased: false,
     endKeyword: null,
@@ -210,7 +199,6 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       skipCallObjects: ["println", "print", "require", "assert", "Seq", "List", "Map", "Set", "Option"],
     },
   },
-  // ─── Dart ──────────────────────────────────────────────────────────────────
   dart: {
     indentBased: false,
     endKeyword: null,
@@ -241,7 +229,6 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       skipCallObjects: ["print", "debugPrint", "setState", "Navigator", "MediaQuery"],
     },
   },
-  // ─── Groovy ────────────────────────────────────────────────────────────────
   groovy: {
     indentBased: false,
     endKeyword: null,
@@ -271,7 +258,6 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       skipCallObjects: ["println", "print", "assert", "def"],
     },
   },
-  // ─── Objective-C ───────────────────────────────────────────────────────────
   objc: {
     indentBased: false,
     endKeyword: "@end",

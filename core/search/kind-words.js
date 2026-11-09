@@ -1,7 +1,6 @@
 /**
  * Kind words in front of symbol names in agent output (ss-search, ss-find, ss-read): the
  * agent reads `methods hold, size` or `class Pool, methods a, b`, never a bare name list.
- * Owner review 2026-10-04.
  */
 
 // Index entity type → the word the agent reads in front of a name. A type with no entry here

@@ -577,13 +577,6 @@ export class StructuralContextRepository {
   }
 
   /**
-   * Run one caller query against symbols (`entities`) and, when the graph has
-   * file nodes, against top-level code (`files`, infrastructure/file-nodes.js) with the
-   * same WHERE clause. Top-level rows render as `(top-level) [file]` with the
-   * call line as their span. Merged in the queries' own order
-   * (weight DESC, file_path, context_line) and cut to `limit`.
-   */
-  /**
    * `AND r.rowid IN (…)`: the relationships a caller query of `ids` and `name` can match,
    * found through indexes (graph-name-indexes.js). The query's own clauses still decide.
    * Empty when the graph has no name indexes or the name is outside the head/tail split:
@@ -599,6 +592,13 @@ export class StructuralContextRepository {
     };
   }
 
+  /**
+   * Run one caller query against symbols (`entities`) and, when the graph has
+   * file nodes, against top-level code (`files`, infrastructure/file-nodes.js) with the
+   * same WHERE clause. Top-level rows render as `(top-level) [file]` with the
+   * call line as their span. Merged in the queries' own order
+   * (weight DESC, file_path, context_line) and cut to `limit`.
+   */
   _callerRows(db, sqlFor, params, limit) {
     const rows = db.prepare(sqlFor('entities')).all(...params);
     const top = db.prepare(sqlFor(fileNodeSourceSql())).all(...params).map(row => asTopLevelCaller(row));

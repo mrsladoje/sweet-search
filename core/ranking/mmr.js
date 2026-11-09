@@ -14,16 +14,11 @@
  *   λ = 0.3-0.5 → Emphasize diversity (good for discovery)
  */
 
-/**
- * Default MMR configuration
- */
 export const MMR_CONFIG = {
-  // Lambda controls relevance vs diversity tradeoff
-  // Higher = more relevance-focused, Lower = more diversity-focused
-  // TUNED: 0.9 prioritizes relevance strongly while still preventing flooding
-  lambda: 0.9, // Default for code search (relevance-heavy)
+  // Higher = more relevance-focused, lower = more diversity-focused.
+  // Tuned: 0.9 prioritizes relevance strongly while still preventing flooding.
+  lambda: 0.9,
 
-  // Similarity weights for different features
   weights: {
     file: 0.4,      // Same file = high similarity
     type: 0.2,      // Same entity type = moderate similarity
@@ -36,42 +31,30 @@ export const MMR_CONFIG = {
   // all but ~6 candidates (sinatra / serilog questions lost their answers).
   minRelevance: 0.01,
 
-  // Maximum candidates to consider (for performance)
+  // Performance cap
   maxCandidates: 100,
 };
 
-/**
- * Compute similarity between two search results for MMR.
- *
- * Features considered:
- * 1. File similarity (same file = 1.0, same directory = 0.5)
- * 2. Type similarity (same entity type = 1.0)
- * 3. Package similarity (same package = 1.0)
- * 4. Semantic similarity (cosine of embeddings if available)
- *
- * @param {Object} a - First result
- * @param {Object} b - Second result
- * @param {Object} weights - Feature weights
- * @returns {number} Similarity score [0, 1]
- */
-// Static type groupings used by computeSimilarity — hoisted out of the
-// O(candidates × selected) MMR inner loop.
+// Hoisted out of the O(candidates × selected) MMR inner loop.
 const SIMILARITY_DEF_TYPES = new Set(['class', 'interface', 'struct', 'enum', 'trait', 'object', 'actor', 'extension']);
 const SIMILARITY_METHOD_TYPES = new Set(['method', 'function', 'constructor']);
 
+/**
+ * Features: file (same file 1.0, same directory 0.5), type (same entity type 1.0),
+ * package (same package 1.0), semantic (cosine of embeddings, if present).
+ * @returns {number} Similarity score [0, 1]
+ */
 export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
   let totalSim = 0;
   let totalWeight = 0;
 
-  // 1. File similarity
   const fileA = a.file || a.file_path || '';
   const fileB = b.file || b.file_path || '';
 
   if (fileA && fileB) {
     if (fileA === fileB) {
-      totalSim += weights.file * 1.0; // Same file
+      totalSim += weights.file * 1.0;
     } else {
-      // Same directory
       const dirA = fileA.split('/').slice(0, -1).join('/');
       const dirB = fileB.split('/').slice(0, -1).join('/');
       if (dirA === dirB && dirA.length > 0) {
@@ -81,7 +64,6 @@ export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
     totalWeight += weights.file;
   }
 
-  // 2. Type similarity
   const typeA = a.type || '';
   const typeB = b.type || '';
 
@@ -89,7 +71,6 @@ export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
     if (typeA === typeB) {
       totalSim += weights.type * 1.0;
     } else {
-      // Partial similarity for related types
       if ((SIMILARITY_DEF_TYPES.has(typeA) && SIMILARITY_DEF_TYPES.has(typeB)) ||
           (SIMILARITY_METHOD_TYPES.has(typeA) && SIMILARITY_METHOD_TYPES.has(typeB))) {
         totalSim += weights.type * 0.5;
@@ -98,7 +79,6 @@ export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
     totalWeight += weights.type;
   }
 
-  // 3. Package/namespace similarity (extract from file path)
   if (fileA && fileB) {
     const pkgA = extractPackage(fileA);
     const pkgB = extractPackage(fileB);
@@ -106,7 +86,6 @@ export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
     if (pkgA && pkgB && pkgA === pkgB) {
       totalSim += weights.package * 1.0;
     } else if (pkgA && pkgB) {
-      // Partial match (shared prefix)
       const partsA = pkgA.split('.');
       const partsB = pkgB.split('.');
       const commonParts = partsA.filter((p, i) => partsB[i] === p).length;
@@ -118,7 +97,6 @@ export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
     totalWeight += weights.package;
   }
 
-  // 4. Semantic similarity (if embeddings available)
   if (a._embedding && b._embedding) {
     const cosSim = cosineSimilarity(a._embedding, b._embedding);
     totalSim += weights.semantic * Math.max(0, cosSim);
@@ -129,23 +107,18 @@ export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
 }
 
 /**
- * Extract package/namespace from file path.
- *
  * Examples:
  *   "com/example/service/AuthService.java" → "com.example.service"
  *   "src/main/java/com/foo/Bar.java" → "com.foo"
  *
- * @param {string} filePath - File path
  * @returns {string|null} Package name or null
  */
 function extractPackage(filePath) {
-  // Handle Java package extraction
   const javaMatch = filePath.match(/(?:src\/main\/java\/|src\/)?(.+)\/[^/]+\.java$/);
   if (javaMatch) {
     return javaMatch[1].replace(/\//g, '.');
   }
 
-  // Handle TypeScript/JavaScript (use directory)
   const jsMatch = filePath.match(/(?:src\/)?(.+)\/[^/]+\.[jt]sx?$/);
   if (jsMatch) {
     return jsMatch[1].replace(/\//g, '.');
@@ -154,13 +127,6 @@ function extractPackage(filePath) {
   return null;
 }
 
-/**
- * Compute cosine similarity between two vectors.
- *
- * @param {number[]} a - First vector
- * @param {number[]} b - Second vector
- * @returns {number} Cosine similarity [-1, 1]
- */
 function cosineSimilarity(a, b) {
   if (!a || !b || a.length !== b.length) return 0;
 
@@ -179,21 +145,11 @@ function cosineSimilarity(a, b) {
 }
 
 /**
- * Apply MMR (Maximal Marginal Relevance) reranking.
- *
  * Iteratively selects results that maximize:
  *   MMR = λ × relevance - (1-λ) × max_similarity_to_selected
  *
- * This naturally diversifies results without hard caps:
- * - High relevance results are selected first
- * - Similar results to already selected ones are penalized
- * - No artificial blocking, just intelligent reordering
- *
  * @param {Array} results - Results sorted by relevance score
- * @param {Object} options - Configuration options
- * @param {number} options.k - Number of results to return
  * @param {number} options.lambda - Relevance vs diversity tradeoff [0, 1]
- * @param {Object} options.weights - Feature weights for similarity
  * @returns {{results: Array, stats: Object}}
  */
 export function applyMMR(results, options = {}) {
@@ -209,7 +165,6 @@ export function applyMMR(results, options = {}) {
     return { results: [], stats: { selected: 0, candidates: 0, lambda } };
   }
 
-  // Filter by minimum relevance and limit candidates
   const top = results.reduce((m, r) => Math.max(m, r.score ?? 0), 0);
   const floor = minRelevance * top;
   const candidates = results
@@ -220,7 +175,6 @@ export function applyMMR(results, options = {}) {
     return { results: [], stats: { selected: 0, candidates: 0, lambda } };
   }
 
-  // Normalize relevance scores to [0, 1] for MMR calculation
   const maxScore = Math.max(...candidates.map(r => r.score));
   const minScore = Math.min(...candidates.map(r => r.score));
   const scoreRange = maxScore - minScore || 1;
@@ -230,24 +184,17 @@ export function applyMMR(results, options = {}) {
     _normalizedRelevance: (r.score - minScore) / scoreRange,
   }));
 
-  // Selected results (output)
   const selected = [];
-  // Remaining candidates (pool)
   const remaining = new Set(normalized.map((_, i) => i));
 
-  // Stats
   let totalDiversityPenalty = 0;
   let reorderCount = 0;
 
-  // Iteratively select k results
   while (selected.length < k && remaining.size > 0) {
     let bestIdx = -1;
     let bestMMR = -Infinity;
-    // Highest-relevance tracking shares the same pass (same iteration order
-    // and strict-> comparison as the reduce it replaces).
     let highestRelevanceIdx = -1;
 
-    // Find the candidate with highest MMR score
     for (const idx of remaining) {
       const candidate = normalized[idx];
 
@@ -256,14 +203,12 @@ export function applyMMR(results, options = {}) {
         highestRelevanceIdx = idx;
       }
 
-      // Compute max similarity to already selected results
       let maxSim = 0;
       for (const selectedResult of selected) {
         const sim = computeSimilarity(candidate, selectedResult, weights);
         maxSim = Math.max(maxSim, sim);
       }
 
-      // MMR score: λ × relevance - (1-λ) × max_similarity
       const mmrScore = lambda * candidate._normalizedRelevance - (1 - lambda) * maxSim;
 
       if (mmrScore > bestMMR) {
@@ -280,7 +225,6 @@ export function applyMMR(results, options = {}) {
         totalDiversityPenalty += normalized[highestRelevanceIdx]._normalizedRelevance - selectedCandidate._normalizedRelevance;
       }
 
-      // Add MMR metadata
       selected.push({
         ...selectedCandidate,
         _mmrRank: selected.length + 1,
@@ -291,7 +235,6 @@ export function applyMMR(results, options = {}) {
     }
   }
 
-  // Clean up internal fields
   const cleanedResults = selected.map(r => {
     const { _normalizedRelevance, ...clean } = r;
     return clean;
@@ -310,19 +253,11 @@ export function applyMMR(results, options = {}) {
 }
 
 /**
- * Check if MMR diversification should be applied.
- *
- * Criteria:
- * 1. More than 10 results (otherwise not enough to diversify)
- * 2. High concentration of results from same file or type
- *
- * @param {Array} results - Search results
- * @returns {boolean} True if MMR is recommended
+ * Applies when there are at least 10 results and the top 20 concentrate on one file or type.
  */
 export function shouldApplyMMR(results) {
   if (!results || results.length < 10) return false;
 
-  // Check for file concentration in top 20
   const fileCounts = new Map();
   const typeCounts = new Map();
 
@@ -334,11 +269,11 @@ export function shouldApplyMMR(results) {
     typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
   }
 
-  // If any file has >40% of top 20 results, apply MMR
+  // >=8 of the top 20 from one file (40%)
   const maxFileCount = Math.max(...fileCounts.values());
   if (maxFileCount >= 8) return true;
 
-  // If any non-definition type has >50% of top 20 results
+  // >=10 of the top 20 of one non-definition type (50%)
   const defTypes = new Set(['class', 'interface', 'struct', 'enum', 'object', 'actor', 'extension']);
   for (const [type, count] of typeCounts) {
     if (count >= 10 && !defTypes.has(type)) {
@@ -349,29 +284,18 @@ export function shouldApplyMMR(results) {
   return false;
 }
 
-/**
- * Get recommended lambda based on query intent.
- *
- * @param {string} routerMode - Query router mode
- * @param {number} routerConfidence - Router confidence
- * @returns {number} Recommended lambda value
- */
 export function getLambdaForIntent(routerMode, routerConfidence) {
   switch (routerMode) {
     case 'lexical':
-      // Identifier search: prioritize relevance very strongly
       return routerConfidence >= 0.8 ? 0.95 : 0.9;
 
     case 'semantic':
-      // Conceptual search: still relevance-heavy, mild diversity
       return 0.85;
 
     case 'hybrid':
-      // Mixed: relevance-focused with diversity consideration
       return 0.9;
 
     case 'structural':
-      // Relationship queries: very relevance-focused
       return 0.9;
 
     default:
@@ -379,9 +303,7 @@ export function getLambdaForIntent(routerMode, routerConfidence) {
   }
 }
 
-// =============================================================================
-// Final-list MMR (content-aware, runs after expansion + rescoring)
-// =============================================================================
+// Final-list MMR: content-aware, runs after expansion + rescoring.
 
 /**
  * Similarity weights for the final-list pass. Content overlap decides:
@@ -425,12 +347,7 @@ function mmrDir(file) {
   return i > 0 ? file.slice(0, i) : '';
 }
 
-/**
- * Content-aware similarity of two results, in [0, 1].
- * @param {object} a
- * @param {object} b
- * @param {{span:number, symbol:number, file:number, dir:number}} [weights]
- */
+/** Content-aware similarity of two results, in [0, 1]. */
 export function computeSpanSimilarity(a, b, weights = SPAN_MMR_WEIGHTS) {
   const fa = mmrFile(a);
   const fb = mmrFile(b);
@@ -506,9 +423,7 @@ export function applyFinalListMMR(results, opts = {}) {
     let best = -1;
     let bestScore = -Infinity;
     if (picked.length === 0) {
-      // Top-1 is the caller's top-1, by construction: a list whose order is
-      // not score order (a positional promotion upstream) must not have its
-      // first entry replaced by the highest raw score.
+      // A list not in score order (a positional promotion upstream) must keep its first entry.
       best = 0;
     } else {
       for (const idx of remaining) {

@@ -1,9 +1,4 @@
 /**
- * Search Hybrid Module
- *
- * Extracted from sweet-search.js (SOLID refactor).
- * Contains hybrid search implementations (V2 and legacy).
- *
  * Functions that use `this` are regular function declarations (not arrows)
  * so they work correctly when wired onto SweetSearch.prototype.
  */
@@ -86,12 +81,8 @@ function implementationRetryReason(query, results) {
   return !hasImplementation && hasDemotable ? 'no_implementation_in_top_results' : null;
 }
 
-// =============================================================================
-// Hybrid Search V2
-// =============================================================================
-
 /**
- * Hybrid search V2 with raw paths + post-fusion boosts (PHASE_1_FIXES Change 5)
+ * Hybrid search V2 with raw paths + post-fusion boosts
  *
  * Uses bm25SearchRaw() for lexical path to ensure fair fusion.
  * Applies boosts AFTER fusion so both paths benefit equally.
@@ -101,11 +92,10 @@ function implementationRetryReason(query, results) {
 export async function hybridSearchV2(query, options = {}) {
   const { k = 10, useLateInteraction = this.useLateInteraction, routing: passedRouting } = options;
 
-  // P9 FIX: Use passed routing or compute if not provided
   const routing = passedRouting || routeQuery(query);
   const routeType = routing.mode === 'hybrid' ? 'mixed' : routing.mode;
 
-  // Step 1: Retrieval from both paths (raw scores, no pre-fusion boosts)
+  // Raw scores, no pre-fusion boosts.
   // Uses bm25SearchRaw() (not graphExpandedSearch) so fusion sees pure BM25 scores
   // without synthetic graph-expansion scores polluting the distribution.
   const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
@@ -133,10 +123,8 @@ export async function hybridSearchV2(query, options = {}) {
   }));
   const semanticResults = semanticSearchResult.results;
   const semanticStats = semanticSearchResult.stats;
-  // P1.3 FIX: Capture direct lexical latency for accurate telemetry
   const lexicalLatencyMs = lexicalSearchResult.latency ?? null;
 
-  // Step 2: Robust CC fusion with RRF fallback for edge cases
   const fusionAlpha = options.fusionAlpha ?? (
     routing.rawMode === 'semantic'
       ? envFloat('SWEET_SEARCH_COLLAPSED_SEMANTIC_ALPHA', undefined)
@@ -152,7 +140,7 @@ export async function hybridSearchV2(query, options = {}) {
     ? fuseBodyRRF(ccFused, body.hits, bodySettings.rrfWeight)
     : ccFused;
 
-  // Step 2.5: Identifier-Anchored Retrieval (IAR).
+  // Identifier-Anchored Retrieval (IAR).
   // Couples dense fusion with an exact-name symbol lookup so abstract
   // natural-language queries that mention a real entity name can land on
   // that entity even when the encoder ranked something tangentially-similar
@@ -179,12 +167,11 @@ export async function hybridSearchV2(query, options = {}) {
     : { results: fused, stats: { skipped: true, reason: 'disabled_for_non_agent_search' } };
   __ptEnd('hybrid:injectAnchorCandidates', __t_iar);
 
-  // Step 3: Apply post-fusion boosts uniformly (both paths benefit equally)
   const boosted = this.applyPostFusionBoosts(anchored, query, routing.mode, routing.confidence, {
     format: options.format,
   });
 
-  // Step 3.5: Apply source-vs-doc/test/config preference before the top-k cut.
+  // Apply source-vs-doc/test/config preference before the top-k cut.
   // The post-retrieval pass has the same guard, but hybrid used to slice first,
   // so docs/tests/tiny YAML could occupy top-1 and hide implementation chunks.
   const agentFormat = isAgentFormat(options.format);
@@ -220,7 +207,6 @@ export async function hybridSearchV2(query, options = {}) {
   });
   __ptEnd('hybrid:applyResultDemotions', __t_dem);
 
-  // Step 4: MMR Diversification (replaces flood control)
   let diversified = demoted;
   let mmrStats = null;
 
@@ -302,7 +288,7 @@ export async function hybridSearchV2(query, options = {}) {
     }
   }
 
-  // Step 6: Multi-query BM25F + RRF tail fallback.
+  // Multi-query BM25F + RRF tail fallback.
   // Last-resort safety net: when hybrid + IAR + rewrite-retry STILL leaves
   // top-1 below the confidence floor, the candidate list empty, or no
   // source file in top-3, fire one BM25F query per content keyword

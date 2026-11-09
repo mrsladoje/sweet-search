@@ -1,6 +1,5 @@
 /**
  * Embedding Local Model - ONNX-based local embedding inference.
- * Extracted from embedding-service.js for file size compliance (<500 lines).
  */
 
 import crypto from 'crypto';
@@ -18,18 +17,9 @@ import { initOrt, buildFeed } from '../infrastructure/ort-pipeline.js';
 import { isNativeInferenceAvailable, isNativeEmbeddingModelLoaded, nativeEmbed, getNativeEmbeddingBackend } from '../infrastructure/native-inference.js';
 import { recordEncode } from '../infrastructure/inference-provenance.js';
 
-// =============================================================================
-// SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
-// =============================================================================
-
 export const INDEXING_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_INDEXING_MAX_LENGTH || '512', 10);
 export const QUERY_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_QUERY_MAX_LENGTH || '512', 10);
 
-// =============================================================================
-// ONNX SESSION HELPERS
-// =============================================================================
-
-// Import + re-export from infrastructure (canonical location)
 import {
   bestIntraOpThreads,
   backgroundIntraOpThreads,
@@ -132,7 +122,6 @@ export function shouldUseOpenVino(openVinoAvailable = isOpenVinoProviderAvailabl
   const explicitOn = raw === '1' || raw === 'true' || raw === 'on';
   if (!autoMode && !explicitOn) return false;
 
-  // Enable only when the runtime bundle exposes OpenVINO provider artifacts.
   return openVinoAvailable;
 }
 
@@ -149,7 +138,6 @@ export function resolveLocalModelName(quantized) {
 }
 
 /**
- * L3b: Return path for the ORT-optimized model graph cache.
  * Uses the actual model name in the hash so FP32 and INT8 never share a cache file.
  */
 export function getOptimizedModelPath(quantLabel = 'q8') {
@@ -232,7 +220,7 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
   } else {
     // Foreground/full-index profile: thread spinning keeps ORT worker threads
     // hot-looping for work instead of sleeping on OS primitives. Trades idle
-    // CPU for lower per-batch latency. (Unchanged from the historical default.)
+    // CPU for lower per-batch latency.
     sessionOptions.extra = {
       session: {
         intra_op: { allow_spinning: '1' },
@@ -255,9 +243,6 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
 }
 
 /**
- * Resolve quantization mode from env var.
- * Returns { quantized: bool, label: string }
- *
  * Note: FP32 mode (SWEET_SEARCH_LOCAL_QUANTIZED=0) is not supported with the
  * managed model cache — the FP32 model (jalipalo/CodeRankEmbed-onnx) is not
  * in the registry. If explicitly set to false, warn and fall back to INT8.
@@ -270,29 +255,18 @@ export function resolveQuantizationMode() {
   return { quantized: true, label: 'q8' };
 }
 
-/** Registry key for the managed embedding model. */
 const EMBEDDING_REGISTRY_KEY = 'coderankembed-int8';
 
-/**
- * Resolve the ONNX model file path from the managed model cache.
- */
 function resolveOnnxModelPath() {
   const entry = getModelEntry(EMBEDDING_REGISTRY_KEY);
   const onnxFile = entry.files.find(f => f.path.endsWith('.onnx'));
   return join(getModelCacheDir(entry.hfId), onnxFile.path);
 }
 
-/**
- * Resolve the tokenizer.json path from the managed model cache.
- */
 function resolveTokenizerPath() {
   const entry = getModelEntry(EMBEDDING_REGISTRY_KEY);
   return join(getModelCacheDir(entry.hfId), 'tokenizer.json');
 }
-
-// =============================================================================
-// POOLING AND NORMALIZATION
-// =============================================================================
 
 export function maskIsActive(maskValue) {
   return typeof maskValue === 'bigint' ? maskValue !== 0n : maskValue !== 0;
@@ -384,10 +358,6 @@ export function extractPooledEmbeddings(outputs, attentionMask, normalize = true
   throw new Error(`[L1] Unsupported tensor shape: [${candidate.dims.join(', ')}]`);
 }
 
-// =============================================================================
-// TIMING INSTRUMENTATION (Phase 0 — per-batch profiling)
-// =============================================================================
-
 const _embeddingTimings = { tokenize_us: 0, inference_us: 0, pool_us: 0, calls: 0, totalTexts: 0 };
 
 /** Read and reset accumulated embedding timings. */
@@ -401,9 +371,6 @@ export function getEmbeddingTimings() {
   return snap;
 }
 
-// =============================================================================
-// WORKER POOL SLOT (Phase 2 — parallel ORT inference via worker_threads)
-// =============================================================================
 //
 // The embedding layer exposes a SLOT for an external pool implementation.
 // It does NOT own the pool lifecycle or construction — that responsibility
@@ -419,13 +386,11 @@ export function getEmbeddingTimings() {
 
 let _embeddingPool = null;
 
-/** Install an external embedding worker pool into the slot. */
 export function setEmbeddingPool(pool) { _embeddingPool = pool; }
 
 /** Clear the slot. Does NOT shut the pool down — the caller owns lifecycle. */
 export function clearEmbeddingPool() { _embeddingPool = null; }
 
-/** Get the active pool (null if not installed). */
 export function getEmbeddingPool() { return _embeddingPool; }
 
 async function embedBatchesWithPool(pool, batches, maxLength, onProgress, totalTexts) {
@@ -446,10 +411,6 @@ async function embedBatchesWithPool(pool, batches, maxLength, onProgress, totalT
   return results;
 }
 
-// =============================================================================
-// PIPELINE SINGLETON
-// =============================================================================
-
 /**
  * Self-check that the background ORT profile's SessionOptions.extra is accepted
  * by the onnxruntime-node binding. Builds a throwaway session with the bg
@@ -466,7 +427,7 @@ async function verifyBackgroundExtraOrFallback(ort, onnxPath, sessionOptions) {
   let probe = null;
   try {
     probe = await ort.InferenceSession.create(onnxPath, sessionOptions);
-    return sessionOptions; // extra accepted — use it
+    return sessionOptions;
   } catch (err) {
     const fallback = { ...sessionOptions };
     delete fallback.extra;
@@ -506,14 +467,13 @@ export async function getLocalPipeline() {
     const { quantized: isQuantized, label: quantLabel } = resolveQuantizationMode();
     bootLog(`Loading local model: ${resolveLocalModelName(isQuantized)}...`);
 
-    // Fetch model files to managed cache (verifies checksums, respects allowRuntimeModelDownload)
     await fetchModel('coderankembed-int8');
 
     const ort = await initOrt();
     const onnxPath = resolveOnnxModelPath();
     const tokenizerPath = resolveTokenizerPath();
 
-    // Phase 1d: CoreML detection with persistent failure cache.
+    // CoreML detection with persistent failure cache.
     // ORT 1.24.3 can't serialize models with CoreML compiled nodes, causing a
     // ~12s cold-start penalty from 3 failed session attempts. Cache the failure
     // so subsequent loads skip CoreML probing entirely.
@@ -610,12 +570,7 @@ export async function getLocalPipeline() {
   return loadPromise;
 }
 
-// =============================================================================
-// CORE INFERENCE FUNCTIONS
-// =============================================================================
-
 /**
- * L1: True batch inference for local model.
  * Uses native candle inference (FP32, Metal GPU) when available,
  * falls back to ORT INT8 session.
  * Returns Float32Array subarray views from a per-batch pool (zero-copy downstream).
@@ -726,9 +681,8 @@ function localEncoderLabel() {
 }
 
 /**
- * L0: Length-sorted bucketing for local model batch inference.
  * When the embedding worker pool is active, dispatches all batches concurrently
- * across workers for true CPU parallelism (Phase 2 integration).
+ * across workers for true CPU parallelism.
  */
 export async function callLocalModelBucketed(texts, options = {}) {
   if (_modelDelegate) return _modelDelegate.run('local-model-bucketed', texts, withoutFunctions(options));
@@ -746,7 +700,6 @@ export async function callLocalModelBucketed(texts, options = {}) {
 
   const embeddings = new Array(texts.length);
 
-  // Phase 3: Adaptive memory guard
   const totalMemGB = os.totalmem() / 1024 / 1024 / 1024;
   const adaptiveMemCapBytes = totalMemGB > 32
     ? Infinity
@@ -756,7 +709,6 @@ export async function callLocalModelBucketed(texts, options = {}) {
   const memGuardHighWatermark = 0.85;
   const memGuardActive = !process.env.SWEET_SEARCH_DISABLE_MEM_GUARD && adaptiveMemCapBytes !== Infinity;
 
-  // Pre-compute all batch boundaries
   const batches = [];
   let i = 0;
   // Attention budget caps per-batch compute work (seq² × batch) on top of the
@@ -828,7 +780,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
     i += batchSize;
   }
 
-  // Phase 2: If pool is active and memory guard is off, dispatch concurrently
+  // If pool is active and memory guard is off, dispatch concurrently
   // across workers. The pool round-robins batches so workers run in parallel.
   const pool = getEmbeddingPool();
   if (pool && !memGuardActive) {
@@ -938,10 +890,6 @@ export async function callLocalModelBucketed(texts, options = {}) {
   return embeddings;
 }
 
-// =============================================================================
-// QUERY PREFIX
-// =============================================================================
-
 export function applyLocalQueryPrefix(text) {
   const prefix = EMBEDDING_PROVIDERS.local?.queryPrefix || '';
   if (prefix && !text.startsWith(prefix)) {
@@ -949,10 +897,6 @@ export function applyLocalQueryPrefix(text) {
   }
   return text;
 }
-
-// =============================================================================
-// LIFECYCLE
-// =============================================================================
 
 export async function unloadLocalModel() {
   if (localPipeline?.session) {

@@ -47,14 +47,12 @@ export function chunkFilePath(chunk) {
   ) || '';
 }
 
-/** Id of the `index`-th chunk parsed from `file`. */
 export function chunkIdOf(file, chunk, index) {
   const lineStart = chunk.metadata?.line_start || 0;
   const lineEnd = chunk.metadata?.line_end || lineStart;
   return `${file}:${lineStart}-${lineEnd}:${index}`;
 }
 
-/** Text the dense encoder reads for a chunk, cut to `cap`. */
 export function embedTextOf(chunk, cap) {
   if (chunk.embedding_text) return chunk.embedding_text.slice(0, cap);
   return `${chunkFilePath(chunk)} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
@@ -63,8 +61,7 @@ export function embedTextOf(chunk, cap) {
 /**
  * v6.2: language-family-conditioned LI input routing.
  *
- * Per-language ablation on GenCodeSearchNet (May 2026, see
- * docs/JS_CHUNK_BLEEDING_ANALYSIS.md) determined that different
+ * Per-language ablation on GenCodeSearchNet (May 2026) determined that different
  * languages benefit from different metadata richness in the late-
  * interaction MaxSim input. v6.2 picks empirically:
  *

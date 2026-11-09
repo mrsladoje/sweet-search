@@ -1,33 +1,13 @@
 /**
- * Codebase Indexer v2.3 — Thin facade.
- *
- * Full indexing pipeline for Sweet Search:
- * 1. Code Graph: Extract entities and relationships, build FTS5 index
- * 2. Vector Embeddings: Generate embeddings with transformers.js
- * 3. HNSW Index: Build in-memory ANN index for fast semantic search
- *
- * Implementation split across:
- *   indexer-utils.js   - SQLite config, logging, atomic swap, paths, file discovery
- *   indexer-build.js   - Code graph + vector embedding building
- *   indexer-ann.js     - HNSW, late interaction, quantized artifact building
- *   indexer-phases.js  - Phase runner + phase wrappers
+ * Codebase indexer entry point (facade over the indexer-* modules).
  *
  * Incremental Mode (default - RECOMMENDED):
  * - Code graph: ALWAYS full rebuild (relationships span files) - ensures GraphRAG accuracy
  * - Summaries: Auto-regenerated for changed files (uses Cerebras GLM-4.6 for speed)
  * - Vectors: Only changed files reindexed
  * - HNSW: Rebuilt from changed files
- *
- * Usage:
- *   node index-codebase-v21.js                  # Incremental (default)
- *   node index-codebase-v21.js --full           # Full reindex
- *   node index-codebase-v21.js --graph-only     # Only code graph
- *   node index-codebase-v21.js --vectors-only   # Only vectors + HNSW
- *   node index-codebase-v21.js --dry-run        # Preview only
  */
 
-// ── Optional: bump libuv worker thread pool ──
-//
 // Only useful in opt-in hybrid CPU+GPU mode (SWEET_SEARCH_LI_HYBRID=1 or
 // SWEET_SEARCH_EMBED_HYBRID=1) where multiple concurrent napi async ops
 // fight for the default 4-thread libuv pool. Pure-GPU and pure-CPU paths
@@ -45,7 +25,6 @@ import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
 import { getStats as getIncrementalStats, validateCurrentState } from './incremental-tracker.js';
 import { ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 
-// Sub-module imports (used in main + re-exported for backward compatibility)
 import {
   isWalSafe, configureJournalMode,
   colors, setQuietMode, isQuietMode, setVerboseMode, log, logProgress, logError,
@@ -68,14 +47,7 @@ import {
 } from './indexer-phases.js';
 import { establishEmptyBaseline } from './indexer-empty-baseline.js';
 import { removeDeadLegacyArtifacts } from './legacy-artifact-sweep.js';
-// =============================================================================
-// CLI ARGUMENT PARSING
-// =============================================================================
 
-/**
- * Parse CLI arguments into a structured flags object.
- * @param {string[]} [argv] - Arguments to parse (defaults to process.argv.slice(2))
- */
 function parseArgs(argv) {
   const args = argv ?? process.argv.slice(2);
   return {
@@ -99,10 +71,6 @@ function parseArgs(argv) {
   };
 }
 
-// =============================================================================
-// MAIN
-// =============================================================================
-
 async function main() {
   const startTime = Date.now();
 
@@ -125,11 +93,9 @@ async function main() {
     try { const { showBanner } = await import('../banner/render-banner.js'); await showBanner({ clear: true }); } catch { /* non-fatal */ }
   }
 
-  // Apply late interaction model overrides before any model code runs.
   // Precedence: --no-late-interaction > --late-interaction-model=… > env
   // var (already honoured by LATE_INTERACTION_CONFIG.model at module load) >
-  // .sweet-search/config.json::runtime.li.model > built-in default. Only
-  // touch the persisted-config branch when neither CLI flag was used —
+  // .sweet-search/config.json::runtime.li.model > built-in default.
   // applyPersistedLiModel internally re-checks the env var.
   if (noLateInteraction) {
     LATE_INTERACTION_CONFIG.model = false;
@@ -297,9 +263,6 @@ Output:
   }
 
   try {
-    // =========================================================================
-    // PHASE 1: File Discovery
-    // =========================================================================
     const discoveryResult = await runPhase('File Discovery', discoverFilesPhase, {
       filesFromStdin,
       quiet,
@@ -320,9 +283,6 @@ Output:
       return;
     }
 
-    // =========================================================================
-    // PHASE 2: Determine Files to Index
-    // =========================================================================
     const filesToIndexResult = await runPhase('Determine Files to Index', determineFilesToIndexPhase, {
       allFiles,
       stdinFiles,
@@ -373,9 +333,6 @@ Output:
       return;
     }
 
-    // =========================================================================
-    // PHASE 1: Code Graph (if not --vectors-only)
-    // =========================================================================
     let graphStats = { entities: 0, relationships: 0 };
     let hcgsPromise = null;
 
@@ -398,9 +355,6 @@ Output:
       hcgsPromise = graphResult.result.hcgsPromise;
     }
 
-    // =========================================================================
-    // PHASE 4: Vectors + HNSW + Artifacts (if not --graph-only)
-    // =========================================================================
     let vectorStats = { chunks: 0, embeddings: 0 };
     let sparseGramResult = null;
 
@@ -432,9 +386,6 @@ Output:
       }
     }
 
-    // =========================================================================
-    // PHASE 5: Update Incremental State
-    // =========================================================================
     await runPhase('Update Incremental State', updateIncrementalStatePhase, {
       dryRun,
       graphOnly,
@@ -447,9 +398,6 @@ Output:
       sparseGramResult,
     });
 
-    // =========================================================================
-    // PHASE 6: Print Summary
-    // =========================================================================
     printSummaryPhase({
       graphStats,
       vectorStats,
@@ -464,9 +412,6 @@ Output:
       startTime,
     });
 
-    // =========================================================================
-    // PHASE 7: Post-Indexing Vocabulary Warmup (non-fatal)
-    // =========================================================================
     try {
       const { runFullWarmup } = await import('../vocabulary/vocab-warmup-orchestrator.js');
       await runFullWarmup({ depth: 'medium', top: 1000 });
@@ -515,7 +460,6 @@ const _isDirectRun = (() => {
   }
 })();
 if (_isDirectRun) {
-  // ── Bounded-memory guard (works on ANY device, NO heap cap, ZERO startup cost) ──
   // On big-RAM machines Node auto-sizes its default old-space heap large, so V8
   // defers GC and the embedding phase's transient per-batch garbage piles up
   // until the OS OOM-kills the indexer on very large repos (e.g. swc ~164k

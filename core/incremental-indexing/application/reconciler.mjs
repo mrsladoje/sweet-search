@@ -153,7 +153,6 @@ function finalizeManifestTiers(previousManifest, tiers) {
 export class Reconciler {
   /**
    * @param {object} options
-   * @param {string} options.stateDir
    * @param {object} options.adapters        Adapter contract above.
    * @param {object} [options.config]        Tick interval / budgets / etc.
    * @param {Function} [options.now]         Injectable clock for tests.
@@ -188,8 +187,6 @@ export class Reconciler {
    * finalize (`finalizeTick`), BEFORE the manifest advances. The production
    * adapter always has these hooks; an adapter without them (tests) gets the
    * per-file calls with no context.
-   *
-   * @returns {boolean}
    */
   _batchTierWritesEnabled() {
     return typeof this.adapters.beginTick === 'function'
@@ -223,8 +220,6 @@ export class Reconciler {
   /**
    * Load the current manifest's epoch. Falls back to 0 when no manifest
    * has been written yet.
-   *
-   * @returns {number}
    */
   currentEpoch() {
     const manifest = this.adapters.loadCurrentManifest
@@ -235,8 +230,6 @@ export class Reconciler {
 
   /**
    * Build the next-epoch number. Plan § 8.1 step 1-2.
-   *
-   * @returns {number}
    */
   nextEpoch() {
     const current = this.currentEpoch();
@@ -249,8 +242,6 @@ export class Reconciler {
    * Walk the dirty set through the adapter contract. Adapters own concrete
    * tier writes; the reconciler enforces budget, maintenance scheduling,
    * and manifest publication.
-   *
-   * @returns {Promise<object>}
    */
   async tick() {
     if (this._running) {
@@ -300,7 +291,6 @@ export class Reconciler {
         this.progress('reconciler:tick-begin');
       }
 
-      // Track per-file outcomes for the tick summary.
       const tierOps = {};
       const manifestTiers = {};
       const filesProcessed = [];

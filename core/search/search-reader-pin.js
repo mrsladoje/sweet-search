@@ -103,7 +103,6 @@ export function beginPinnedRead({ projectRoot, stateDir, epoch, meta } = {}) {
   if (epoch === null) return null;
   const resolvedStateDir = stateDir || (projectRoot ? searchStateDir(projectRoot) : null);
   if (!resolvedStateDir) return null;
-  // Skip readManifest when we recently observed it was absent at this path.
   if (!Number.isInteger(epoch)) {
     const absentAt = _manifestAbsentAt.get(resolvedStateDir);
     if (absentAt !== undefined && Date.now() - absentAt < MANIFEST_ABSENT_TTL_MS) {

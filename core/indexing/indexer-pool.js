@@ -1,12 +1,4 @@
 /**
- * Inference Pool — Coordinated worker management for indexing.
- *
- * Phase 2 of the Inference Speedup Plan. Provides:
- *   - Global resource allocator (CPU threads, RAM budget)
- *   - Per-model worker pools (embedding, LI)
- *   - Round-robin batch dispatch with per-batch timeout
- *   - Graceful fallback to inline single-session inference
- *
  * Architecture: worker_threads with independent ORT sessions. Each worker
  * has its own ORT thread pool, giving true CPU parallelism. The allocator
  * divides physical cores across active workers + main thread.
@@ -24,17 +16,14 @@ import {
   detectLastLevelCacheBytes,
   computeWeightsAwareBatchCap,
 } from '../infrastructure/onnx-session-utils.js';
-// Consumed through the embedding barrel (auto-reexported via
-// `export * from './embedding-local-model.js'`) so this stays on the
-// allowed indexing → embedding direction AND routes through the public
-// barrel per docs/DDD_ARCHITECTURE.md "Barrel Public API" rule.
+// Consumed through the embedding barrel so this stays on the allowed
+// indexing → embedding direction (docs/DDD_ARCHITECTURE.md "Barrel Public API").
 import {
   setEmbeddingPool as _setEmbeddingPoolSlot,
   clearEmbeddingPool as _clearEmbeddingPoolSlot,
   getEmbeddingPool as _getEmbeddingPoolSlot,
 } from '../embedding/index.js';
 
-// Re-export for callers that previously imported from this module.
 export { detectLastLevelCacheBytes };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -88,11 +77,6 @@ export function detectAppleSiliconTier() {
   }
 }
 
-// ─── Resource Allocator ─────────────────────────────────────────────────────
-
-/**
- * Detect hardware and compute resource budgets for worker allocation.
- */
 export function detectResources(overrides = {}) {
   const logicalCores = overrides.logicalCores ?? os.cpus().length;
   const arch = overrides.arch ?? process.arch;
@@ -113,7 +97,7 @@ export function detectResources(overrides = {}) {
 
   // Apple Silicon GPU tier (base/Pro/Max/Ultra). Used to scale Metal batch
   // sizes to the actual GPU core count instead of RAM-as-proxy. On non-Apple
-  // Silicon, tier=0 → falls back to RAM-based sizing.
+  // Silicon: tier=0 → falls back to RAM-based sizing.
   const gpuTier = overrides.gpuTier ?? detectAppleSiliconTier();
 
   return {
@@ -163,11 +147,6 @@ export function planLateInteractionFromGpuTier(gpuTier) {
   };
 }
 
-/**
- * Plan worker allocation given hardware resources.
- * Returns a sequential phase plan that can scale from small WSL laptops to
- * many-core workstations.
- */
 export function planAllocation(resources = detectResources()) {
   const {
     logicalCores,
@@ -180,7 +159,7 @@ export function planAllocation(resources = detectResources()) {
     gpuTier = { tier: 0, variant: null, gpuCores: null },
   } = resources;
 
-  // Memory budget: total RAM minus 2GB for OS and main thread
+  // Total RAM minus 2GB for OS and main thread
   const memBudgetMB = Math.max(512, (totalMemGB - 2) * 1024 - mainThreadRAM_MB);
 
   // Embedding worker count.
@@ -245,11 +224,10 @@ export function planAllocation(resources = detectResources()) {
   const liBatchOverride = parseInt(process.env.SWEET_SEARCH_LI_BATCH_SIZE || '0', 10);
   const liTokenBudgetOverride = parseInt(process.env.SWEET_SEARCH_LI_TOKEN_BUDGET || '0', 10);
 
-  // Base LI batch + token budget: preferred sizing based on the detected
-  // Apple Silicon GPU tier (actual core count), falling back to RAM-as-proxy
-  // for non-Apple-Silicon or undetected hardware. The goal is to saturate
-  // the GPU's SIMT groups on each dispatch — higher-tier GPUs with more
-  // cores can chew through larger batches per kernel launch.
+  // LI batch sizing prefers the detected Apple Silicon GPU tier (actual core
+  // count) and falls back to RAM-as-proxy for other or undetected hardware.
+  // The goal is to saturate the GPU's SIMT groups on each dispatch — higher-tier
+  // GPUs with more cores can chew through larger batches per kernel launch.
   //
   // Token budget scales together: maxDoc for LateOn-Code is 2048, so the
   // budget needs to be `batch * 2048` to fit the tail where long chunks
@@ -385,17 +363,6 @@ export function planAllocation(resources = detectResources()) {
   };
 }
 
-// ─── Worker Pool ────────────────────────────────────────────────────────────
-
-/**
- * EmbeddingPool — manages a pool of embedding worker threads.
- *
- * Usage:
- *   const pool = new EmbeddingPool({ workers: 2, threadsPerWorker: 4 });
- *   await pool.init();
- *   const embeddings = await pool.embed(texts, { maxLength: 512 });
- *   await pool.shutdown();
- */
 export class EmbeddingPool {
   constructor(options = {}) {
     const plan = planAllocation();
@@ -477,10 +444,8 @@ export class EmbeddingPool {
   }
 
   /**
-   * Embed a batch of texts using the next available worker.
    * Falls back to inline inference if all workers are dead.
    *
-   * @param {string[]} texts
    * @param {object} options - { maxLength }
    * @returns {Float32Array[]} Array of embedding vectors
    */
@@ -489,7 +454,6 @@ export class EmbeddingPool {
       return this._inlineFallback(texts, options);
     }
 
-    // Round-robin to next alive worker
     let worker = null;
     for (let attempt = 0; attempt < this.numWorkers; attempt++) {
       const idx = this.roundRobin % this.numWorkers;
@@ -518,7 +482,6 @@ export class EmbeddingPool {
           if (msg.error) {
             reject(new Error(msg.error));
           } else {
-            // Reconstruct Float32Arrays from transferred buffer
             const dim = msg.dim;
             const embeddings = [];
             for (let i = 0; i < msg.count; i++) {
@@ -704,32 +667,20 @@ export class LateInteractionPool {
   }
 }
 
-// =============================================================================
-// EMBEDDING POOL LIFECYCLE (moved from core/embedding/embedding-local-model.js
-// to satisfy the DDD dependency matrix: indexing may depend on embedding, not
-// the reverse. See docs/DDD_ARCHITECTURE.md and docs/reviews/ddd-compliance.md.)
-//
 // The embedding layer exposes a duck-typed SLOT (setEmbeddingPool /
 // getEmbeddingPool / clearEmbeddingPool); this module owns construction and
-// lifetime. `callLocalModel` reads the slot at embed time and dispatches
-// batches through the installed pool when present.
-// =============================================================================
+// lifetime (indexing may depend on embedding, not the reverse).
+// `callLocalModel` reads the slot at embed time and dispatches batches
+// through the installed pool when present.
 
 /**
- * In-flight init promise. Concurrent callers share this so two parallel
- * `initEmbeddingPool(...)` calls construct exactly one pool instead of
- * racing two, the second of which would leak workers via the implicit
- * overwrite that existed in the pre-fix version. Cleared in the `finally`
- * so a failed init is retryable.
+ * In-flight init promise. Concurrent callers share it so two parallel
+ * `initEmbeddingPool(...)` calls construct exactly one pool (a second would
+ * leak workers). Cleared in the `finally` so a failed init is retryable.
  */
 let _initEmbeddingPoolPromise = null;
 
-/**
- * Initialize the embedding worker pool and install it into the embedding
- * layer's slot. Idempotent AND race-gated — returns the in-flight promise
- * for concurrent callers before the slot is populated, so only one pool
- * construction runs in parallel.
- */
+/** Idempotent AND race-gated: concurrent callers get the in-flight promise. */
 export async function initEmbeddingPool(options = {}) {
   const existing = _getEmbeddingPoolSlot();
   if (existing) return existing;
@@ -747,7 +698,6 @@ export async function initEmbeddingPool(options = {}) {
   return _initEmbeddingPoolPromise;
 }
 
-/** Shut down the embedding worker pool and clear the embedding slot. */
 export async function shutdownEmbeddingPool() {
   const pool = _getEmbeddingPoolSlot();
   if (!pool) return;
@@ -758,7 +708,6 @@ export async function shutdownEmbeddingPool() {
   }
 }
 
-/** Read-through accessor for code that wants to check for an installed pool. */
 export function getEmbeddingPool() {
   return _getEmbeddingPoolSlot();
 }

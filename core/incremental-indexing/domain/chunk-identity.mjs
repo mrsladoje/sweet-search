@@ -54,9 +54,6 @@ import { contentHashSync } from '../infrastructure/hashing.mjs';
  *   `async function foo (a , b ) {`
  *   `async function foo(a, b) {`
  * hash identically.
- *
- * @param {string} signature
- * @returns {string}
  */
 export function normalizeSignature(signature) {
   if (typeof signature !== 'string') return '';
@@ -76,17 +73,10 @@ export function normalizeSignature(signature) {
  * the encoder input and therefore the dense embedding, but they do not
  * change the chunk's identity in v1 unless the chunker drops them in a
  * subsequent pass.
- *
- * @param {string} content
- * @returns {string}
  */
 export function normalizeAnonymousContent(content) {
   if (typeof content !== 'string') return '';
-  // 1. Collapse internal runs of whitespace (preserving newlines so the
-  //    rolling hash still distinguishes multi-line forms from one-line
-  //    forms).
-  // 2. Drop blank lines so format-on-save reflows are invisible.
-  // 3. Trim leading/trailing whitespace overall.
+  // Newlines are kept so the rolling hash still distinguishes multi-line forms from one-line forms.
   const collapsed = content.replace(/[ \t]+/g, ' ');
   const noBlanks = collapsed.split('\n').map((line) => line.trim()).filter(Boolean).join('\n');
   return noBlanks;
@@ -103,9 +93,6 @@ export function normalizeAnonymousContent(content) {
  *   - `chunk.metadata.parent_path` — pre-joined `/`-separated string
  *   - `chunk.metadata.parent_symbol` plus `chunk.metadata.parent_type`
  *   - undefined → empty string (top-level)
- *
- * @param {object} metadata
- * @returns {string}
  */
 export function parentSymbolPath(metadata) {
   if (!metadata) return '';
@@ -119,12 +106,6 @@ export function parentSymbolPath(metadata) {
   return '';
 }
 
-/**
- * Determine whether a chunk is symbol-attached for identity purposes.
- *
- * @param {object} chunk
- * @returns {boolean}
- */
 export function isSymbolAttached(chunk) {
   if (!chunk || !chunk.metadata) return false;
   const symbol = chunk.metadata.symbol;
@@ -138,12 +119,6 @@ export function isSymbolAttached(chunk) {
   return chunkType !== 'code' && chunkType !== 'plain' && chunkType !== 'doc' && chunkType !== 'text';
 }
 
-/**
- * Compute the rolling content hash used by anonymous chunk identity.
- *
- * @param {string} content
- * @returns {string}
- */
 export function rollingContentHash(content) {
   return contentHashSync(normalizeAnonymousContent(content));
 }
@@ -164,8 +139,6 @@ export function rollingContentHash(content) {
  * `assignStructuralIds(chunks, filePath)` below computes the indices in
  * a single pass and is the recommended entry point.
  *
- * @param {object} chunk
- * @param {string} filePath
  * @param {number|null} occurrenceIndex  Mandatory for anonymous chunks.
  * @returns {{chunkStructId:string, structural:boolean, rollingHash:string|null, reason:'symbol'|'anonymous'|'fallback'}}
  */
@@ -191,7 +164,6 @@ export function deriveStructuralId(chunk, filePath, occurrenceIndex) {
     };
   }
 
-  // Anonymous regime.
   if (occurrenceIndex == null || !Number.isFinite(occurrenceIndex) || occurrenceIndex < 0) {
     // Per plan § 7.2, an anonymous chunk without an occurrence index is a
     // bug at the call site, NOT a fallback opportunity. The wrapper below
@@ -214,20 +186,13 @@ export function deriveStructuralId(chunk, filePath, occurrenceIndex) {
 /**
  * Assign stable structural IDs across an ordered chunk list for one file.
  *
- * Pass order:
- *   1. First pass: classify each chunk as symbol-attached / anonymous,
- *      compute rolling hashes for anonymous chunks.
- *   2. Second pass: number anonymous chunks within each
- *      `(parent_path, rolling_hash)` population (occurrence_index_in_parent).
- *   3. Emit a parallel array of structural-id records aligned with the
- *      input chunk list.
+ * Anonymous chunks are numbered within each `(parent_path, rolling_hash)` population
+ * (occurrence_index_in_parent). The result is a parallel array aligned with the input.
  *
  * Mutating the input chunks is intentionally avoided here; the caller
  * decides whether to write the IDs onto chunks, into a SQL transaction,
  * or both.
  *
- * @param {Array<object>} chunks
- * @param {string} filePath
  * @returns {Array<{chunkStructId:string, structural:boolean, rollingHash:string|null, reason:'symbol'|'anonymous'|'fallback', occurrenceIndex:number|null}>}
  */
 export function assignStructuralIds(chunks, filePath) {
@@ -253,7 +218,6 @@ export function assignStructuralIds(chunks, filePath) {
       }
       continue;
     }
-    // Anonymous chunk: compute population key, occurrence index, then derive.
     const parentPath = parentSymbolPath(chunk?.metadata || {});
     const text = chunk?.content || chunk?.text || '';
     const rolling = rollingContentHash(text);

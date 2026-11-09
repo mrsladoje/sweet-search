@@ -25,16 +25,12 @@ export const ENTITY_KIND_KEYWORDS = {
 // without matching pure descriptive corpus prose like "Convert XML to URL List".
 const IMPL_INTENT_RE = new RegExp(
   '\\b(' + [
-    // English wh-questions about location/behaviour
     'where', 'what', 'how does', 'how do',
     'when',
-    // Definition / implementation phrasing
     'implements?', 'implementation', 'defines?', 'definition', 'declared?',
     'decides?',
-    // Code-structure nouns
     'function', 'functions', 'method', 'methods', 'class', 'classes',
     'constructor', 'module', 'library', 'crate', 'package',
-    // Verbs that strongly signal a code unit
     'dispatch(?:es|er)?', 'handles?', 'handler', 'handlers',
     'bind(?:s|ing)?',
     'parses?', 'parsed', 'parser', 'parsers',
@@ -92,7 +88,7 @@ const ANCILLARY_INTENT_RE = /\b(config|configuration|manifest|workflow|ci|github
 export function classifyFileKindIntent(query, { agentFormat = false } = {}) {
   const q = (query || '').toLowerCase();
   if (!q) return 'unknown';
-  // Type-seeking trumps test-seeking when both fire (existing convention).
+  // Type-seeking trumps test-seeking when both fire.
   if (TYPES_INTENT_RE.test(q)) return 'types';
   if (DOCS_INTENT_RE.test(q))  return 'docs';
   // Agent format: `tests` (which re-ranks there) only when the question asks for tests; a
@@ -154,89 +150,9 @@ export function splitIdentifierName(name) {
     .filter(Boolean);
 }
 
-/**
- * Mega-chunk size penalty (added 2026-05-07 — 60-probe diagnosis).
- *
- * Long candidate chunks (entire 1500-line classes, 700-line module
- * functions) systematically outscore precise 30-line chunks even when the
- * latter contain the actual answer. The dense bi-encoder doesn't penalise
- * length the way BM25's `b` parameter does, so a mega-chunk that touches
- * many topics earns a moderate similarity to many queries.
- *
- * SOTA precedent: BM25 length normalization (Robertson & Zaragoza 2009),
- * subsequently incorporated as length penalties in dense rerankers
- * (ColBERTv2 token-budget caps, MS-MARCO-tuned cross-encoders). Soft
- * piecewise-linear here rather than `1/(1 + b·L/L_avg)` because (a) we
- * lack a per-corpus L_avg estimate at query time and (b) BM25-style
- * normalization is too aggressive for long behavioural-flow chunks where
- * length carries some signal.
- *
- * Tuning floor/slope to be PERMISSIVE — ONLY truly mega chunks lose score:
- *   - L ≤ 500 lines → factor 1.0 (no penalty — every reasonable function chunk)
- *   - L = 800       → ~0.91 (typical large class)
- *   - L = 1000      → ~0.85
- *   - L ≥ 1500      → 0.80 (floor — entire-file chunks)
- *
- * Tightened cutoff from 200 → 500 after S6-Q6 gin regression: a 40-line
- * `New` function had been the right top-1, but penalising 200+ chunks
- * shifted the within-file ranking. 500-line cutoff exempts every legit
- * function/method chunk and only demotes whole-class megachunks.
- *
- * Override via env: SWEET_SEARCH_MEGA_CHUNK_CUTOFF (default 500),
- * SWEET_SEARCH_MEGA_CHUNK_SLOPE (default 0.0003 per-line),
- * SWEET_SEARCH_MEGA_CHUNK_FLOOR (default 0.80). Disable via
- * SWEET_SEARCH_MEGA_CHUNK_FLOOR=1 (no-op) or
- * `ablations: ['no-mega-chunk-penalty']`.
- *
- * Diagnosed cases (60-probe new-set):
- *   - S5-Q10 flask: 1516-line `class Flask` chunk beat 30-line `abort` fn
- *   - S4-Q2 fastify: 735-line `function fastify` chunk beat 1-line
- *     `kRouteContext` symbol declaration
- */
-/**
- * Symbol-exact-match boost for definition-style queries.
- *
- * Added 2026-05-07 — both diagnoses (FreshStack uv #1, 60-probe new-set #1)
- * converged on this as the highest-impact fix. When a query has the shape
- * "show me X struct/enum/class/function/...", chunks where the symbol name
- * EQUALS X (case-insensitive, after stemming s/es/ing suffixes) should
- * dominate the lexical-collision sibling chunk that the encoder happens
- * to score nearby.
- *
- * Diagnosed cases (combined): Cache vs CacheArgs (UV-DEF-1), Resolver vs
- * Resolution (UV-DEF-4), ContentTypeParser vs ContentType (S6-Q2),
- * Flask vs App (S6-Q9), buildErrorHandler vs setErrorHeaders (S6-Q3),
- * Set method vs Value method (S3-Q6), get_send_file_max_age vs
- * send_static_file (S3-Q9). 8+ failures in the new-probe set, 4 in
- * FreshStack — strong evidence of a real systematic gap.
- *
- * SOTA precedent: BM25F field-weighted boosting on the symbol field
- * (canonical IR move when one field carries decisive signal); ColBERTv2
- * "expansion-aware reranking" with identifier prior; Sourcegraph Cody's
- * "hint" tokens that bias toward exact symbol matches in graph-aware
- * retrieval (Cody arXiv 2408.05344).
- *
- * Trigger pattern (conservative — only fires on UNAMBIGUOUS definition
- * queries):
- *   /\b(show|give|find|describe|display|fetch).+?(?:the\s+)?(\w+)\s+
- *    (struct|enum|class|fn|function|method|trait|type|interface|impl|
- *     definition|signature|prototype|constructor)\b/i
- *
- * Plus a "WHAT IS X TYPE" alternate trigger:
- *   /\bwhat\s+(?:is|does)\s+(?:the\s+)?(\w+)\s+
- *    (struct|enum|class|function|method|type)\b/i
- *
- * Boost: 1.30× when chunk.symbol case-insensitive-equals the captured
- * identifier. Capped at 1.30 (mild — definition queries account for ≤25%
- * of probe traffic so a stronger boost risks breaking non-DEF queries).
- *
- * Override env: SWEET_SEARCH_SYMBOL_EXACT_BOOST (default 1.30, set to 1.0
- * to disable). `ablations: ['no-symbol-exact-boost']` also disables.
- */
 // Lazy quantifier on the prefix so the capture greedily prefers an
 // identifier-like noun (buildErrorHandler) over a keyword that happens
-// to also be in the trailing list (function/definition). Verified
-// 2026-05-07: greedy version captured "function" for
+// to also be in the trailing list (function/definition). Greedy version captured "function" for
 // "show me the buildErrorHandler function definition in full",
 // missing the contained-entity boost on S6-Q3. But lazy also fails on
 // "show me the full Engine struct" (captures "the"/"full") — which is
@@ -271,8 +187,8 @@ const SYMBOL_WHATIS_QUERY_RE = new RegExp(
 );
 // "where is the X function/method/struct" pattern — captures probe-style queries
 // like S3-Q4 "where is the Default function..." and S3-Q6 "where is the Set
-// method on Context...". Added 2026-05-07 after F7 trace showed extractSymbolDefinitionTarget
-// returned null for these queries, missing the contained-entity boost.
+// method on Context..."; without it extractSymbolDefinitionTarget returned null for these
+// queries, missing the contained-entity boost.
 const SYMBOL_WHERE_QUERY_RE = new RegExp(
   '\\bwhere\\s+(?:is|does)\\s+(?:the\\s+)?' +
   '(\\w+)\\s+' +
@@ -335,7 +251,6 @@ export function looksLikeStrictIdentifier(token) {
   if (!token || token.length < 4) return false;
   if (/\d/.test(token)) return true;
   if (/_/.test(token)) return true;
-  // Internal uppercase: after the first character, find another upper.
   // `^.[a-z0-9]*[A-Z]` is too permissive (matches XYz). Require any
   // upper at position ≥1 (so "Aa" doesn't trigger but "AaA" does).
   for (let i = 1; i < token.length; i++) {
@@ -357,7 +272,7 @@ export function looksLikeStrictIdentifier(token) {
 export function extractIdentifierMentions(query) {
   if (!query || typeof query !== 'string') return null;
   const mentions = new Set();
-  // 2026-05-14: preserve leading `$` so identifiers like `$ZodType` /
+  // Preserve leading `$` so identifiers like `$ZodType` /
   // `$ZodTypeInternals` (zod v4/core public-API convention — structural
   // interfaces are $-prefixed while runtime classes are not) round-trip
   // through tokenization. Mirrors F10's fix for the F9 path (line ~1944)
@@ -414,7 +329,7 @@ export function querySpellingWords(query) {
 }
 
 /**
- * Path-token boost (added 2026-05-07 — 60-probe diagnosis NEW pattern).
+ * Path-token boost (60-probe diagnosis).
  *
  * When a query mentions a crate / module / package name (e.g. "in globset",
  * "in render package", "from binding/json"), boost candidates whose file
@@ -425,7 +340,7 @@ export function querySpellingWords(query) {
  * SOTA: BM25F filename field weighting (Sourcegraph "Keeping it boring..."
  * April 2025). Quote: "we should be able to use these indexes to reward
  * symbol and FILENAME matches... think of contents, symbols, and filenames
- * as different 'fields' within a file." See docs/SOTA_RESEARCH_2026_FIXES.md.
+ * as different 'fields' within a file."
  *
  * Diagnosed cases (60-probe new-set #4): ripgrep S6-Q8 (two `Glob` structs
  * in different crates — symbol-exact alone CANNOT disambiguate; the query

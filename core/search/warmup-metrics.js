@@ -1,14 +1,10 @@
 /**
- * Warmup Metrics & Adaptive Learning (Step 9 of Vocabulary Prewarm)
+ * Warmup Metrics & Adaptive Learning
  *
  * Tracks per-mode cache hit rates, latency percentiles, and provides
  * promotion/demotion rules for adaptive vocabulary management.
- * Integrates with Step 0 telemetry from embedding-cache.js.
+ * Integrates with the telemetry from embedding-cache.js.
  */
-
-// =============================================================================
-// WARMUP METRICS CLASS
-// =============================================================================
 
 export class WarmupMetrics {
   constructor() {
@@ -109,19 +105,12 @@ export class WarmupMetrics {
     }
   }
 
-  /**
-   * Reset all counters.
-   */
   reset() {
     for (const mode of ['lexical', 'semantic', 'hybrid']) {
       this[mode] = { hits: 0, misses: 0, totalLatencyMs: 0, count: 0, latencies: [] };
     }
   }
 }
-
-// =============================================================================
-// CACHE HIT DEFINITIONS
-// =============================================================================
 
 /**
  * Determine if a query event counts as a cache hit for its mode.
@@ -151,10 +140,6 @@ export function isWarmupHit(entry) {
   }
 }
 
-// =============================================================================
-// PROMOTION / DEMOTION (Adaptive Learning)
-// =============================================================================
-
 /**
  * Find terms that should be promoted to the warmup vocabulary.
  *
@@ -181,10 +166,8 @@ export function getPromotionCandidates(telemetryEntries, vocabularyTerms) {
     const query = entry.query?.toLowerCase().trim();
     if (!query) continue;
 
-    // Count occurrences
     queryCounts.set(query, (queryCounts.get(query) || 0) + 1);
 
-    // Fast-promote: cache miss + code identifier source
     if (!entry.hit && entry.source === 'code-identifier' && !hasVocab(query)) {
       fastPromoteCandidates.add(query);
     }
@@ -192,16 +175,13 @@ export function getPromotionCandidates(telemetryEntries, vocabularyTerms) {
 
   const candidates = [];
 
-  // PROMOTE: 3+ uses, not in vocabulary
   for (const [term, count] of queryCounts) {
     if (count >= 3 && !hasVocab(term)) {
       candidates.push({ term, reason: 'promote', queryCount: count });
     }
   }
 
-  // FAST-PROMOTE: code identifier misses
   for (const term of fastPromoteCandidates) {
-    // Skip if already in promote list
     if (candidates.some(c => c.term === term)) continue;
     candidates.push({
       term,
@@ -210,7 +190,6 @@ export function getPromotionCandidates(telemetryEntries, vocabularyTerms) {
     });
   }
 
-  // Sort by query count descending
   candidates.sort((a, b) => b.queryCount - a.queryCount);
   return candidates;
 }
@@ -228,7 +207,6 @@ export function getPromotionCandidates(telemetryEntries, vocabularyTerms) {
 export function getDemotionCandidates(vocabularyTerms, telemetryEntries, days = 7) {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
 
-  // Build a map of term -> last seen timestamp
   const lastSeen = new Map();
   for (const entry of telemetryEntries) {
     const query = entry.query?.toLowerCase().trim();
@@ -259,10 +237,6 @@ export function getDemotionCandidates(vocabularyTerms, telemetryEntries, days = 
 
   return candidates;
 }
-
-// =============================================================================
-// WORKING SET SIZE ESTIMATION
-// =============================================================================
 
 /**
  * Estimate working set size = unique query clusters in a time window.
@@ -343,10 +317,6 @@ export function estimateWorkingSetSize(
   return { wss, warmupSize, recommendation };
 }
 
-// =============================================================================
-// STATS REPORT FORMATTER
-// =============================================================================
-
 /**
  * Render a horizontal bar chart segment.
  * @param {number} ratio - 0 to 1
@@ -417,31 +387,26 @@ export function formatStatsReport(metrics, communities = [], vocabInfo = {}) {
   lines.push('Vocabulary Warmup Statistics');
   lines.push('\u2501'.repeat(37));
 
-  // Vocabulary info
   lines.push(
     `Vocabulary size:    ${identifiers.toLocaleString()} identifiers + ${phrases.toLocaleString()} community phrases (${depth} depth)`,
   );
 
-  // Communities
   lines.push(
     `Communities:        ${communityCount} detected (Leiden, import-graph-based)`,
   );
 
-  // Last warmup
   const warmupAgo = _timeAgo(vocabInfo.lastWarmup);
   const warmupDetail = vocabInfo.warmupType
     ? ` (${vocabInfo.warmupType}${vocabInfo.newTerms ? `, ${vocabInfo.newTerms} new terms` : ''})`
     : '';
   lines.push(`Last warmup:        ${warmupAgo}${warmupDetail}`);
 
-  // Hashes
   if (vocabInfo.graphHash) {
     lines.push(`Import graph hash:  ${vocabInfo.graphHash} (up to date)`);
   }
 
   lines.push('');
 
-  // Per-mode cache hit rates
   const totalQueries = ['lexical', 'semantic', 'hybrid'].reduce(
     (sum, m) => sum + metrics[m].hits + metrics[m].misses,
     0,
@@ -458,7 +423,6 @@ export function formatStatsReport(metrics, communities = [], vocabInfo = {}) {
     lines.push(`  ${label.padEnd(10)} ${pct.padStart(5)}%  ${bar} (${bucket.hits}/${total} queries)`);
   }
 
-  // Overall
   const overallRate = metrics.overallHitRate();
   const overallPct = (overallRate * 100).toFixed(1);
   const overallBar = _barChart(overallRate);
@@ -467,7 +431,6 @@ export function formatStatsReport(metrics, communities = [], vocabInfo = {}) {
 
   lines.push('');
 
-  // Latency percentiles
   lines.push('Latency (p50 / p95):');
   for (const mode of ['lexical', 'semantic', 'hybrid']) {
     const p50 = Math.round(metrics.latencyPercentile(mode, 50));
@@ -478,7 +441,6 @@ export function formatStatsReport(metrics, communities = [], vocabInfo = {}) {
 
   lines.push('');
 
-  // Top cache misses (promotion candidates)
   const topMisses = vocabInfo.topMisses || [];
   if (topMisses.length > 0) {
     lines.push(`Top ${Math.min(topMisses.length, 5)} Cache Misses (candidates for next warmup):`);
@@ -488,7 +450,6 @@ export function formatStatsReport(metrics, communities = [], vocabInfo = {}) {
     }
   }
 
-  // F5: Community breakdown with phrases and topEntities
   if (communities.length > 0) {
     lines.push('');
     lines.push('Communities (Leiden):');
@@ -504,10 +465,6 @@ export function formatStatsReport(metrics, communities = [], vocabInfo = {}) {
 
   return lines.join('\n');
 }
-
-// =============================================================================
-// TELEMETRY ENTRY PARSING HELPERS
-// =============================================================================
 
 /**
  * Parse raw JSONL telemetry file content into entry objects.

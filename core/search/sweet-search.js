@@ -33,7 +33,6 @@ import { QualityScorer, setRepoMapModule } from '../ranking/quality-scorer.js';
 import { pageRank, loadGraph, buildAdjacency } from '../graph/repo-map.js';
 import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
 
-// SOLID extracted modules
 import * as fusion from './search-fusion.js';
 import * as boost from './search-boost.js';
 import * as format from './search-format.js';
@@ -50,10 +49,6 @@ import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
 
-// =============================================================================
-// STRUCTURAL QUERY PARSING (entity + type extraction for --structural flag)
-// =============================================================================
-
 const STRUCTURAL_PATTERNS = {
   callers: /\b(?:(?:what|who|show|find|list)\s+(?:calls?|callers?|calling|invokes?|references?|uses)\s+(?:of\s+|to\s+)?|callers?\s+of\s+|what\s+uses\s+|usages?\s+of\s+|references?\s+to\s+)(\w+)/i,
   callers2: /\bwhere\s+is\s+(\w+)\s+called\b/i,
@@ -63,13 +58,6 @@ const STRUCTURAL_PATTERNS = {
   impact: /\b(?:impact\s+of\s+(?:changing|modifying|refactoring|updating|deleting|removing|renaming|moving)|(?:what\s+)?depends?\s+on|(?:will|what)\s+breaks?\s+if\s+(?:I|we)\s+(?:change|modify|update|delete|remove)|affected\s+by\s+(?:changes?\s+to|modifying)?|(?:downstream|ripple)\s+effects?\s+of|what\s+needs?\s+to\s+change\s+if\s+(?:I|we)\s+(?:refactor|modify))\s+(\w+)/i,
 };
 
-/**
- * Parse a structural query to extract the type and target entity.
- * Used when structural mode is forced via explicit flag.
- *
- * @param {string} query
- * @returns {{ structuralType: string|null, targetEntity: string|null }}
- */
 // Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
 // by scripts/profile-search-stages.mjs.
 function __ptStart() {
@@ -86,7 +74,6 @@ function parseStructuralQuery(query) {
   for (const [type, pattern] of Object.entries(STRUCTURAL_PATTERNS)) {
     const match = query.match(pattern);
     if (match) {
-      // Find last non-undefined capture group
       let entity = null;
       for (let i = match.length - 1; i >= 1; i--) {
         if (match[i] !== undefined) { entity = match[i]; break; }
@@ -190,7 +177,6 @@ export class SweetSearch {
     // Direct-access float vector store for Stage 2.5 (replaces SQLite on hot path)
     this.floatVectorStore = new FloatVectorStore();
     this.qualityWeight = options.qualityWeight ?? 0;
-    // Cascade scoring (Section 26): MaxSim → gate → conditional CE
     this.cascadeEnabled = options.cascadeEnabled
       ?? envOrProject('SWEET_SEARCH_CASCADE_ENABLED', 'enabled', 'enabled')
       ?? CASCADE_CONFIG.enabled;
@@ -240,7 +226,6 @@ export class SweetSearch {
     this._codebaseChunkTypeMap = null;
   }
 
-  /** Initialize all search components */
   async init({ onGrepReady } = {}) {
     if (this.initialized) return;
     const start = Date.now();
@@ -360,8 +345,6 @@ export class SweetSearch {
           + `(${resolved.reason}${manifest.modelId ? `, index=${manifest.modelId}` : ''})`,
         );
         if (resolved.warning) {
-          // One-line warning — keeps the log digestible, full guidance is
-          // in docs/BENCH_TODO.md.
           console.warn(`[SweetSearch] ${resolved.warning}`);
         }
 
@@ -718,7 +701,6 @@ export class SweetSearch {
     this.log(`SweetSearch: Grep-only initialized in ${Date.now() - start}ms`);
   }
 
-  /** Main search entry point. */
   async search(query, options = {}) {
     const {
       k = 10, mode: requestedMode = 'auto', regex = '', expand = true, rerank = true,
@@ -744,7 +726,6 @@ export class SweetSearch {
     const start = Date.now();
     const stats = { query };
 
-    // P2.2: Intent-aware retrieval routing
     let effectiveGraphExpand = graphExpand;
     let intentResult;
     let intentPolicy = null;
@@ -764,7 +745,6 @@ export class SweetSearch {
       }
     }
 
-    // Step 1: Route query
     const routing = mode === 'auto' ? routeQuery(query) : null;
     let searchMode;
     if (mode === 'auto') {
@@ -787,7 +767,6 @@ export class SweetSearch {
     }
     this.log(`Search mode: ${searchMode}`);
 
-    // Step 2: Execute search based on mode
     let results;
     let semanticStats = null;
 
@@ -977,18 +956,15 @@ export class SweetSearch {
       }
     }
 
-    // Step 3: Post-retrieval processing (delegated to extracted module)
     const postRetrievalResult = await this._applyPostRetrieval(results, query, options, {
       stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start, fromSearch: true,
       _entityKindCache, _entityNameCache, _resultTextCache, _fullFileTextCache,
       _isTestSupportCache, _isTestChunkCache, _fileKindCache,
     });
 
-    // Step 4: Agent packaging (lexical/semantic/hybrid/structural).
     // The pattern (colgrep) branch already returns its own pre-packaged response
     // and short-circuits earlier in this method. For non-pattern modes, apply the
     // shared packager when the caller explicitly asked for an agent format.
-    // Default behavior (no agent format) is unchanged.
     if (isAgentFormat(options.format)) {
       const finalResults = postRetrievalResult.results || [];
       const finalStats = postRetrievalResult.stats || {};
@@ -1013,7 +989,6 @@ export class SweetSearch {
         _siblingLine: options._siblingLine,
       });
       __ptEnd('packageForAgent', __t_pkg);
-      // Preserve the underlying retrieval stats so callers can inspect both layers
       agentResponse.stats = finalStats;
       return agentResponse;
     }
@@ -1028,7 +1003,6 @@ export class SweetSearch {
 
   /** Structural search path (GraphRAG structural queries — opt-in via explicit flag) */
   async structuralSearch(query, routing, options = {}) {
-    // Extract type+entity from routing (if available) or from query patterns
     const parsed = routing && routing.structuralType
       ? routing
       : parseStructuralQuery(query);
@@ -1070,7 +1044,6 @@ export class SweetSearch {
     };
   }
 
-  /** Semantic search dispatcher. Delegates to 3Stage or Standard based on config. */
   async semanticSearch(query, options = {}) {
     const { k = 10, rerank = true, useLateInteraction = this.useLateInteraction } = options;
     const semanticOptions = { ...options, k, rerank, useLateInteraction };
@@ -1082,7 +1055,6 @@ export class SweetSearch {
 
   /** O(N) vector scan fallback (when HNSW not available). Filters stale entities. */
   async vectorScan(queryEmbedding, limit = 100) {
-    // Ephemeral scan — opens, reads, closes (no persistent connection)
     const rows = this.codebaseRepo.scanAllVectors();
     const candidates = [];
 
@@ -1130,7 +1102,7 @@ export class SweetSearch {
   }
 
   /**
-   * Fix 5.5: Load float embeddings from SQLite for a set of chunk IDs.
+   * Load float embeddings from SQLite for a set of chunk IDs.
    * Uses batch WHERE IN query for efficiency (single round-trip).
    * Returns Map<id, Float32Array>.
    */
@@ -1145,13 +1117,9 @@ export class SweetSearch {
     }
   }
 
-  // approximateLateInteractionScore removed — replaced by real per-token MaxSim via LateOn-Code
-  // in search-semantic.js (Phase 4 of LATE_INTERACTION.md)
-
   /** Log message (if verbose). Uses stderr to avoid corrupting JSON output. */
   log(message) { if (this.verbose) console.error(`[SweetSearch] ${message}`); }
 
-  /** Log performance stats */
   logPerformance(stats) {
     const target = PERFORMANCE_TARGETS.latency;
     let status = 'OK';
@@ -1160,7 +1128,6 @@ export class SweetSearch {
     console.error(`[Perf] ${stats.path} | ${stats.total_ms}ms | ${status}`);
   }
 
-  /** Close all connections */
   close() {
     try { this.binaryHnswIndex?.close?.(); } catch { /* best-effort */ }
     this.graphSearch.close();
@@ -1169,7 +1136,6 @@ export class SweetSearch {
   }
 }
 
-// Prototype wiring (extracted module functions)
 Object.assign(SweetSearch.prototype, {
   getResultKey: fusion.getResultKey,
   minMaxNormalize: fusion.minMaxNormalize,
@@ -1207,7 +1173,6 @@ SweetSearch.BOOST_POLICY = boost.BOOST_POLICY;
 let _warmSearcher = null;
 let _warmInitPromise = null;
 
-/** Get or create a warm SweetSearch instance (singleton). */
 export async function getWarmSearcher(options = {}) {
   if (_warmSearcher && _warmSearcher.initialized) return _warmSearcher;
   if (_warmInitPromise) { await _warmInitPromise; return _warmSearcher; }

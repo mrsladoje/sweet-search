@@ -101,11 +101,7 @@ export const SPARSE_SYMBOL_MASKS = {
   other: 1 << 5,
 };
 
-/**
- * Resolve a symbol type string to its sparse gram bitmask value.
- * @param {string} symbolType
- * @returns {number} bitmask (0 if unrecognized)
- */
+/** @returns {number} bitmask (0 if unrecognized) */
 export function resolveSparseSymbolMask(symbolType) {
   if (typeof symbolType !== 'string') return 0;
 

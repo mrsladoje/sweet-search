@@ -1,14 +1,5 @@
-/**
- * Search Configuration — file patterns, performance targets.
- * Split from core/config.js during DDD migration.
- */
-
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
-
-// =============================================================================
-// FILE PATTERNS
-// =============================================================================
 
 // Secrets and environment files. Excluded from every index, including the grep-only
 // corpus (grep-corpus.js), because the sparse-gram index stores substrings of content.
@@ -381,7 +372,6 @@ export const AGENTIC_GITIGNORE_ALLOWLIST = {
  * Load per-project configuration from .sweet-search.config.json
  * Precedence: config file > defaults. Environment variables > config file.
  *
- * @param {string} [projectRoot] - Project root to search for config file
  * @returns {{ include: string[], exclude: string[], maxFileSize: number, respectGitignore: boolean, projectRoot?: string }}
  */
 export function loadProjectConfig(projectRoot = process.cwd()) {
@@ -400,7 +390,6 @@ export function loadProjectConfig(projectRoot = process.cwd()) {
     const raw = readFileSync(configPath, 'utf-8');
     const config = JSON.parse(raw);
 
-    // Validate known keys, warn on unknown
     const knownKeys = new Set(['include', 'exclude', 'projectRoot', 'indexDocs', 'maxFileSize', 'respectGitignore', 'lateInteractionModel', 'cascade']);
     for (const key of Object.keys(config)) {
       if (!knownKeys.has(key)) {
@@ -427,10 +416,6 @@ export function loadProjectConfig(projectRoot = process.cwd()) {
     };
   }
 }
-
-// =============================================================================
-// PERFORMANCE TARGETS
-// =============================================================================
 
 export const PERFORMANCE_TARGETS = {
   latency: {

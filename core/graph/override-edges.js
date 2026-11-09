@@ -85,8 +85,6 @@ function langFamily(filePath) {
 }
 
 /**
- * Derive `overrides` edges from the graph's current facts and write them.
- *
  * Only LIVE entities and inheritance rows are read, and the live `overrides` rows are
  * diffed against the new set — a vanished edge is retired at `epoch` (deleted when this
  * epoch wrote it), a new edge is inserted with `epoch_written = epoch`, an unchanged edge
@@ -216,7 +214,6 @@ export function computeOverrideEdges(rows, inheritanceRows, extensionRows) {
   const g = groupInheritance(rows, inheritanceRows, extensionRows);
   if (!g) return [];
   const { containersByFile, nameKey, groupKey, basesOfGroup, relevant, relevantFiles } = g;
-  // Methods by owning group.
   const methodsByGroup = new Map(); // groupKey → Map(name → [method])
   for (const m of rows) {
     if (!METHOD_TYPES.has(m.type) || m.start_line == null) continue;

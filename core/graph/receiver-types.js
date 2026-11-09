@@ -424,10 +424,6 @@ function phpUseAliases(content) {
   return aliases;
 }
 
-// ---------------------------------------------------------------------------
-// Locals typed by a same-file callee's declared return type
-// ---------------------------------------------------------------------------
-
 const RET_TYPE_LANG = (f) => (PHP_FILE.test(f) ? 'php' : GO.test(f) ? 'go' : TYPE_FIRST.test(f) ? 'tf'
   : PY_FILE.test(f) ? 'py' : RUST_FILE.test(f) ? 'rs' : /\.swift$/i.test(f) ? 'swift'
   : COLON_TYPED_FILE.test(f) ? 'colon' : null);

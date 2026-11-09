@@ -96,9 +96,6 @@ export function jobsAreCoalescible(a, b) {
  * `jobsAreCoalescible`). Pass `{ coalesce: false }` to force-append
  * (callers that intentionally want to retry the same tier work).
  *
- * @param {string} stateDir   `.sweet-search/` directory
- * @param {object} job
- * @param {{coalesce?:boolean}} [opts]
  * @returns {{enqueued:boolean, coalescedWith?:object}}
  */
 export function enqueueMaintenanceJob(stateDir, job, opts = {}) {
@@ -115,12 +112,8 @@ export function enqueueMaintenanceJob(stateDir, job, opts = {}) {
 }
 
 /**
- * Read the queue and return all jobs in insertion order. Idempotent — does
- * not mutate the file. `processMaintenanceQueue` rewrites the queue after
- * acknowledging successful jobs.
- *
- * @param {string} stateDir
- * @returns {object[]}
+ * Read the queue and return all jobs in insertion order. Does not mutate the
+ * file; `processMaintenanceQueue` rewrites the queue after acknowledging successful jobs.
  */
 export function readMaintenanceQueue(stateDir) {
   const p = defaultQueuePath(stateDir);
@@ -133,19 +126,14 @@ export function readMaintenanceQueue(stateDir) {
     try {
       out.push(JSON.parse(trimmed));
     } catch {
-      // Skip malformed lines; Phase 6 surfaces these via `reconcile inspect`.
+      // Skip malformed lines; `reconcile inspect` surfaces these.
     }
   }
   return out;
 }
 
 /**
- * Move a job that failed three times to the dead-letter file. Plan § 13
- * Phase 6 surfaces the dead letter via the operator CLI.
- *
- * @param {string} stateDir
- * @param {object} job
- * @param {Error} err
+ * Move a job that failed three times to the dead-letter file; the operator CLI surfaces it.
  */
 export function appendDeadLetter(stateDir, job, err) {
   fs.mkdirSync(stateDir, { recursive: true });
@@ -208,7 +196,6 @@ export function defaultMaintenanceHandlers(stateDir, options = {}) {
  * The first eligible job always runs (so a sub-job-duration budget still
  * makes forward progress); the budget gates only subsequent jobs.
  *
- * @param {string} stateDir
  * @param {{handlers?:object, maxJobs?:number, maxAttempts?:number, budgetMs?:number, now?:()=>number, onProgress?:(phase:string)=>void}} [options]
  */
 export async function processMaintenanceQueue(stateDir, options = {}) {

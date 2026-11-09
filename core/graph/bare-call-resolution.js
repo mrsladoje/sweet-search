@@ -158,8 +158,6 @@ function asDecision(tier, ownerOf, preferNonTest) {
  * Definitions a bare call `name(…)` in `caller` reaches, or [] when none or
  * ambiguous. `candidates`: callable entities named `name` (any file).
  *
- * @param {object} caller - entity making the call
- * @param {object[]} candidates
  * @param {{ ownerOf: Function, importsOf: Function }} index
  * @returns {object[]} the chosen overload set (empty = unresolved)
  */
@@ -354,7 +352,6 @@ export class BareCallResolver {
     return out;
   }
 
-  /** Owner lookups + imports for the files involved. */
   _index(entities) {
     const files = new Set(entities.map(e => e.file_path).filter(Boolean));
     const extra = this._hostsOf(files);

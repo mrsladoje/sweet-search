@@ -38,7 +38,6 @@ function loadAddon() {
  *
  * @param {string} tokenizerJsonPath - Absolute path to tokenizer.json
  * @returns {Function} Callable tokenizer: (text, opts) → { input_ids, attention_mask }
- * @throws {Error} If native addon is unavailable or tokenizer.json is missing
  */
 export async function createTokenizer(tokenizerJsonPath) {
   if (!tokenizerJsonPath || !existsSync(tokenizerJsonPath)) {
@@ -94,18 +93,15 @@ function createNativeWrapper(native) {
       return formatResult(result);
     }
 
-    // Batch encoding
     if (Array.isArray(textOrTexts)) {
       const result = native.encodeBatch(textOrTexts, maxLen, add_special_tokens);
       return formatResult(result);
     }
 
-    // Single encoding
     const result = native.encode(textOrTexts, maxLen, add_special_tokens);
     return formatResult(result);
   };
 
-  // Expose underlying native tokenizer for direct access (e.g. tokenToId)
   wrapper._native = native;
   wrapper.isNative = true;
 

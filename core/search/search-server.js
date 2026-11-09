@@ -1,7 +1,6 @@
 /**
  * Search Server Module
  *
- * Extracted from sweet-search.js (SOLID refactor).
  * Contains HTTP/Unix socket server for warm search and server management.
  *
  * IMPORTANT: Uses dynamic import() for sweet-search.js references
@@ -52,10 +51,6 @@ import {
   selectEntries,
 } from './agent-output-fixes.js';
 import { lineGutterEnabled, numberCodeLines, resolveGutterForm } from './search-read.js';
-
-// =============================================================================
-// Server constants
-// =============================================================================
 
 // Base for parsing request paths with `new URL`; never connected to.
 const REQUEST_URL_PARSE_BASE = 'http://localhost:9876';
@@ -749,10 +744,6 @@ function jsonSearchPayload(results, stats, totalTime, extra = {}) {
   };
 }
 
-// =============================================================================
-// Server implementation
-// =============================================================================
-
 export async function startServer() {
   const http = await import('http');
 
@@ -954,7 +945,6 @@ export async function startServer() {
     }
   };
 
-  // Shared request handler for both TCP and Unix socket
   const handleRequest = async (req, res) => {
     const reqUrl = req.url || '';
 
@@ -969,7 +959,6 @@ export async function startServer() {
     // Periodic cache clearing to prevent unbounded memory growth.
     requestCount++;
     if (requestCount % CACHE_CLEAR_INTERVAL === 0) {
-      // Clear module-level embedding cache singleton
       clearCache();
       // Force garbage collection if available (run with --expose-gc)
       if (global.gc) {
@@ -1080,7 +1069,6 @@ export async function startServer() {
         }
       }
 
-      // Additional search options
       const expand = url.searchParams.get('expand') !== 'false';
       const rerank = url.searchParams.get('rerank') !== 'false';
       const fusion = url.searchParams.get('fusion') || 'cc';  // Legacy (ignored for hybrid)
@@ -1089,14 +1077,12 @@ export async function startServer() {
         ? url.searchParams.get('late-interaction') === 'true'
         : LATE_INTERACTION_CONFIG.enabled;
 
-      // Output format options
       const format = url.searchParams.get('format') || 'json';
       const useColor = url.searchParams.get('color') !== 'false';
       const decorate = url.searchParams.get('decorate') !== 'false';
       const summary = url.searchParams.get('summary') === 'true';
       const mid = url.searchParams.get('mid') === 'true';
 
-      // Pattern mode: regex param (ColGrep hybrid search)
       const regex = url.searchParams.get('regex') || '';
       const SEARCH_SERVER_MAX_REGEX_LENGTH = 4096;
       if (regex.length > SEARCH_SERVER_MAX_REGEX_LENGTH) {
@@ -1151,7 +1137,6 @@ export async function startServer() {
         return;
       }
 
-      // Agent mode: context packaging (ColGrep agent format)
       const rawFormat = url.searchParams.get('format');
       const agentRequested = url.searchParams.get('agent') === 'true';
       const { agentFormat, renderText: renderAgentText } = resolveAgentSearchRequest(
@@ -1255,7 +1240,6 @@ export async function startServer() {
           }
           let { results, stats } = searchResult;
 
-          // Enrich with summaries if summary mode
           if (summary) {
             results = await searcher.enrichWithSummaries(results);
           }
@@ -1602,7 +1586,6 @@ export async function startServer() {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer launch: ${err?.message || err}\n`);
   }
 
-  // Handle graceful shutdown (shared idempotent teardown).
   process.on('SIGINT', () => { gracefulShutdown('sigint'); });
 
   // (1) Idle-TTL eviction — default ON. Unref'd so it never keeps the event
@@ -1707,10 +1690,6 @@ export async function startServer() {
   }
 }
 
-// =============================================================================
-// Server query and management
-// =============================================================================
-
 /** A slow client is cut off; a slow answer is not (see SEARCH_SERVER_TIMEOUT_MS). */
 export function configureServerTimeouts(server) {
   server.setTimeout(0);
@@ -1788,7 +1767,6 @@ export async function queryServer(query, options = {}) {
   } = options;
 
   return new Promise((resolve, reject) => {
-    // Build URL with all parameters
     const params = new URLSearchParams({
       q: query,
       mode,
@@ -2007,7 +1985,6 @@ export async function ensureDaemonForProjectRoot(expectedProjectRoot, {
   }
 
   if (health && health.resolvedProjectRoot && health.resolvedProjectRoot !== expected) {
-    // Wrong-repo daemon. Stop it and respawn with the correct env.
     await stopServer();
     const exited = await waitForServerExit();
     if (!exited) {
@@ -2094,7 +2071,6 @@ export async function autoSpawnServer({ quiet = false } = {}) {
 
   note('[AutoStart] Starting warm server in background...');
 
-  // Spawn detached process — run sweet-search with --serve
   const { daemonNodeArgs } = await import('./daemon-heap.js');
   // The daemon outlives this call: it must not carry the call's start stamp (CALL_STARTED_ENV),
   // or every later call it serves would start with its budget spent.

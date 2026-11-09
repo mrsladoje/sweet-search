@@ -247,7 +247,6 @@ export function getCoremlCascadeRoot() {
   return join(MODEL_DELIVERY_CONFIG.modelCacheRoot, 'coreml-cascade');
 }
 
-/** Subdirectory holding embedding variants. */
 export function getCoremlEmbedDir() {
   return join(getCoremlCascadeRoot(), 'embed');
 }
@@ -468,7 +467,6 @@ export function getCoremlCascadeResolvedDirs(liVariantKey = 'lateon-code') {
     return { embedDir: null, liDir: null, status: 'hardware-ineligible' };
   }
 
-  // Pick the LI cascade dir + present-count for the active variant.
   const useEdge = liVariantKey === 'lateon-code-edge';
   const liVariantPresent = useEdge ? state.liEdgePresent : state.liPresent;
   const liVariantDir = useEdge ? state.liEdgeDir : state.liDir;
@@ -593,9 +591,7 @@ export function getAllCoremlCachePaths() {
   return [root]; // rm -rf root cleans sibling .mlmodelc directories too
 }
 
-// ───────────────────────────────────────────────────────────────────
-// HuggingFace fetch + extract path
-// ───────────────────────────────────────────────────────────────────
+// HuggingFace fetch + extract path.
 //
 // The cascade ships as per-variant .tar.gz archives from the HF repo
 // named in coreml-cascade.json's `hfRepo` field. `sweet-search init`
@@ -664,7 +660,6 @@ export function formatVariantTarballPath(pattern, batch, seq) {
  * enough that bsdtar's natural fidelity is sufficient.
  */
 /**
- * @param {string} tarballPath
  * @param {number} maxExtractBytes - reject if declared sum exceeds this
  * @param {number} [maxEntries=10000] - reject if entry count exceeds this.
  *   The default is ~50× the largest real cascade variant; the parameter
@@ -759,7 +754,6 @@ function auditTarballExtractedSize(tarballPath, maxExtractBytes, maxEntries = 10
  * generous — a legitimate variant should extract to ~1.0-1.5× the
  * compressed size. See `auditTarballExtractedSize` above.
  *
- * @param {string} tarballPath    - Downloaded tarball on disk
  * @param {string} extractTarget  - Final path, e.g. `{cascadeRoot}/embed/nomic_bert_b64_s96_fp16.mlpackage`
  * @param {object} [options]
  * @param {number} [options.maxExtractBytes] - Hard cap on declared
@@ -1041,13 +1035,11 @@ export async function fetchCoremlCascade(options = {}) {
   const failures = [];
 
   for (const v of all) {
-    // Already installed — just account for it.
     if (!options.force && isValidMlpackage(v.fullPath)) {
       cached++;
       continue;
     }
 
-    // Find this variant's tarball metadata in the spec.
     const variantSpec = v.categorySpec.variants.find(
       s => s.batch === v.batch && s.seq === v.seq,
     );

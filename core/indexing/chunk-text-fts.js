@@ -175,10 +175,6 @@ export function ensureChunkTextFts(db, env = process.env) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Query side
-// ---------------------------------------------------------------------------
-
 // Query-tokenization stopwords (CLAUDE.md "OK to keep" category): English
 // scaffolding filtered from the OR query only. The phrase query keeps every
 // word, since an exact message includes them.

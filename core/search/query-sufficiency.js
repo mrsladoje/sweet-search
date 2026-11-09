@@ -1,5 +1,5 @@
 /**
- * Query-conditioned sufficiency evidence (2026-07).
+ * Query-conditioned sufficiency evidence.
  *
  * Answers ONE question, cheaply: does the top-1 packaged hit contain
  * positive evidence that it matches what the QUERY asked for? This is the
@@ -225,13 +225,11 @@ export function extractQueryEvidence(query, regex) {
   let m;
   while ((m = quoteRe.exec(q)) !== null) push(m[1] || m[2] || m[3]);
 
-  // Identifier-shaped tokens from the query text.
   for (const raw of q.split(/[\s,;()"'`]+/)) {
     const tok = raw.replace(/^[^A-Za-z0-9_$]+|[^A-Za-z0-9_$)]+$/g, '');
     if (looksLikeIdentifierToken(tok)) push(tok);
   }
 
-  // Literal runs from the regex (the exact thing the caller greps for).
   for (const run of regexLiteralRuns(regex)) push(run);
 
   return { anchors, subtokens: informativeSubtokens(q) };

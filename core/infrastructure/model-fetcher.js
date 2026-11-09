@@ -1,8 +1,6 @@
 /**
  * Model Fetcher — robust model file downloader with checksums, resumability,
  * atomic writes, retries, and progress reporting.
- *
- * Replaces the bare fetch→writeFileSync in late-interaction-model.js.
  */
 
 import { createHash } from 'crypto';
@@ -33,9 +31,7 @@ const STALL_TIMEOUT_MS = 30_000;
 // Minimum time between two redraws of the progress line.
 const PROGRESS_REDRAW_MS = 200;
 
-// =============================================================================
-// VERIFICATION CACHE (H6 — avoid N-worker SHA256 stall)
-// =============================================================================
+// Verification cache (H6 — avoid N-worker SHA256 stall).
 //
 // Without this cache, every worker_thread that calls `fetchModel(...)` for
 // the same ~600 MB safetensors file independently runs its own SHA256 stream
@@ -186,9 +182,6 @@ function recordVerified(filePath, sha256) {
   writeVerifiedSidecar(filePath, record);
 }
 
-/**
- * Get the managed cache directory for a HuggingFace model.
- */
 export function getModelCacheDir(hfId) {
   const normalized = hfId.replace('/', '--');
   const dir = join(MODEL_DELIVERY_CONFIG.modelCacheRoot, normalized);
@@ -218,9 +211,6 @@ export function modelCacheWriteError(err, cacheRoot) {
   return wrapped;
 }
 
-/**
- * Compute SHA256 of a local file.
- */
 export async function computeFileHash(filePath) {
   const hash = createHash('sha256');
   await pipeline(createReadStream(filePath), hash);
@@ -318,17 +308,8 @@ export function createProgressLine(label, { stream = process.stderr, now = Date.
 }
 
 /**
- * Download a single file from HuggingFace with retries, resumability, and atomic writes.
- *
- * @param {string} hfId - HuggingFace model ID (e.g. 'lightonai/LateOn-Code')
  * @param {string} filePath - File path within the model repo (e.g. 'model_int8.onnx')
- * @param {string} destDir - Local directory to save into
- * @param {object} options
- * @param {string} [options.sha256] - Expected SHA256 checksum
- * @param {number} [options.expectedSize] - Expected file size in bytes
- * @param {string} [options.hfEndpoint] - HuggingFace endpoint override
  * @param {function} [options.onProgress] - Progress callback(downloadedBytes, totalBytes)
- * @param {AbortSignal} [options.signal] - Abort signal
  * @param {number} [options.stallTimeoutMs] - Abort and resume an attempt that receives no bytes for this long
  * @param {boolean} [options.allowDownload] - Explicit override for
  *   MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload. When true, bypasses
@@ -349,7 +330,6 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
   mkdirSync(join(finalPath, '..'), { recursive: true });
   const tmpPath = finalPath + '.tmp';
 
-  // Check existing cache
   if (await isCacheValid(finalPath, expectedSize, sha256)) {
     return finalPath;
   }
@@ -389,7 +369,6 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
     let startByte = 0;
     let downloaded = 0;
     try {
-      // Check for partial download (resumability)
       if (existsSync(tmpPath)) {
         startByte = statSync(tmpPath).size;
       }
@@ -479,13 +458,11 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
 
       const downloadedSize = statSync(tmpPath).size;
 
-      // Verify size
       if (expectedSize && downloadedSize !== expectedSize) {
         unlinkSync(tmpPath);
         throw new Error(`Size mismatch: expected ${expectedSize} bytes, got ${downloadedSize}`);
       }
 
-      // Verify checksum
       if (sha256) {
         process.stderr.write(`[ModelFetcher] Verifying checksum...`);
         const hash = await computeFileHash(tmpPath);
@@ -526,9 +503,6 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
 }
 
 /**
- * Download all files for a registered model.
- *
- * @param {string} registryKey - Key in MODEL_REGISTRY
  * @param {object} [options] - Options passed to fetchModelFile
  * @returns {{ files: Map<string, string>, cached: number, downloaded: number }}
  */

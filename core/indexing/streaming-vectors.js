@@ -109,8 +109,6 @@ function* windows(n, size) {
   for (let i = 0; i < n; i += size) yield [i, Math.min(i + size, n)];
 }
 
-// ── temp spill store ──
-
 async function openSpillStore() {
   const Database = (await import('better-sqlite3')).default;
   const storePath = DB_PATHS.codebase + '.staging-chunks.db';
@@ -128,10 +126,6 @@ async function openSpillStore() {
   const readRange = db.prepare('SELECT seq, j FROM c WHERE seq >= ? AND seq < ? ORDER BY seq');
   return { db, storePath, insertMany, readRange };
 }
-
-// =============================================================================
-// MAIN
-// =============================================================================
 
 /**
  * Build vectors (codebase.db) + the staged LI index for a full rebuild with
@@ -165,7 +159,6 @@ export async function buildVectorsAndLiStreaming(opts) {
 
   const store = await openSpillStore();
   try {
-    // ── 1. PARSE + SPILL + FINGERPRINT + LI-SKIP ──
     const records = [];          // [{ id, _textLen, file, metadata, liKeep }]
     const fingerprints = [];     // parallel to records (freed after clustering)
     let seq = 0;
@@ -230,7 +223,6 @@ export async function buildVectorsAndLiStreaming(opts) {
       return { vectorStats: { chunks: 0, embeddings: 0 }, lateInteractionResult: null, liBuilt: false };
     }
 
-    // ── 2. GLOBAL DEDUP (on lightweight signatures) ──
     let dedupStats = null;
     if (dedupOn && fingerprints.every((f) => f)) {
       try {
@@ -252,7 +244,6 @@ export async function buildVectorsAndLiStreaming(opts) {
     }
     log(`Embedding ${exemplarSeqs.length} exemplars, copying vectors for ${aliasSeqs.length} aliases`, 'dim');
 
-    // ── open codebase.db.tmp once; stream inserts; atomic-swap at the end ──
     const Database = (await import('better-sqlite3')).default;
     await fs.mkdir(path.dirname(DB_PATHS.codebase), { recursive: true });
     const tmpPath = DB_PATHS.codebase + '.tmp';
@@ -280,8 +271,7 @@ export async function buildVectorsAndLiStreaming(opts) {
       }
     }
 
-    // Hydrate a specific list of seqs (batched IN query), merge dedup
-    // annotations, and tag each chunk with its LI-keep flag. Returns chunks in
+    // Returns chunks in
     // `seqs` order (= seq order = file order), so annotateChunksForVectorInsert's
     // per-file structural-id grouping stays correct (windows are cut at file
     // boundaries — see fileWindows). Hydrating ONLY the seqs a pass needs avoids
@@ -309,8 +299,7 @@ export async function buildVectorsAndLiStreaming(opts) {
       return out;
     };
 
-    // File-aligned windows over a seq list: cut at `size` but never mid-file,
-    // so a file's chunks always land in one window.
+    // Cut at `size` but never mid-file, so a file's chunks always land in one window.
     function* fileWindows(seqs, size) {
       let start = 0;
       while (start < seqs.length) {
@@ -329,7 +318,6 @@ export async function buildVectorsAndLiStreaming(opts) {
       ? { id: chunk.id, file: chunk.file, metadata: chunk.metadata || {}, li_greedy_text: chunk.li_greedy_text, embedding_text: chunk.embedding_text, li_text: chunk.li_text, text: chunk.text }
       : { id: chunk.id, file: chunk.file, metadata: chunk.metadata || {} });
 
-    // ── 3. EMBED exemplars (only exemplar seqs hydrated; bucketing UNCHANGED) ──
     let embeddingCount = 0;
     let embeddedSoFar = 0;
     for (const win of fileWindows(exemplarSeqs, EMBED_WINDOW)) {
@@ -348,7 +336,6 @@ export async function buildVectorsAndLiStreaming(opts) {
     checkpointWal(vdb);
     log(`\n✓ Generated ${embeddingCount} embeddings (${effectiveDim}d)`, 'green');
 
-    // ── 4. ALIAS inserts (only alias seqs hydrated; exemplar vectors present) ──
     if (aliasSeqs.length > 0) {
       let aliasInserted = 0;
       for (const win of fileWindows(aliasSeqs, HYDRATE_CHUNK_WINDOW)) {
@@ -369,10 +356,8 @@ export async function buildVectorsAndLiStreaming(opts) {
 
     const vectorStats = { chunks: totalChunks, embeddings: embeddingCount };
 
-    // ── 5. LATE INTERACTION (LI-lite input + bounded build mode) ──
-    // liExemplars/liAliases were assembled during the embed/alias passes above,
-    // so no third parse pass. buildLateInteractionIndex partitions by
-    // metadata.exemplarId — order in the input array doesn't matter.
+    // buildLateInteractionIndex partitions by metadata.exemplarId, so the
+    // order of the input array doesn't matter.
     let lateInteractionResult = null;
     let liBuilt = false;
     if (wantLi) {

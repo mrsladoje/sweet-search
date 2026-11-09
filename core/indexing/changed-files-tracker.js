@@ -143,7 +143,6 @@ export async function startChangedFilesTracking(projectRoot) {
   return tracker;
 }
 
-/** The tracker for `projectRoot`, if the daemon started one. */
 export function changedFilesTracker(projectRoot) {
   return trackers.get(projectRoot) || null;
 }

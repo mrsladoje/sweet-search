@@ -1,15 +1,7 @@
-/**
- * Graph Configuration — code graph, HCGS, BM25 tuning.
- * Split from core/config.js during DDD migration.
- */
-
-// =============================================================================
-// HCGS CONFIGURATION (Hierarchical Code Graph Summaries)
+// HCGS: Hierarchical Code Graph Summaries.
 // Reference: https://arxiv.org/abs/2504.08975 (Code-Craft paper, April 2025)
-// =============================================================================
 
 export const HCGS_CONFIG = {
-  // Summary generation
   enabled: false,
 
   // Hierarchy levels (bottom-up order)
@@ -47,10 +39,8 @@ export const HCGS_CONFIG = {
   // Model for summary generation (Claude Haiku is fast and cheap)
   model: 'claude-3-5-haiku-latest',
 
-  // Batch processing
   batchSize: 20,
 
-  // Cache settings
   cacheEnabled: true,
 
   // Token savings: return summary first, full code on "expand"
@@ -58,10 +48,6 @@ export const HCGS_CONFIG = {
   summaryTokenBudget: 150,      // tokens per result in summary mode
   fullCodeTokenBudget: 1000,    // tokens per result in expanded mode
 };
-
-// =============================================================================
-// CODE GRAPH CONFIGURATION
-// =============================================================================
 
 export const GRAPH_CONFIG = {
   relationshipWeights: {

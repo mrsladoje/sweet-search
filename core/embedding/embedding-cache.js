@@ -1,9 +1,5 @@
 /**
  * Embedding Cache - LRU cache, vocabulary, semantic cache, query deduplication.
- * Extracted from embedding-service.js for file size compliance (<500 lines).
- *
- * Telemetry functions live in ./embedding-telemetry.js and are barrel-re-exported
- * below so that existing import sites continue to work unchanged.
  */
 
 import fs from 'fs/promises';
@@ -15,10 +11,6 @@ import { EMBEDDING_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { fetchModel, getModelCacheDir } from '../infrastructure/model-fetcher.js';
 import { createOrtPipeline, buildFeed } from '../infrastructure/ort-pipeline.js';
 import { meanPoolWithAttentionMask } from './embedding-local-model.js';
-
-// =============================================================================
-// LRU CACHE
-// =============================================================================
 
 export class LRUCache {
   constructor(maxSize = 1000) {
@@ -62,9 +54,7 @@ export class LRUCache {
   }
 }
 
-// =============================================================================
-// ATOMIC JSON WRITER — serialised tmp-file-and-rename
-// =============================================================================
+// Atomic JSON writer: serialised tmp-file-and-rename.
 //
 // Both Vocabulary.save() and QueryStats.save() are fired as background
 // promises from the embedding hot path (`vocabulary.save().catch(()=>{})`
@@ -100,7 +90,6 @@ async function writeJsonAtomic(targetPath, json) {
  * @param {object} owner - instance with mutable `_atomicInFlight` / `_atomicPending` slots
  * @param {() => Promise<void>} produce - async writer that captures the
  *   current state at call time and writes it atomically
- * @returns {Promise<void>}
  */
 function serialiseAtomicWrite(owner, produce) {
   if (owner._atomicPending) return owner._atomicPending;
@@ -122,10 +111,6 @@ function serialiseAtomicWrite(owner, produce) {
     });
   return owner._atomicPending;
 }
-
-// =============================================================================
-// QUERY STATS (Cross-session usage tracking)
-// =============================================================================
 
 export class QueryStats {
   constructor(statsPath) {
@@ -181,10 +166,6 @@ export class QueryStats {
   }
 }
 
-// =============================================================================
-// VOCABULARY
-// =============================================================================
-
 // Schema version for the persisted vocabulary file. Bump when the on-disk
 // shape changes in a way that should invalidate previously-saved files.
 //   v2: { metadata: { created, lastUpdated, version, provider }, terms: {...} }
@@ -204,13 +185,6 @@ const VOCAB_SCHEMA_VERSION = 3;
  * vector methods. This helper repairs the value at the cache boundary so
  * the rest of the embedding pipeline can rely on a uniform vector contract.
  *
- * Accepted inputs:
- *   - Float32Array → returned as-is
- *   - Array<number> → wrapped in Float32Array
- *   - Float64Array / Int*Array etc. → copied into Float32Array
- *   - Plain object with stringly-keyed numeric indices ("0","1",...,"N-1")
- *     → reconstructed as Float32Array of length N
- *
  * Returns null when the input cannot be sensibly interpreted as a vector
  * (callers should drop the cache entry and re-derive).
  *
@@ -221,7 +195,6 @@ export function coerceToFloat32Vector(value) {
   if (value == null) return null;
   if (value instanceof Float32Array) return value;
   if (Array.isArray(value)) return Float32Array.from(value);
-  // Other typed arrays: copy values into a Float32Array.
   if (ArrayBuffer.isView(value) && typeof value.length === 'number') {
     return Float32Array.from(value);
   }
@@ -235,7 +208,6 @@ export function coerceToFloat32Vector(value) {
     const indices = new Array(keys.length);
     for (let i = 0; i < keys.length; i++) {
       const k = keys[i];
-      // Reject anything that isn't an integer-shaped key.
       if (!/^\d+$/.test(k)) return null;
       const n = +k;
       if (!Number.isInteger(n) || n < 0 || n >= keys.length) return null;
@@ -249,7 +221,6 @@ export function coerceToFloat32Vector(value) {
   return null;
 }
 
-/** Build the embedding-fingerprint we expect a vocabulary file to match. */
 function currentVocabFingerprint() {
   return {
     schemaVersion: VOCAB_SCHEMA_VERSION,
@@ -433,10 +404,6 @@ export class Vocabulary {
   }
 }
 
-// =============================================================================
-// SEMANTIC CACHE (Local Model for Cache Keys)
-// =============================================================================
-
 export class SemanticCache {
   constructor(options = {}) {
     this.threshold = options.threshold ?? 0.85;
@@ -478,7 +445,6 @@ export class SemanticCache {
     const feed = buildFeed(tokenized, session.inputNames);
     const output = await session.run(feed);
     const tensor = output[session.outputNames[0]];
-    // Mean pooling with L2 normalization
     const pooled = meanPoolWithAttentionMask(tensor, tokenized.attention_mask, true);
     return Array.from(pooled.data);
   }
@@ -550,10 +516,6 @@ export class SemanticCache {
   }
 }
 
-// =============================================================================
-// QUERY DEDUPLICATION
-// =============================================================================
-
 export class QueryDeduplicator {
   constructor() {
     this.inflight = new Map();
@@ -572,10 +534,6 @@ export class QueryDeduplicator {
     return this.inflight.has(text);
   }
 }
-
-// =============================================================================
-// SINGLETONS
-// =============================================================================
 
 export const queryCache = new LRUCache(EMBEDDING_CONFIG.cache?.maxSize || 1000);
 export const vocabulary = new Vocabulary(DB_PATHS.vocabulary);
@@ -600,15 +558,7 @@ export const cacheStats = _cacheStats;
 // recordQueryTelemetry(mode, hit, latencyMs) after each query to feed
 // per-mode cache-hit telemetry for the vocabulary prewarm pipeline.
 
-// =============================================================================
-// TELEMETRY (barrel re-exports from ./embedding-telemetry.js)
-// =============================================================================
-
 export { telemetryStats, recordQueryTelemetry, getTelemetryReport, resetTelemetryStats, flushTelemetry } from './embedding-telemetry.js';
-
-// =============================================================================
-// CACHE MANAGEMENT
-// =============================================================================
 
 export function getCacheStats(circuitBreakerState) {
   const total = cacheStats.hits + cacheStats.misses;
@@ -643,7 +593,6 @@ export function getFrequentQueries(threshold = 3) {
 }
 
 /**
- * @param {string} term
  * @param {Function} embedFn - Injected embed function (avoids circular dep with facade)
  */
 export async function addToVocabulary(term, embedFn) {
@@ -658,7 +607,6 @@ export async function addToVocabulary(term, embedFn) {
 }
 
 /**
- * @param {string[]} terms
  * @param {Function} embedFn - Injected embed function (avoids circular dep with facade)
  */
 export async function expandVocabulary(terms, embedFn) {

@@ -1,8 +1,3 @@
-/**
- * Embedding Configuration — providers, active config, helper functions.
- * Split from core/config.js during DDD migration.
- */
-
 import { DB_PATHS, detectIndexerProfile } from './platform.js';
 import { bootLog } from '../boot-log.js';
 import { resolveNativeAddon } from '../native-resolver.js';
@@ -10,10 +5,6 @@ import { resolveNativeAddon } from '../native-resolver.js';
 const VOYAGEAI_API_KEY = process.env.VOYAGEAI_API_KEY || '';
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY || '';
 const JINA_API_KEY = process.env.JINA_API_KEY || '';
-
-// =============================================================================
-// EMBEDDING PROVIDERS (Tiered by preference)
-// =============================================================================
 
 export const EMBEDDING_PROVIDERS = {
   // Tier 1: Voyage Code 3 - Best for code retrieval (Dec 2024)
@@ -113,10 +104,6 @@ export const EMBEDDING_PROVIDERS = {
   },
 };
 
-// =============================================================================
-// ACTIVE EMBEDDING CONFIGURATION
-// =============================================================================
-
 function isRemoteEmbeddingEnabled() {
   const raw = process.env.USE_REMOTE_EMBEDDING?.trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
@@ -126,7 +113,6 @@ function isRemoteEmbeddingEnabled() {
 // remote embeddings via USE_REMOTE_EMBEDDING. This keeps indexing and search
 // fully offline by default, even when remote API keys are present.
 function selectProvider() {
-  // Explicit override via SWEET_SEARCH_PROVIDER or EMBEDDING_PROVIDER env var
   const override =
     process.env.SWEET_SEARCH_PROVIDER?.trim().toLowerCase()
     || process.env.EMBEDDING_PROVIDER?.trim().toLowerCase();
@@ -160,11 +146,9 @@ function selectProvider() {
 const activeProvider = selectProvider();
 
 export const EMBEDDING_CONFIG = {
-  // Active provider info
   provider: activeProvider.name,
   providerConfig: activeProvider.config,
 
-  // Convenience getters
   get model() {
     return this.providerConfig.model;
   },
@@ -241,7 +225,6 @@ export const EMBEDDING_CONFIG = {
     return this.provider !== 'local';
   },
 
-  // Query embedding cache
   cache: {
     enabled: true,
     maxSize: 1000,
@@ -269,13 +252,8 @@ export const EMBEDDING_CONFIG = {
     })(),
   },
 
-  // All available providers for fallback
   providers: EMBEDDING_PROVIDERS,
 };
-
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
 
 export function getActiveProvider() {
   return activeProvider;

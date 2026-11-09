@@ -191,7 +191,6 @@ export const GUTTER_FORMS = Object.freeze({
   none: '',
 });
 
-// Matcher family → form. See the decision block above.
 export const MATCHER_FAMILY_FORM = Object.freeze({
   exact: 'tab',
   tolerant: 'colon',
@@ -339,8 +338,6 @@ export function findHarnessAncestor({ pid = callerPid(), readProcess = null, max
 export function detectHarnessFromAncestry(opts = {}) {
   return findHarnessAncestor(opts).harness;
 }
-
-// ---- macOS cache -----------------------------------------------------------
 
 export function harnessCachePath(env = process.env, tmpDir = os.tmpdir()) {
   const project = env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();

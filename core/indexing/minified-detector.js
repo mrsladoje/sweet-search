@@ -81,20 +81,19 @@ export function looksMinified(headText, { ext = '', tailText = '', totalBytes } 
   const stripped = headText.replace(COMMENT_PATTERN, '');
   const lens = stripped.split('\n').map((l) => l.length).filter((l) => l > 0);
 
-  // M2 — a single enormous line (the classic single-line bundle). Guard on size so a
-  // short one-liner source file is never caught.
+  // M2 — guarded on size so a short one-liner source file is never caught.
   if (lens.length <= 1 && bytes >= 1024) return { rule: 'single-line' };
 
-  // M1 — median line length. The workhorse, language-agnostic.
+  // M1
   if (median(lens) > 200) return { rule: 'median-gt-200' };
 
-  // M3 — mean line length, JS/CSS only (Linguist's exact rule).
+  // M3
   if (MINIFIABLE_EXT.has(e)) {
     const mean = lens.reduce((a, b) => a + b, 0) / (lens.length || 1);
     if (mean > 110) return { rule: 'mean-gt-110' };
   }
 
-  // M4 — two or more absurdly long lines.
+  // M4
   if (lens.filter((l) => l > 4096).length >= 2) return { rule: 'long-lines' };
 
   return false;
@@ -109,7 +108,7 @@ export function looksMinified(headText, { ext = '', tailText = '', totalBytes } 
 export async function fileLooksMinified(absPath, rel) {
   try {
     const st = await fs.stat(absPath);
-    if (st.size < 1024) return false;   // a sub-1KB file is never a problematic bundle
+    if (st.size < 1024) return false;
     const fh = await fs.open(absPath, 'r');
     try {
       const headBuf = Buffer.alloc(Math.min(32768, st.size));

@@ -12,15 +12,11 @@
  *   const result = await withOnnxMutex(() => model(inputs));
  */
 
-// Global promise chain for serializing ONNX operations
 let _onnxQueue = Promise.resolve();
 
 /**
  * Execute a function while holding the global ONNX mutex.
  * All ONNX operations should go through this to prevent concurrent inference crashes.
- *
- * @param {Function} fn - Async function that performs ONNX inference
- * @returns {Promise<*>} - Result of fn()
  */
 export async function withOnnxMutex(fn) {
   return new Promise((resolve, reject) => {

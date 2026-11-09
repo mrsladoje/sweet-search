@@ -15,9 +15,7 @@
  *   - FTS5: `segment_count > 64` → bounded `('merge', 500)` cycles until
  *     under threshold.
  *
- * Phase 5 calibrates the actual numeric thresholds; Phase 3 ships the
- * starting defaults. Operators override via the env vars listed in
- * plan § 21.
+ * Operators override the thresholds via the env vars listed in plan § 21.
  */
 
 export const DEFAULT_WATERMARKS = Object.freeze({
@@ -88,9 +86,7 @@ export function loadWatermarkConfig(env = process.env) {
  * the queue writer (`maintenance-worker.enqueueMaintenanceJob`) appends
  * to the JSONL queue.
  *
- * @param {object} state
  * @param {object} [config]    Watermark thresholds (see DEFAULT_WATERMARKS).
- * @returns {Array<object>}
  */
 export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
   const jobs = [];
@@ -249,10 +245,6 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
  *     max(k + 64, ceil(k / max(0.05, 1 - s) * 2)),
  *     k * 20
  *   )
- *
- * @param {number} k
- * @param {number} tombstoneFraction
- * @returns {number}
  */
 export function hnswOversampleTarget(k, tombstoneFraction) {
   if (!Number.isInteger(k) || k <= 0) {

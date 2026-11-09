@@ -1,4 +1,4 @@
-// mcp/tool-handlers.js — Extracted tool handler functions (SOLID refactor)
+// mcp/tool-handlers.js — tool handler functions.
 // Each handler receives its dependencies via a `deps` parameter.
 import { z } from 'zod';
 import { existsSync } from 'node:fs';
@@ -8,9 +8,7 @@ import { collectAgentShownSpans, exactRereadOmissionEnabled, renderShownFullTrai
 import { sendAgentSpanOperation } from '../core/search/agent-span-client.js';
 import { renderRegexDialectHint } from '../core/search/regex-dialect.js';
 import { binaryHnswIndexExists } from '../core/vector-store/index-file-header.js';
-// ---------------------------------------------------------------------------
-// Output schemas (Zod — SDK converts to JSON Schema for clients)
-// ---------------------------------------------------------------------------
+
 const SearchResultSchema = z.object({
   file: z.string(),
   score: z.number(),
@@ -110,15 +108,7 @@ export const VocabPrewarmOutputSchema = z.object({
   dryRun: z.boolean().optional(),
 });
 
-// ---------------------------------------------------------------------------
-// Internal state for health DB cache (module-scoped, not exported)
-// ---------------------------------------------------------------------------
-
 let _healthDb = null;
-
-// ---------------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------------
 
 /**
  * @param {{ query: string, k: number, mode: string, structural?: boolean, regex?: string, format?: string, tokenBudget?: number }} args
@@ -312,7 +302,7 @@ export async function handleIndex({ mode }, { PROJECT_ROOT, coreDir }) {
     });
 
     // F-11: Timeout to prevent indefinite hanging
-    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const TIMEOUT_MS = 5 * 60 * 1000;
     const timeout = setTimeout(() => {
       child.kill('SIGTERM');
       // Give 5s grace period, then SIGKILL

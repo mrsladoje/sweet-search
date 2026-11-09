@@ -226,9 +226,7 @@ export function pythonDocstring(node, content) {
 
 /**
  * Documentation text for a tree-sitter declaration node, or null.
- * @param {object} node - declaration extent node
  * @param {string} content - file source the tree was parsed from
- * @param {string} languageId
  */
 export function extractTreeSitterDocComment(node, content, languageId) {
   if (!node || !content) return null;

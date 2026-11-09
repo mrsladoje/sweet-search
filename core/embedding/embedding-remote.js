@@ -1,14 +1,9 @@
 /**
  * Embedding Remote - Circuit breaker, compression, HTTP pooling, and API clients.
- * Extracted from embedding-service.js for file size compliance (<500 lines).
  */
 
 import { gzipSync, gunzipSync, brotliDecompressSync } from 'zlib';
 import { EMBEDDING_PROVIDERS } from '../infrastructure/config/index.js';
-
-// =============================================================================
-// CIRCUIT BREAKER FOR API STABILITY
-// =============================================================================
 
 export const circuitBreaker = {
   failures: 0,
@@ -20,7 +15,6 @@ export const circuitBreaker = {
   SUCCESS_TO_CLOSE: 2,
   successCount: 0,
 
-  /** Check if request is allowed through the circuit */
   canRequest() {
     const now = Date.now();
     if (this.state === 'CLOSED') return { allowed: true };
@@ -76,10 +70,6 @@ export const circuitBreaker = {
   }
 };
 
-// =============================================================================
-// V2b: REQUEST/RESPONSE COMPRESSION
-// =============================================================================
-
 export const _providerCompressionSupport = new Map();
 
 export function providerSupportsRequestCompression(provider) {
@@ -90,9 +80,6 @@ export function markProviderNoCompression(provider) {
   _providerCompressionSupport.set(provider, false);
 }
 
-/**
- * Quick check if data looks like JSON (starts with '{' or '[' after whitespace).
- */
 export function looksLikeJson(data) {
   const u8 = new Uint8Array(
     data instanceof Buffer
@@ -108,9 +95,6 @@ export function looksLikeJson(data) {
   return false;
 }
 
-/**
- * Parse a potentially compressed API response.
- */
 export async function parseCompressedResponse({ body, statusCode, headers: resHeaders }) {
   if (statusCode !== 200) {
     const error = await body.text();
@@ -140,9 +124,6 @@ export async function parseCompressedResponse({ body, statusCode, headers: resHe
   return JSON.parse(text);
 }
 
-/**
- * V2b: Make an API request with optional gzip request compression.
- */
 export async function compressedApiRequest(pool, provider, apiPath, requestBody, apiKey) {
   const jsonBody = JSON.stringify(requestBody);
 
@@ -189,10 +170,6 @@ export async function compressedApiRequest(pool, provider, apiPath, requestBody,
   return parseCompressedResponse(response);
 }
 
-// =============================================================================
-// RATE LIMITER
-// =============================================================================
-
 export class RateLimiter {
   constructor(requestsPerMinute, tokensPerMinute = Infinity) {
     this.requestsPerMinute = requestsPerMinute;
@@ -230,10 +207,6 @@ export class RateLimiter {
     }
   }
 }
-
-// =============================================================================
-// TIME-WINDOW RATE LIMITER (V2: concurrent-safe for Promise.all)
-// =============================================================================
 
 export class TimeWindowRateLimiter {
   constructor(maxRPM, options = {}) {
@@ -302,10 +275,6 @@ export class TimeWindowRateLimiter {
     }
   }
 }
-
-// =============================================================================
-// REMOTE API CLIENTS (with HTTP/2 and connection pooling)
-// =============================================================================
 
 let undiciPool = null;
 
@@ -465,10 +434,6 @@ export async function callJinaAPI(texts, config, options = {}) {
   const data = await response.json();
   return data.data.map(d => d.embedding);
 }
-
-// =============================================================================
-// RATE LIMITER SINGLETONS
-// =============================================================================
 
 export const rateLimiters = {
   voyage: new RateLimiter(

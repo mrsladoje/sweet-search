@@ -1,10 +1,4 @@
-// =============================================================================
-// Tooling and Infrastructure Language Registry
-// =============================================================================
-// Scripting, infra, and build tooling languages.
-// Data-only module consumed by `registry.js`.
 export const TOOLING_LANGUAGES = {
-  // ─── Shell / Bash ──────────────────────────────────────────────────────────
   shell: {
     indentBased: false,
     endKeyword: null,
@@ -25,7 +19,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: ["echo", "printf", "cd", "export", "local", "readonly"],
     },
   },
-  // ─── PowerShell ────────────────────────────────────────────────────────────
   powershell: {
     indentBased: false,
     endKeyword: null,
@@ -48,7 +41,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: ["Write-Host", "Write-Output", "Write-Error", "Write-Warning"],
     },
   },
-  // ─── Lua ───────────────────────────────────────────────────────────────────
   lua: {
     indentBased: false,
     endKeyword: "end",
@@ -73,7 +65,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: ["print", "io", "os", "string", "table", "math", "error", "assert", "type", "pairs", "ipairs"],
     },
   },
-  // ─── Zig ───────────────────────────────────────────────────────────────────
   zig: {
     indentBased: false,
     endKeyword: null,
@@ -99,7 +90,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: ["std", "@import"],
     },
   },
-  // ─── Elixir ────────────────────────────────────────────────────────────────
   elixir: {
     indentBased: false,
     endKeyword: "end",
@@ -134,7 +124,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: ["IO", "Logger", "Kernel", "Enum", "Map", "List", "String"],
     },
   },
-  // ─── Nim ───────────────────────────────────────────────────────────────────
   nim: {
     indentBased: true,
     endKeyword: null,
@@ -162,7 +151,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: ["echo", "debugEcho", "assert", "quit"],
     },
   },
-  // ─── F# ────────────────────────────────────────────────────────────────────
   fsharp: {
     indentBased: true,
     endKeyword: null,
@@ -194,7 +182,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: ["printfn", "printf", "failwith", "raise", "ignore"],
     },
   },
-  // ─── Dockerfile ────────────────────────────────────────────────────────────
   dockerfile: {
     indentBased: false,
     endKeyword: null,
@@ -222,7 +209,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── Makefile ──────────────────────────────────────────────────────────────
   makefile: {
     indentBased: false,
     endKeyword: null,
@@ -245,7 +231,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── Julia (graph-only spike) ────────────────────────────────────────────────
   // No `chunker` key → getLanguageByExtension returns chunker:null → ast-chunker
   // keeps Julia on generic windowing. The `graph` patterns alone enable
   // regex-based entity extraction so ss-trace/code-graph works.
@@ -269,13 +254,11 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ════════════════════════════════════════════════════════════════════════════
   // GRAPH-ONLY language entries (no `chunker` key → chunking stays generic via
   // parseGenericFile; the `graph` regexes enable ss-trace / code-graph symbol
   // extraction). Authored 2026-06 from each language's tree-sitter tags.scm /
   // universal-ctags conventions. Entity-type keys are free-form (the regex graph
   // path accepts any label, like Rust's existing const/static/type).
-  // ════════════════════════════════════════════════════════════════════════════
   clojure: {
     indentBased: false, endKeyword: null,
     comment: { line: ";", block: null },
@@ -747,7 +730,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── Solidity ────────────────────────────────────────────────────────────────
   // Real chunking is done by tree-sitter-solidity (GRAMMAR_MAP); these regex
   // patterns are the fallback used only when tree-sitter is unavailable.
   solidity: {
@@ -775,7 +757,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: ["require", "assert", "revert", "emit"],
     },
   },
-  // ─── OCaml ───────────────────────────────────────────────────────────────────
   // tree-sitter-ocaml does the real chunking. OCaml has no line comment — only
   // `(* … *)` blocks.
   ocaml: {
@@ -797,7 +778,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── ReScript ────────────────────────────────────────────────────────────────
   rescript: {
     indentBased: false,
     endKeyword: null,
@@ -817,7 +797,6 @@ export const TOOLING_LANGUAGES = {
       skipCallObjects: [],
     },
   },
-  // ─── TLA+ ────────────────────────────────────────────────────────────────────
   // tree-sitter-tlaplus does the real chunking. Comments are `\* …` / `(* … *)`.
   tlaplus: {
     indentBased: false,

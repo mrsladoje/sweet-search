@@ -4,8 +4,6 @@
 // process.* or the filesystem — every function is a pure transform over an
 // args array (some mutate the array in place, by design, and return a value).
 
-// --- value-flag parsers (mutate `args`, returning the consumed value) --------
-
 export function parseFlag(args, name, fallback) {
   const i = args.indexOf(name);
   if (i === -1) return fallback;
@@ -22,7 +20,6 @@ export function parseShortFlag(args, names, fallback) {
   return fallback;
 }
 
-// Boolean (value-less) flag: remove every occurrence, return whether any present.
 export function parseBoolFlag(args, names) {
   let present = false;
   for (const n of names) {
@@ -31,8 +28,6 @@ export function parseBoolFlag(args, names) {
   }
   return present;
 }
-
-// --- pattern construction ----------------------------------------------------
 
 export function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -127,7 +122,6 @@ export function unsupportedGrepOption(args) {
   return flag ? { flag, what: GREP_UNSUPPORTED.get(flag) } : null;
 }
 
-// --- inert flags (always true for ss-*, safe to accept as no-ops) ------------
 // These never change which lines match: we always print file:line, always
 // search the whole index, never colourise. Stripping them lets reflexive grep
 // muscle-memory pass without a wasted call — UNLIKE semantic flags (-w/-F/-v/
@@ -146,7 +140,6 @@ export function stripInertFlags(args) {
   }
 }
 
-// --- normalisation: make agent-typed forms canonical before parsing ----------
 // Short flags that consume a following value, and value-less boolean shorts.
 // Used to split attached/bundled forms (-k5, -iw, -iwk5) the way getopt would,
 // so they parse instead of being mistaken for an unknown flag or the pattern.
@@ -193,13 +186,13 @@ export function normalizeArgs(args, { boolShorts = BOOL_SHORTS } = {}) {
         while (i < chars.length) {
           const ch = chars[i];
           if (boolShorts.has(ch)) { expanded.push('-' + ch); i++; }
-          else if (VALUE_SHORTS.has(ch)) {                 // value short ends the bundle
+          else if (VALUE_SHORTS.has(ch)) {
             const val = chars.slice(i + 1);
             if (CONTEXT_SHORTS.has(ch) && val && !/^\d+$/.test(val)) { ok = false; break; }
             expanded.push('-' + ch);
             if (val) expanded.push(val);
             i = chars.length;
-          } else { ok = false; break; }                    // unknown char → leave token intact
+          } else { ok = false; break; }
         }
         if (ok) { out.push(...expanded); continue; }
       }
@@ -403,8 +396,6 @@ export function extractPositional(args) {
   return { pattern: args[0], unknownFlag: null };
 }
 
-// --- trailer rendering --------------------------------------------------------
-
 // Sufficiency trailer segment: 3-valued verdict (YES / no / unknown) + a
 // compact why-token, e.g. ` sufficient=YES (query_evidence_clear_margin)` vs
 // ` sufficient=unknown (well_formed_only)`. Falls back to the legacy boolean
@@ -425,7 +416,7 @@ export function absorbPositionalPaths(args, inPaths, isPath) {
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (typeof tok !== 'string' || tok === '--' || looksLikeOption(tok)) continue;
-    if (!seenPattern) { seenPattern = true; continue; }   // this is the pattern/query
+    if (!seenPattern) { seenPattern = true; continue; }
     if (isPath(tok)) { inPaths.push(tok); args.splice(i, 1); i--; }
   }
 }

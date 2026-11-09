@@ -88,8 +88,6 @@ class ViewChunker {
     return chunks;
   }
 
-  // -- units ------------------------------------------------------------------------------------
-
   razorUnits(node, out) {
     for (const c of node.children || []) {
       if (c.kind === 'directive') out.push({ s: c.s, e: c.e, type: 'directive', name: directiveName(c), children: [] });
@@ -304,8 +302,6 @@ class ViewChunker {
     return this._tree;
   }
 
-  // -- chunks -----------------------------------------------------------------------------------
-
   /** Emit `unit` (rows r0..r1): one chunk when it fits, else its parts, merged while they fit. */
   async emit(unit, parent, depth = 0) {
     if (unit.leaf || this.rows(unit.r0, unit.r1) <= this.max) {
@@ -483,8 +479,6 @@ class ViewChunker {
     return `v${++this.counter}`;
   }
 }
-
-// -- helpers ------------------------------------------------------------------------------------
 
 /** What names a directive's chunk: the model or base type, the route; not a variable. */
 function directiveName(d) {

@@ -114,7 +114,6 @@ function liIndexOutdated(stateDir) {
 /**
  * Whether a complete baseline index exists for `stateDir`.
  *
- * @param {string} stateDir   The `.sweet-search` directory.
  * @returns {{ready: boolean, reason: string, changes?: Array}}
  *   `reason` is one of: `ready`, `no-state-dir`, `no-manifest`,
  *   `manifest-epoch-zero`, `no-merkle-state`, `no-config-fingerprint`,
@@ -164,7 +163,6 @@ export function hasCompleteBaseIndex(stateDir) {
 /**
  * Readiness plus a human/machine-facing `state` label for status surfaces.
  *
- * @param {string} stateDir
  * @returns {{ready: boolean, reason: string, changes?: Array,
  *            state: 'indexed'|'waiting_for_initial_index'|'index_rebuild_required'}}
  */
@@ -214,7 +212,6 @@ function extractFingerprint(text) {
  * Cheap search-time check: is the on-disk index in the current format?
  * Reads at most 64 KiB of merkle-state.json. Never throws.
  *
- * @param {string} stateDir
  * @returns {{match: boolean, changes: Array}|null}  null when there is no
  *   full-index fingerprint to compare (no index yet, or unreadable).
  */

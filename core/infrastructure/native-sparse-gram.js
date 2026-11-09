@@ -7,7 +7,6 @@ import { existsSync } from 'fs';
 import { loadNativeAddon } from './native-resolver.js';
 import { SPARSE_SYMBOL_MASKS, resolveSparseSymbolMask } from './constants.js';
 
-// Re-export from constants.js — canonical source of symbol type vocabulary.
 export { SPARSE_SYMBOL_MASKS, resolveSparseSymbolMask };
 
 let _addon = null;
@@ -273,9 +272,7 @@ export function nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInse
  * Uses str::contains() — no regex compilation overhead.
  *
  * @param {string[]} literals - All must be present in the file (AND)
- * @param {string} projectRoot
  * @param {string[]} files - Relative file paths to search
- * @param {boolean} [caseInsensitive]
  * @returns {{ matchingFiles: string[], scannedFiles: number, elapsedUs: number }|null}
  */
 export function nativeGrepFilesWithMatchesFixed(literals, projectRoot, files, caseInsensitive) {
@@ -411,11 +408,8 @@ export function getSparseGramAllFiles(sparseGramIndex) {
  * and regex verification all happen in Rust. Zero string copies for the
  * candidate file list.
  *
- * @param {Object} sparseGramIndex - Loaded NativeSparseGramIndex instance
  * @param {string[][]} clauses - OR of AND-clause literal sets
- * @param {string} regex - Regex pattern
  * @param {string} projectRoot - Absolute project root
- * @param {Object} opts
  * @returns {{ eligible, totalFiles, candidateFiles, gramsUsed, denseGramsTouched, sparseGramsTouched, matches: Array<{file, line}>, scannedFiles, grepElapsedUs }|null}
  */
 export function queryAndGrepLines(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {

@@ -61,10 +61,6 @@ export function lineOfIndex(text, index) {
   return n;
 }
 
-// ---------------------------------------------------------------------------
-// C#
-// ---------------------------------------------------------------------------
-
 const CS_TOKEN_RE = /\bnamespace\s+([A-Za-z_][\w.]*)\s*([;{])|\b(class|struct|interface|enum|record|delegate)\s+|[{}]/g;
 const CS_TYPE_NAME_RE = /^(?:(?:class|struct)\s+)?(@?[A-Za-z_]\w*)/;
 const CS_DELEGATE_NAME_RE = /^[^;(){}=]*?([A-Za-z_]\w*)\s*(?:<[^<>(){};]*>)?\s*\(/;
@@ -115,10 +111,6 @@ export function csharpDeclarations(stripped) {
   while ((m = CS_GLOBAL_USING_RE.exec(stripped)) !== null) globalUsings.push(m[1]);
   return { namespaces, types, globalUsings };
 }
-
-// ---------------------------------------------------------------------------
-// Brace languages with column-0 top-level declarations: JVM family + Swift
-// ---------------------------------------------------------------------------
 
 const MODIFIERS = new Set([
   'public', 'private', 'internal', 'protected', 'open', 'final', 'abstract', 'sealed', 'data', 'value',
@@ -222,10 +214,6 @@ export function packageChain(packages) {
   }
   return chain;
 }
-
-// ---------------------------------------------------------------------------
-// References
-// ---------------------------------------------------------------------------
 
 const TYPE_REF_RE = /\b[A-Z][A-Za-z0-9_]*/g;
 const OWN_TYPE_DECL_RE = /\b(?:class|struct|interface|enum|record|object|trait|protocol|actor|typealias|type|delegate)\s+`?([A-Za-z_]\w*)/g;
@@ -401,10 +389,6 @@ export function packageClauses(stripped) {
   while ((m = PACKAGE_LINE_RE.exec(stripped)) !== null) out.push(m[1].replace(/`/g, ''));
   return out;
 }
-
-// ---------------------------------------------------------------------------
-// Elixir
-// ---------------------------------------------------------------------------
 
 const EX_DEFMODULE_RE = /^([ \t]*)(?:defmodule|defprotocol)\s+([A-Z][\w]*(?:\.[A-Z][\w]*)*)\s*(?:,\s*)?do\b/gm;
 

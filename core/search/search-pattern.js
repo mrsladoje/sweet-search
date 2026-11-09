@@ -38,10 +38,6 @@ const GREP_LINE_CLASS_ENTITY_CAP = 2048;
 // (same size as search-postprocess.js FINAL_RESERVE_SIZE).
 const PATTERN_RESERVE_SIZE = 10;
 
-// =============================================================================
-// Ripgrep runner (thin wrapper for external callers)
-// =============================================================================
-
 /**
  * Run ripgrep with a regex pattern against a directory or explicit file set.
  * Uses --json output to avoid colon-delimiter parsing issues with
@@ -59,10 +55,6 @@ export async function runRipgrep(regex, searchDir, opts = {}) {
   const matches = await runRipgrepJson(regex, searchDir, { files, fixedString, globs, timeout });
   return maxMatches > 0 ? matches.slice(0, maxMatches) : matches;
 }
-
-// =============================================================================
-// Query enhancement — merge regex tokens into semantic query (ColGrep-style)
-// =============================================================================
 
 /**
  * Strip regex metacharacters and extract readable tokens from a pattern.
@@ -92,10 +84,6 @@ export function mergeRegexIntoQuery(query, regex) {
 
   return `${query} ${novel.join(' ')}`;
 }
-
-// =============================================================================
-// Grep engine selection — native in-process grep vs ripgrep fallback
-// =============================================================================
 
 /**
  * Whether native in-process grep can serve this request without ripgrep.
@@ -265,10 +253,6 @@ function hasCollatingNeighbours(sortedMatches) {
   return false;
 }
 
-// =============================================================================
-// Bare grep (wired onto SweetSearch.prototype)
-// =============================================================================
-
 /** The outside-scope probe reads regexes only: fixed strings and symbol filters take the full search. */
 function fixedStringOrSymbol(options, symbolType) {
   return options.fixedString === true || Boolean(symbolType);
@@ -329,7 +313,6 @@ export async function bareGrep(query, routing, options = {}) {
     }
     : options;
 
-  // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
   let candidateResult = await generateRegexMatches(this || {}, regex, searchDir, engineOptions);
   const pathGlobs = compilePathGlobs(options.pathGlobs);
   const globCounts = pathGlobs ? new Map() : null;
@@ -509,13 +492,7 @@ export async function bareGrep(query, routing, options = {}) {
   };
 }
 
-// =============================================================================
-// Pattern search orchestrator (wired onto SweetSearch.prototype)
-// =============================================================================
-
 /**
- * Pattern search: regex candidate generation + MaxSim semantic ranking.
- *
  * Uses `this` — must be wired onto SweetSearch.prototype.
  */
 export async function patternSearch(query, routing, options = {}) {
@@ -658,7 +635,6 @@ export async function patternSearch(query, routing, options = {}) {
     return { results: [], stats: emptyStats };
   }
 
-  // Map matches -> indexed chunk IDs (with grep density counts).
   let chunkIds, chunkMatchCounts, unindexedMatches;
 
   {
@@ -682,7 +658,6 @@ export async function patternSearch(query, routing, options = {}) {
     log(`Candidate cap: ${available.size} (from ${chunkIds.size}, top by grep density)`);
   }
 
-  // MaxSim rerank + grep density blending
   let scored = [];
   let rerankTime = 0;
   if (available.size > 0 && queryTokens.length > 0) {
@@ -899,11 +874,7 @@ export async function patternSearch(query, routing, options = {}) {
   return { results, stats };
 }
 
-// =============================================================================
-// Re-export sub-modules for backward compatibility
-// (barrel export in index.js uses `export * from './search-pattern.js'`)
-// =============================================================================
-
+// index.js re-exports this file with `export * from './search-pattern.js'`.
 export { generateRegexMatches } from './search-pattern-planner.js';
 export { hasCaseInsensitiveRegexFlag, extractRequiredLiteralsHeuristic, extractLiteralClausesHeuristic, extractLiteralClauses, normalizeLiteralClauses, querySparseGramCandidates, ensureSparseGramIndex, nativeGrepFilesWithMatches, nativeGrepLines, getSparseGramAllFiles } from './search-pattern-prefilter.js';
 export { buildChunkLocationMap, buildCodebaseChunkLocationMap, findChunkForLine, findChunkIntervalForLine, mapMatchesToChunks, readFileRange, getChunkLocationMap, getCodebaseChunkTypeMap, normalizeSearchSymbolType, resolveSearchSymbolFilter, isRipgrepCodePath, buildBareGrepResults, filterMatchesBySymbolType } from './search-pattern-chunks.js';

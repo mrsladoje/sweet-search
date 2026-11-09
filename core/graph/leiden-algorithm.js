@@ -5,8 +5,6 @@
  *   1. Local moving — greedy modularity-maximizing node reassignment
  *   2. Refinement  — constrained singleton merge (well-connectedness guarantee)
  *   3. Aggregation  — collapse into super-nodes with self-loops preserving m2
- *
- * Extracted from community-detector.js for SOLID compliance.
  */
 
 const DEFAULT_RESOLUTION = 1.0;
@@ -14,8 +12,6 @@ const DEFAULT_MAX_ITERATIONS = 10;
 const DEFAULT_CONVERGENCE_THRESHOLD = 1e-6;
 
 /**
- * Run the Leiden community detection algorithm on a weighted adjacency graph.
- *
  * @param {Map<number, Map<number, number>>} adjacency - node -> Map(neighbor -> weight)
  * @param {object} [options]
  * @param {number} [options.resolution=1.0]
@@ -53,7 +49,6 @@ export function leidenCommunities(adjacency, options = {}) {
     return { assignment, converged: true, iterations: 0 };
   }
 
-  // Initialize: each node in its own community
   const community = new Map();
   for (let i = 0; i < n; i++) community.set(currentNodes[i], currentNodes[i]);
 
@@ -73,7 +68,6 @@ export function leidenCommunities(adjacency, options = {}) {
   for (iter = 0; iter < maxIter; iter++) {
     if (Date.now() > deadline) break;
 
-    // --- Phase 1: Local moving ---
     const moved = localMovingPhase(
       currentNodes, currentAdj, community, degree, m2, resolution, deadline, randomFn
     );
@@ -91,7 +85,6 @@ export function leidenCommunities(adjacency, options = {}) {
       localMovingPartition.set(node, community.get(node));
     }
 
-    // --- Phase 2: Refinement (constrained singleton merge) ---
     refinementPhase(currentNodes, currentAdj, community, degree, m2, resolution, deadline, randomFn);
 
     // Check convergence on the refined partition (before aggregation mutates map)
@@ -180,10 +173,6 @@ function _flattenAssignment(community) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Phase 1: Local Moving
-// ---------------------------------------------------------------------------
-
 /**
  * Greedily move each node to the neighbor community maximizing modularity gain.
  * @returns {boolean} true if any node was moved
@@ -249,10 +238,6 @@ function localMovingPhase(nodes, adjacency, community, degree, m2, resolution, d
   return anyMoved;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 2: Refinement (constrained singleton merge)
-// ---------------------------------------------------------------------------
-
 /**
  * Canonical Leiden refinement (Traag et al. 2019 §Methods):
  *
@@ -278,7 +263,6 @@ function refinementPhase(nodes, adjacency, community, degree, m2, resolution, de
 
     const memberSet = new Set(members);
 
-    // Step 1: Singleton partition
     const subComm = new Map();
     for (const node of members) subComm.set(node, node);
 
@@ -288,7 +272,6 @@ function refinementPhase(nodes, adjacency, community, degree, m2, resolution, de
     const subSize = new Map();
     for (const node of members) subSize.set(node, 1);
 
-    // Step 2: Constrained singleton merge
     const shuffled = [...members];
     shuffleArray(shuffled, randomFn);
 
@@ -338,7 +321,6 @@ function refinementPhase(nodes, adjacency, community, degree, m2, resolution, de
       }
     }
 
-    // Write refined sub-communities back into the global community map
     for (const node of members) {
       community.set(node, subComm.get(node));
     }
@@ -376,10 +358,6 @@ function refinementPhase(nodes, adjacency, community, degree, m2, resolution, de
   }
 }
 
-// ---------------------------------------------------------------------------
-// Phase 3: Aggregation
-// ---------------------------------------------------------------------------
-
 /**
  * Collapse refined partition into super-nodes.
  * - Intra-community edges become self-loops (preserves m2 across levels)
@@ -396,7 +374,6 @@ function aggregateGraph(nodes, adjacency, community, degree, localMovingPartitio
   const uniqueComms = new Set(community.values());
   if (uniqueComms.size >= nodes.length) return null;
 
-  // Build super-node adjacency (including self-loops)
   const superAdj = new Map();
   for (const c of uniqueComms) superAdj.set(c, new Map());
 
@@ -413,7 +390,6 @@ function aggregateGraph(nodes, adjacency, community, degree, localMovingPartitio
     }
   }
 
-  // Update degree for super-nodes (includes self-loop weight)
   for (const c of uniqueComms) {
     let d = 0;
     const neighbors = superAdj.get(c);
@@ -446,13 +422,6 @@ function aggregateGraph(nodes, adjacency, community, degree, localMovingPartitio
   return { nodes: [...uniqueComms], adjacency: superAdj };
 }
 
-// ---------------------------------------------------------------------------
-// Modularity
-// ---------------------------------------------------------------------------
-
-/**
- * Compute modularity Q for the current partition.
- */
 function computeModularity(adjacency, community, degree, m2, resolution) {
   if (m2 === 0) return 0;
   let q = 0;
@@ -472,12 +441,7 @@ function computeModularity(adjacency, community, degree, m2, resolution) {
   return q / m2;
 }
 
-// ---------------------------------------------------------------------------
-// Graph Utilities
-// ---------------------------------------------------------------------------
-
 /**
- * Find connected components via BFS.
  * @param {Array<number>} nodes
  * @param {Map<number, Map<number, number>>} adjacency
  * @returns {Array<Array<number>>}

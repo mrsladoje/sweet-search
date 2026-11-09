@@ -112,13 +112,11 @@ export function scanInstantiations(line, language, opts = {}) {
  */
 export function scanSignatureTypes(line, language, opts = {}) {
   if (!TYPED_SIGNATURE_LANGS.has(language)) return [];
-  // The signature ends where the body starts.
   let sig = line;
   const brace = sig.indexOf('{');
   if (brace >= 0) sig = sig.slice(0, brace);
   const arrow = language === 'typescript' || language === 'tsx' ? sig.indexOf('=>') : -1;
   if (arrow >= 0) sig = sig.slice(0, arrow);
-  // Strip string literals (default values) before collecting names.
   sig = sig.replace(/(["'`])(?:\\.|(?!\1).)*\1/g, '""');
   const declared = declaredTypeParameters(sig, opts.ownName);
   const out = new Set();

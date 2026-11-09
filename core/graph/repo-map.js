@@ -1,16 +1,7 @@
 /**
- * Repository Map Generator
- *
  * Builds a token-budget-constrained repo map by running PageRank on the
  * entity/relationship graph stored in SQLite. Inspired by Aider's repo map
  * approach but powered by Sweet Search's existing knowledge graph.
- *
- * Algorithm:
- * 1. Load entities + relationships from code-graph.db
- * 2. Build adjacency list, run PageRank (power iteration)
- * 3. Rank entities by score, group by file
- * 4. Binary search to fit within token budget
- * 5. Output condensed map: file → ranked symbols with signatures
  */
 
 import Database from 'better-sqlite3';
@@ -29,10 +20,6 @@ import {
   resolveManifestCodeGraphPath,
 } from '../infrastructure/code-graph-visibility.js';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const DEFAULT_TOKEN_BUDGET = 1024;
 const DEFAULT_DAMPING = 0.85;
 const DEFAULT_ITERATIONS = 20;
@@ -48,12 +35,7 @@ const DISPLAY_ENTITY_TYPES = new Set([
   'object', 'actor', 'extension',
 ]);
 
-// ---------------------------------------------------------------------------
-// PageRank
-// ---------------------------------------------------------------------------
-
 /**
- * Run PageRank on an adjacency list.
  * @param {Map<string, Set<string>>} outEdges - node → set of target nodes
  * @param {Set<string>} allNodes - all node IDs
  * @param {{ damping?: number, iterations?: number }} opts
@@ -67,7 +49,6 @@ export function pageRank(outEdges, allNodes, opts = {}) {
 
   const base = (1 - damping) / n;
 
-  // Build inEdges for efficient reverse lookup
   const inEdges = new Map();
   for (const node of allNodes) inEdges.set(node, []);
   for (const [src, targets] of outEdges) {
@@ -78,7 +59,6 @@ export function pageRank(outEdges, allNodes, opts = {}) {
     }
   }
 
-  // Pre-compute out-degree and collect dangling nodes
   const outDegree = new Map();
   const danglingNodes = [];
   for (const node of allNodes) {
@@ -87,14 +67,11 @@ export function pageRank(outEdges, allNodes, opts = {}) {
     if (deg === 0) danglingNodes.push(node);
   }
 
-  // Initialize uniform scores
   let scores = new Map();
   const initScore = 1 / n;
   for (const node of allNodes) scores.set(node, initScore);
 
-  // Power iteration
   for (let iter = 0; iter < maxIter; iter++) {
-    // Redistribute dangling node mass uniformly
     let danglingSum = 0;
     for (const node of danglingNodes) {
       danglingSum += scores.get(node);
@@ -124,13 +101,7 @@ export function pageRank(outEdges, allNodes, opts = {}) {
   return scores;
 }
 
-// ---------------------------------------------------------------------------
-// Graph loading from SQLite
-// ---------------------------------------------------------------------------
-
 /**
- * Load graph data from the code-graph.db SQLite database.
- * @param {string} [dbPath] - Path to code-graph.db
  * @param {{ manifestEpoch?: number }} [opts]
  * @returns {{ entities: Array, relationships: Array }}
  */
@@ -165,10 +136,6 @@ export function loadGraph(dbPath, opts = {}) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Graph building
-// ---------------------------------------------------------------------------
-
 /**
  * Build adjacency structures from entities and relationships.
  * Nodes = entity IDs. Edges = relationships between entities.
@@ -184,19 +151,16 @@ export function buildAdjacency(graph) {
   const entityMap = new Map();
   const fileEntities = new Map();
 
-  // Register all entities as nodes
   for (const ent of entities) {
     allNodes.add(ent.id);
     entityMap.set(ent.id, ent);
 
-    // Group entities by file
     if (!fileEntities.has(ent.file_path)) {
       fileEntities.set(ent.file_path, []);
     }
     fileEntities.get(ent.file_path).push(ent);
   }
 
-  // Build name → entity ID lookup for resolving target_name references
   const nameToIds = new Map();
   for (const ent of entities) {
     const key = ent.name;
@@ -204,13 +168,11 @@ export function buildAdjacency(graph) {
     nameToIds.get(key).push(ent.id);
   }
 
-  // Add edges from relationships
   for (const rel of relationships) {
     const sourceId = rel.source_id;
     if (!sourceId) continue;
     if (!allNodes.has(sourceId)) continue;
 
-    // Resolve target: prefer target_id, fallback to name lookup
     let targetIds = [];
     if (rel.target_id && allNodes.has(rel.target_id)) {
       targetIds = [rel.target_id];
@@ -232,36 +194,20 @@ export function buildAdjacency(graph) {
   return { outEdges, allNodes, entityMap, fileEntities };
 }
 
-// ---------------------------------------------------------------------------
-// Repo map rendering
-// ---------------------------------------------------------------------------
-
-/**
- * Format a single entity line for the repo map.
- * @param {object} ent - Entity from DB
- * @returns {string}
- */
 function formatEntityLine(ent) {
   const sig = ent.signature
     ? ent.signature.replace(/\s+/g, ' ').trim()
     : ent.name;
-  // Truncate very long signatures
   const maxSigLen = 120;
   const display = sig.length > maxSigLen ? sig.slice(0, maxSigLen) + '...' : sig;
   return `  ${ent.type}: ${display}`;
 }
 
-/**
- * Estimate token count for a string (rough heuristic).
- * @param {string} text
- * @returns {number}
- */
 export function estimateTokens(text) {
   return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
 /**
- * Render the repo map text from ranked entities, fitting within a token budget.
  * Uses binary search on entity count to find the maximum that fits.
  *
  * @param {Array<{ entity: object, score: number }>} rankedEntities - Sorted desc by score
@@ -273,7 +219,6 @@ export function renderRepoMap(rankedEntities, tokenBudget) {
     return { text: '(empty repo map — no entities found)', entityCount: 0, fileCount: 0, totalEntities: 0 };
   }
 
-  // Binary search: find max N entities that fit in budget
   let lo = 1;
   let hi = rankedEntities.length;
   let bestN = 1;
@@ -301,7 +246,6 @@ export function renderRepoMap(rankedEntities, tokenBudget) {
 }
 
 /**
- * Build the formatted map text from a subset of ranked entities.
  * Groups by file, preserves score ordering within files.
  *
  * @param {Array<{ entity: object, score: number }>} entries
@@ -324,14 +268,12 @@ function buildMapText(entries) {
     }
   }
 
-  // Sort files by their highest-scored entity
   const sortedFiles = [...fileGroups.entries()]
     .sort((a, b) => fileMaxScore.get(b[0]) - fileMaxScore.get(a[0]));
 
   const lines = [];
   for (const [filePath, ents] of sortedFiles) {
     lines.push(filePath);
-    // Sort entities within file by line number for readability
     ents.sort((a, b) => (a.entity.start_line || 0) - (b.entity.start_line || 0));
     for (const { entity } of ents) {
       lines.push(formatEntityLine(entity));
@@ -342,12 +284,7 @@ function buildMapText(entries) {
   return lines.join('\n').trim();
 }
 
-// ---------------------------------------------------------------------------
-// Main API
-// ---------------------------------------------------------------------------
-
 /**
- * Generate a PageRank-scored repo map from the code graph.
  *
  * @param {object} [opts]
  * @param {number} [opts.tokenBudget=1024] - Max tokens for the output
@@ -363,7 +300,6 @@ export function generateRepoMap(opts = {}) {
   const tokenBudget = opts.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
   const start = Date.now();
 
-  // 1. Load graph from SQLite
   const graph = loadGraph(opts.dbPath, {
     manifest: opts.manifest,
     manifestEpoch: opts.manifestEpoch,
@@ -379,10 +315,8 @@ export function generateRepoMap(opts = {}) {
     };
   }
 
-  // 2. Build adjacency
   const { outEdges, allNodes, entityMap } = buildAdjacency(graph);
 
-  // 3. Run PageRank
   const scores = pageRank(outEdges, allNodes, {
     damping: opts.damping,
     iterations: opts.iterations,
@@ -411,7 +345,6 @@ export function generateRepoMap(opts = {}) {
     }
   }
 
-  // 5. Rank entities, filter to display-worthy types
   const ranked = [];
   for (const [nodeId, score] of scores) {
     const ent = entityMap.get(nodeId);
@@ -421,7 +354,6 @@ export function generateRepoMap(opts = {}) {
   }
   ranked.sort((a, b) => b.score - a.score);
 
-  // 6. Render with binary search for token budget
   const result = renderRepoMap(ranked, tokenBudget);
 
   return {

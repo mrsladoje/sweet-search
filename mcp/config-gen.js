@@ -7,10 +7,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
-// ---------------------------------------------------------------------------
-// Profiles
-// ---------------------------------------------------------------------------
-
 function devLocal(platform) {
   if (platform === 'claude') {
     return {
@@ -23,7 +19,6 @@ function devLocal(platform) {
     };
   }
 
-  // codex
   return [
     '[mcp_servers.sweet-search]',
     `command = ${JSON.stringify(process.execPath)}`,
@@ -49,7 +44,6 @@ function externalProject(platform, targetPath) {
     };
   }
 
-  // codex
   return [
     '[mcp_servers.sweet-search]',
     `command = ${JSON.stringify(process.execPath)}`,
@@ -76,7 +70,6 @@ function published(platform) {
     };
   }
 
-  // codex
   return [
     '[mcp_servers.sweet-search]',
     'command = "sweet-search-mcp"',
@@ -86,10 +79,6 @@ function published(platform) {
     '# tool_timeout_sec = 120',
   ].join('\n');
 }
-
-// ---------------------------------------------------------------------------
-// CLI
-// ---------------------------------------------------------------------------
 
 const args = process.argv.slice(2);
 const platform = args[0] || 'claude';

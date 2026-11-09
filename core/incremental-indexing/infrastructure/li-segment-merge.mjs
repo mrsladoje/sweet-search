@@ -246,7 +246,6 @@ export function pickSegmentsToMerge(small) {
  * for the `pending_delete` re-fire so a large index is not reloaded every tick
  * just to drain a few quarantined files.
  *
- * @param {string} stateDir
  * @param {{segmentSize?:number, graceMs?:number, minSmallSegments?:number, sweepOnly?:boolean}} [opts]
  * @returns {Promise<object>} summary, never throws on missing/legacy index
  */

@@ -53,12 +53,8 @@ function readResultSpan(r, opts = {}) {
 export function resolveResultText(r, opts = {}) {
   const inline = r?.content || r?.text || r?.code || r?.snippet;
   if (inline) return inline;
-  // Per-call cache: this function is hit by 5+ demotion sub-rules per result
-  // (bodyDensity, isTestChunk fallback, anomalousChunk, docCommentOnly,
-  //  inferEntityKindFromText). Without memoization, each cache miss triggers
-  // a full readFileSync + split('\n') on the chunk's source file — 5 file
-  // reads per result × 100 results = ~500 disk reads per applyResultDemotions
-  // call, which dominates the 6ms p50 cost.
+  // 5+ demotion sub-rules hit this per result; uncached that is ~500 file reads
+  // per applyResultDemotions call, which dominates the 6ms p50 cost.
   const cache = opts._resultTextCache;
   if (cache) {
     const file = resolveFilePath(r);
@@ -96,11 +92,7 @@ export function resolveFullFileText(r, opts = {}) {
   if (!opts.projectRoot) return '';
   const file = resolveFilePath(r);
   if (!file) return '';
-  // Per-call cache: this fires once per result × per isTestChunk site
-  // (hybrid + postprocess). Without memoization a query touching N
-  // distinct files reads each one fully ~2× per result that hits the
-  // file. Keyed by file path — the file content is immutable for the
-  // duration of one search() call.
+  // File content is immutable for the duration of one search() call.
   const cache = opts._fullFileTextCache;
   if (cache && cache.has(file)) return cache.get(file);
   try {

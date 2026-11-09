@@ -61,15 +61,13 @@ export class MarkdownChunker {
     const isRst = ext === '.rst';
     const language = isRst ? 'rst' : 'markdown';
 
-    // Phase 1: Extract frontmatter (RST doesn't typically have YAML frontmatter)
+    // RST doesn't typically have YAML frontmatter
     const { frontmatter, body } = isRst
       ? { frontmatter: null, body: content }
       : this._extractFrontmatter(content);
 
-    // Phase 2: Parse into sections by headers
     const sections = isRst ? this._splitByRstHeaders(body) : this._splitByHeaders(body);
 
-    // Phase 3: Build chunks from sections
     const chunks = [];
     const bodyStartLine = frontmatter ? content.indexOf(body) : 0;
     const bodyLineOffset = content.slice(0, bodyStartLine).split('\n').length - 1;
@@ -84,9 +82,6 @@ export class MarkdownChunker {
     return chunks;
   }
 
-  /**
-   * Extract YAML frontmatter from markdown content.
-   */
   _extractFrontmatter(content) {
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?/);
     if (!fmMatch) return { frontmatter: null, body: content };
@@ -94,16 +89,13 @@ export class MarkdownChunker {
     const rawYaml = fmMatch[1];
     const frontmatter = {};
 
-    // Simple YAML parser (key: value pairs)
     for (const line of rawYaml.split('\n')) {
       const kvMatch = line.match(/^(\w[\w-]*)\s*:\s*(.+)$/);
       if (kvMatch) {
         let value = kvMatch[2].trim();
-        // Handle array syntax [a, b, c]
         if (value.startsWith('[') && value.endsWith(']')) {
           value = value.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
         }
-        // Strip quotes
         else if ((value.startsWith('"') && value.endsWith('"')) ||
                  (value.startsWith("'") && value.endsWith("'"))) {
           value = value.slice(1, -1);
@@ -126,7 +118,7 @@ export class MarkdownChunker {
   _splitByHeaders(body) {
     const lines = body.split('\n');
     const sections = [];
-    const headerStack = {};  // level → title mapping for hierarchy
+    const headerStack = {};  // level → title
 
     let currentSection = null;
     let sectionStart = 0;
@@ -138,7 +130,6 @@ export class MarkdownChunker {
       if (headerMatch) {
         // An anchor line right above the header opens this section, not the previous one.
         const start = sectionStartWithLabels(lines, i, sectionStart + 1, (l) => MD_ANCHOR_RE.test(l));
-        // Close previous section
         if (currentSection !== null || start > 0) {
           const sectionContent = lines.slice(sectionStart, start).join('\n');
           sections.push({
@@ -152,13 +143,11 @@ export class MarkdownChunker {
         const level = headerMatch[1].length;
         const title = headerMatch[2].trim();
 
-        // Update header stack: clear all deeper levels
         for (let l = level; l <= 6; l++) {
           delete headerStack[l];
         }
         headerStack[level] = title;
 
-        // Build hierarchy snapshot
         const hierarchy = {};
         for (let l = 1; l <= 6; l++) {
           if (headerStack[l]) hierarchy[`h${l}`] = headerStack[l];
@@ -169,7 +158,6 @@ export class MarkdownChunker {
       }
     }
 
-    // Push final section
     const finalContent = lines.slice(sectionStart).join('\n');
     if (finalContent.trim().length > 0) {
       sections.push({
@@ -200,7 +188,6 @@ export class MarkdownChunker {
     let nextLevel = 1;
     const headerStack = {};    // level → title
 
-    // First pass: find all header positions
     const headerPositions = [];  // [{lineIdx, title, level}]
 
     for (let i = 0; i < lines.length; i++) {
@@ -210,19 +197,16 @@ export class MarkdownChunker {
 
       if (!nextLine) continue;
 
-      // Check if nextLine is an underline: all same RST char, length >= title
       const titleCandidate = line.trim();
       if (titleCandidate.length === 0) continue;
 
       if (this._isRstUnderline(nextLine, titleCandidate.length)) {
         const underlineChar = nextLine.trim()[0];
 
-        // Check for overline (optional): prevLine is same underline
         const hasOverline = prevLine !== null &&
           this._isRstUnderline(prevLine, titleCandidate.length) &&
           prevLine.trim()[0] === underlineChar;
 
-        // Assign level by order of first appearance
         const levelKey = hasOverline ? `over_${underlineChar}` : underlineChar;
         if (!(levelKey in charToLevel)) {
           charToLevel[levelKey] = nextLevel++;
@@ -234,11 +218,9 @@ export class MarkdownChunker {
           lineIdx: headerLineIdx,
           title: titleCandidate,
           level,
-          // The header block spans: headerLineIdx to i+1 (title + underline)
           headerEndIdx: i + 1,
         });
 
-        // Skip the underline line
         i++;
       }
     }
@@ -251,12 +233,10 @@ export class MarkdownChunker {
       floor = hp.headerEndIdx + 1;
     }
 
-    // Second pass: build sections from header positions
     let sectionStart = 0;
     let currentSection = null;
 
     for (const hp of headerPositions) {
-      // Close previous section
       if (hp.lineIdx > sectionStart || currentSection !== null) {
         const sectionContent = lines.slice(sectionStart, hp.lineIdx).join('\n');
         if (sectionContent.trim().length > 0 || currentSection !== null) {
@@ -269,7 +249,6 @@ export class MarkdownChunker {
         }
       }
 
-      // Update header stack
       for (let l = hp.level; l <= 6; l++) {
         delete headerStack[l];
       }
@@ -284,7 +263,6 @@ export class MarkdownChunker {
       sectionStart = hp.lineIdx;
     }
 
-    // Final section
     const finalContent = lines.slice(sectionStart).join('\n');
     if (finalContent.trim().length > 0) {
       sections.push({
@@ -298,17 +276,12 @@ export class MarkdownChunker {
     return sections;
   }
 
-  /**
-   * Check if a line is a valid RST underline/overline.
-   * Must consist entirely of a single repeated RST adornment character
-   * and be at least as long as the title.
-   */
+  /** A valid RST underline/overline: one repeated adornment character, at least as long as the title. */
   _isRstUnderline(line, minLength) {
     const trimmed = line.trim();
     if (trimmed.length < minLength || trimmed.length < 2) return false;
     const ch = trimmed[0];
     if (!RST_UNDERLINE_CHARS.has(ch)) return false;
-    // All characters must be the same
     for (let i = 1; i < trimmed.length; i++) {
       if (trimmed[i] !== ch) return false;
     }
@@ -325,12 +298,10 @@ export class MarkdownChunker {
 
     if (trimmed.length < this.minChunkSize) return [];
 
-    // Detect content type
     const containsCode = /```[\s\S]*?```/.test(trimmed);
     const containsTable = /\|.+\|/.test(trimmed) && /\|[\s-:]+\|/.test(trimmed);
     const contentType = containsCode ? 'code' : containsTable ? 'table' : 'prose';
 
-    // Build extra metadata
     const extraMeta = {
       header_hierarchy: hierarchy,
       content_type: contentType,
@@ -349,7 +320,6 @@ export class MarkdownChunker {
     const absLineStart = bodyLineOffset + lineStart + lead;
     const absLineEnd = bodyLineOffset + lineEnd - tail;
 
-    // If section fits in one chunk, emit directly
     if (trimmed.length <= this.maxChunkSize) {
       return [buildDocChunk(
         trimmed, filePath, language, 'section',
@@ -359,26 +329,20 @@ export class MarkdownChunker {
       )];
     }
 
-    // Section too large — split while preserving atomic blocks
     return this._splitLargeSection(
       trimmed, filePath, title, hierarchy, frontmatter,
       absLineStart, absLineEnd, extraMeta, language,
     );
   }
 
-  /**
-   * Split an oversized section while respecting atomic blocks
-   * (code fences, tables).
-   */
   _splitLargeSection(content, filePath, title, hierarchy, frontmatter, lineStart, lineEnd, extraMeta, language = 'markdown') {
     const chunks = [];
     const blocks = this._identifyAtomicBlocks(content);
     const totalLines = content.split('\n').length;
 
-    // Process blocks: emit atomic blocks whole, recursively split prose
     for (const block of blocks) {
       if (block.type === 'code' || block.type === 'table') {
-        // Atomic block — emit as single chunk even if oversized
+        // Atomic block: one chunk even if oversized
         if (block.content.trim().length >= this.minChunkSize) {
           const blockLineStart = lineStart + block.relLineStart;
           const blockLineEnd = lineStart + block.relLineEnd;
@@ -392,7 +356,6 @@ export class MarkdownChunker {
           ));
         }
       } else {
-        // Prose — recursive split
         const proseChunks = recursiveSplit(block.content, this.maxChunkSize);
         let runningLine = lineStart + block.relLineStart;
 
@@ -413,10 +376,7 @@ export class MarkdownChunker {
     return chunks;
   }
 
-  /**
-   * Identify atomic (no-split) blocks within markdown content.
-   * Returns an array of {type, content, relLineStart, relLineEnd} objects.
-   */
+  /** Atomic (no-split) blocks: an array of {type, content, relLineStart, relLineEnd}. */
   _identifyAtomicBlocks(content) {
     const lines = content.split('\n');
     const blocks = [];
@@ -432,10 +392,8 @@ export class MarkdownChunker {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      // Code fence toggle
       if (line.trimStart().startsWith('```')) {
         if (!inCodeBlock) {
-          // Flush prose
           if (currentProse.length > 0) {
             blocks.push({
               type: 'prose',
@@ -468,11 +426,9 @@ export class MarkdownChunker {
         continue;
       }
 
-      // Table detection
       const isTableLine = /^\|.+\|/.test(line.trim());
       if (isTableLine) {
         if (!inTable) {
-          // Flush prose before table
           if (currentProse.length > 0) {
             blocks.push({
               type: 'prose',
@@ -490,7 +446,6 @@ export class MarkdownChunker {
         continue;
       }
 
-      // End of table
       if (inTable) {
         blocks.push({
           type: 'table',
@@ -503,12 +458,10 @@ export class MarkdownChunker {
         proseStart = i;
       }
 
-      // Regular prose
       if (currentProse.length === 0) proseStart = i;
       currentProse.push(line);
     }
 
-    // Flush remaining
     if (inCodeBlock && codeBlockLines.length > 0) {
       // Unclosed code block — treat as code anyway
       blocks.push({

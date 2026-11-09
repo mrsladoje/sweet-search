@@ -125,7 +125,6 @@ const ONE_NESTED_ARGS = String.raw`\((?:[^()]|\([^()]*\))*\)`;
 // `<Map<K, V>>` (one nesting level), Rust turbofish `::<Vec<_>>`.
 const GENERIC_ARGS = String.raw`(?:\s*(?:::)?\s*<[^()<>;]*(?:<[^()<>;]*>[^()<>;]*)*>)?`;
 
-// ── Bare calls (`helper(x)`: a name called with no receiver) ───────────────
 // Reserved words and language constructs that can precede `(` but never name
 // a callable: closed per-language sets taken from each language's grammar
 // (keywords, special forms, spec-predeclared builtins such as Go's `len`).
@@ -199,7 +198,6 @@ function bareKeywordsFor(language) {
   return set;
 }
 
-// ── String literals ────────────────────────────────────────────────────────
 // Text inside a string is not code: `"usage: obj.run(cmd)"`, `println!("a.b({})")`
 // and SQL/HTML templates must not yield call edges. Interpolated parts ARE
 // code (`${a.b()}`, Swift `\(a.b())`, Ruby `#{a.b()}`, f-strings, C# `$"{…}"`,
@@ -516,7 +514,6 @@ export class CallSiteScanner {
     emitBare(name);
   }
 
-  /** Track open argument lists over one string-blanked line. */
   _trackParens(code) {
     if (code.indexOf('(') === -1 && code.indexOf(')') === -1) return;
     for (let i = 0; i < code.length; i++) {
@@ -866,7 +863,6 @@ export class CallSiteScanner {
           emit(name);
         }
       }
-      // Continuation lines.
       if (startsWithSeparator(trimmed)) {
         const lm = plan.leading.exec(trimmed);
         const tail = lm ? this._prevTail() : null;

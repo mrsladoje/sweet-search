@@ -44,12 +44,7 @@ import { createRequire } from 'node:module';
 /**
  * Spawn a helper that demotes `pid`, swallowing every failure mode.
  * Detached + unref'd + stdio:'ignore' so it never holds the caller open and
- * never writes to the caller's stdio. A throw from `spawn` itself (e.g. an
- * exotic platform restriction) is caught; an async spawn `error` (e.g. ENOENT
- * for a missing binary) is caught via the `error` listener.
- *
- * @param {string} command
- * @param {string[]} args
+ * never writes to the caller's stdio.
  */
 function spawnBestEffort(command, args) {
   try {
@@ -64,10 +59,8 @@ function spawnBestEffort(command, args) {
 }
 
 /**
- * Demote the given child process to OS background priority. Best-effort,
- * platform-dispatched, NEVER throws.
- *
- * @param {number} pid The pid of the *spawned child* to demote.
+ * Demote the given spawned child process to OS background priority.
+ * Best-effort, NEVER throws.
  */
 export function applyBackgroundPriority(pid) {
   try {
@@ -120,15 +113,13 @@ let _nativeAddon;
 export function loadNativePriorityAddon() {
   if (_nativeAddon !== undefined) return _nativeAddon;
   try {
-    // Use createRequire so this ESM module can load the CJS napi addon. The
-    // optionalDependency package name resolves to the per-platform prebuilt
-    // binary via the addon's own index.js loader.
+    // createRequire: this ESM module loads a CJS napi addon.
     const require = createRequire(import.meta.url);
     const mod = require('@sweet-search/bg-priority');
     _nativeAddon =
       mod && typeof mod.setBackgroundMode === 'function' ? mod : null;
   } catch {
-    // optionalDependency absent or failed to build → fall back. Expected.
+    // optionalDependency absent or failed to build: expected.
     _nativeAddon = null;
   }
   return _nativeAddon;

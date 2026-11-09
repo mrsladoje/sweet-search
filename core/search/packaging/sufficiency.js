@@ -13,7 +13,7 @@ import { LANG_KEYWORDS } from './header-context.js';
  *   - medium: top-1 and top-2 within 20%
  *   - low: many ties or low candidate recall
  *
- * Fix #4: Also factors in regex selectivity (few grep matches = higher confidence).
+ * Also factors in regex selectivity (few grep matches = higher confidence).
  *
  * @param {Array<{score: number}>} results - Ranked results
  * @param {object} stats - Search stats (grepMatches, indexedChunks)
@@ -37,14 +37,12 @@ export function computeConfidence(results, stats) {
 
   const ratio = top1 / top2;
 
-  // Check for low candidate recall (few grep matches relative to index)
   const grepMatches = stats?.grepMatches || 0;
   const indexedChunks = stats?.indexedChunks || 0;
   if (grepMatches > 0 && indexedChunks === 0) {
     return { confidence: 'low', confidenceReason: 'no_indexed_candidates' };
   }
 
-  // Base confidence from score gap
   let confidence;
   let confidenceReason;
 
@@ -71,7 +69,6 @@ export function computeConfidence(results, stats) {
     }
   }
 
-  // Fix #4: Regex selectivity adjustment
   // Low match count = selective regex = more likely correct
   if (grepMatches > 0 && grepMatches <= 10 && confidence === 'medium') {
     confidence = 'high';
@@ -100,7 +97,6 @@ function extractCodeIdentifiers(code, ownSymbolName) {
   for (const id of matches) {
     if (LANG_KEYWORDS.has(id)) continue;
     if (id.toLowerCase() === ownLower) continue;
-    // Drop pure numerics and trivially-short tokens already filtered.
     out.add(id);
   }
   return out;

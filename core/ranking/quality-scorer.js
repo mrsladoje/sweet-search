@@ -16,10 +16,6 @@ import { existsSync, statSync } from 'fs';
 import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 /** Weights for each quality factor (must sum to 1.0) */
 const FACTOR_WEIGHTS = {
   testProximity: 0.20,
@@ -39,10 +35,6 @@ const COMMENT_LINE_RE = /^\s*(\/\/|#(?!!)|\/\*|\*(?!\/)|\*\/)/;
 /** Test file patterns (relative to source file) */
 const TEST_SUFFIXES = ['.test.js', '.spec.js', '.test.ts', '.spec.ts', '.test.mjs', '.spec.mjs'];
 const TEST_DIRS = ['__tests__', 'tests', 'test', 'spec'];
-
-// ---------------------------------------------------------------------------
-// Factor helpers
-// ---------------------------------------------------------------------------
 
 /** @type {Map<string, number>} filePath -> testProximity score */
 const _testProximityCache = new Map();
@@ -66,7 +58,7 @@ function _computeTestProximity(filePath) {
   const ext = path.extname(filePath);
   const base = path.basename(filePath, ext);
 
-  // Skip scoring test files themselves — they always have tests
+  // Test files themselves always count as tested
   for (const suffix of TEST_SUFFIXES) {
     if (filePath.endsWith(suffix)) return 1.0;
   }
@@ -74,16 +66,13 @@ function _computeTestProximity(filePath) {
     if (filePath.includes(`/${td}/`) || filePath.includes(`\\${td}\\`)) return 1.0;
   }
 
-  // Check sibling test file (e.g. foo.js → foo.test.js)
   for (const suffix of TEST_SUFFIXES) {
     if (existsSync(path.join(dir, `${base}${suffix}`))) return 1.0;
   }
 
-  // Check test directories relative to file
   for (const td of TEST_DIRS) {
     for (const suffix of TEST_SUFFIXES) {
       if (existsSync(path.join(dir, td, `${base}${suffix}`))) return 1.0;
-      // Also check parent dir
       if (existsSync(path.join(dir, '..', td, `${base}${suffix}`))) return 1.0;
     }
   }
@@ -137,19 +126,14 @@ export function scoreSizePreference(text) {
   if (len >= 100 && len <= 500) return 1.0;
 
   if (len < 100) {
-    // Linear decay from 1.0 at 100 chars to 0.3 at 0 chars
     return 0.3 + 0.7 * (len / 100);
   }
 
-  // len > 500: decay from 1.0 at 500 to 0.3 at 2000+
   const decay = Math.min((len - 500) / 1500, 1);
   return 1.0 - 0.7 * decay;
 }
 
-// ---------------------------------------------------------------------------
-// Recency cache (module-level, shared across scorer instances)
-// ---------------------------------------------------------------------------
-
+// Module-level: shared across scorer instances.
 /** @type {Map<string, number>} filePath -> recency score */
 const _recencyCache = new Map();
 
@@ -179,23 +163,13 @@ export function scoreRecency(filePath) {
   return score;
 }
 
-/**
- * Clear the recency cache (useful for testing or long-running processes).
- */
 export function clearRecencyCache() {
   _recencyCache.clear();
 }
 
-/**
- * Clear the test proximity cache (useful for testing or long-running processes).
- */
 export function clearTestProximityCache() {
   _testProximityCache.clear();
 }
-
-// ---------------------------------------------------------------------------
-// QualityScorer class
-// ---------------------------------------------------------------------------
 
 export class QualityScorer {
   /**
@@ -207,16 +181,12 @@ export class QualityScorer {
     this.dbPath = options.dbPath || DB_PATHS.codeGraph;
     this.weights = { ...FACTOR_WEIGHTS, ...options.weights };
 
-    // Lazy-loaded PageRank scores
     this._pageRankScores = null;
     this._pageRankEntityMap = null;
     this._pageRankLoaded = false;
   }
 
-  /**
-   * Lazily load and compute PageRank scores from the entity graph.
-   * Caches result for the lifetime of this scorer instance.
-   */
+  /** Loaded lazily; cached for the lifetime of this scorer instance. */
   _ensurePageRank() {
     if (this._pageRankLoaded) return;
     this._pageRankLoaded = true;
@@ -224,8 +194,6 @@ export class QualityScorer {
     try {
       if (!existsSync(this.dbPath)) return;
 
-      // Dynamic import to avoid circular deps at module level
-      // repo-map.js exports are already loaded as ESM
       const { loadGraph, buildAdjacency, pageRank } = require_repo_map();
       const graph = loadGraph(this.dbPath);
       if (!graph.entities.length) return;
@@ -233,7 +201,6 @@ export class QualityScorer {
       const { outEdges, allNodes, entityMap } = buildAdjacency(graph);
       const scores = pageRank(outEdges, allNodes);
 
-      // Normalize scores to 0-1
       let maxScore = 0;
       for (const s of scores.values()) {
         if (s > maxScore) maxScore = s;
@@ -248,7 +215,7 @@ export class QualityScorer {
         }
       }
     } catch {
-      // Graph not available — centrality will return 0
+      // Graph not available: centrality returns 0
     }
   }
 
@@ -265,7 +232,6 @@ export class QualityScorer {
     const name = result.name || '';
     const startLine = result.startLine ?? result.start_line;
 
-    // Try to match by file + name or file + line
     for (const [id, ent] of this._pageRankEntityMap) {
       if (ent.file_path !== file) continue;
       if (name && ent.name === name) {
@@ -311,17 +277,12 @@ export class QualityScorer {
       score += (factors[key] || 0) * weight;
     }
 
-    // Clamp to 0-1
     score = Math.max(0, Math.min(1, score));
 
     return { score, factors };
   }
 
-  /**
-   * Batch-score an array of results, adding quality_score and quality_factors.
-   * @param {Array<object>} results - Search results
-   * @returns {Array<object>} Same results with quality_score and quality_factors added
-   */
+  /** Adds quality_score and quality_factors to each result. */
   scoreResults(results) {
     if (!Array.isArray(results) || results.length === 0) return results;
 
@@ -336,24 +297,17 @@ export class QualityScorer {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Repo-map require helper (avoids top-level circular import)
-// ---------------------------------------------------------------------------
-
 let _repoMapModule = null;
 
 function require_repo_map() {
   if (!_repoMapModule) {
-    // Use a dynamic require pattern that works with both ESM and CJS
-    // Since repo-map.js uses named exports, we import at call time
     throw new Error('_repoMapModule not set — call setRepoMapModule first');
   }
   return _repoMapModule;
 }
 
 /**
- * Inject the repo-map module to avoid circular ESM imports.
- * Called once from sweet-search.js at init time.
+ * Injected to avoid a circular ESM import with repo-map. Called once from sweet-search.js at init time.
  * @param {{ pageRank: Function, loadGraph: Function, buildAdjacency: Function }} mod
  */
 export function setRepoMapModule(mod) {

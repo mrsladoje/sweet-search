@@ -80,7 +80,6 @@ export function zeroManifest(paths) {
  * yet — callers fall back to the legacy "open whatever file exists"
  * behaviour until the reconciler runs at least once.
  *
- * @param {string} stateDir
  * @returns {object|null}
  */
 export function readManifest(stateDir) {
@@ -105,7 +104,6 @@ export function readManifest(stateDir) {
  *   3. atomically rename to the live name
  *   4. fsync the parent directory so the rename survives a power loss
  *
- * @param {string} stateDir
  * @param {object} manifest
  */
 export function writeManifest(stateDir, manifest) {

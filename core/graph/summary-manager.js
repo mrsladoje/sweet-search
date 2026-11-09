@@ -1,14 +1,5 @@
 /**
- * Summary Manager - HCGS Summary Backup/Restore
- *
  * Handles automatic preservation of HCGS summaries across incremental rebuilds.
- * Core module for Phase 1 of the INDEXING_PLAN.md implementation.
- *
- * Key features:
- * - Always-on backup (no flag needed)
- * - Collision-proof restore (file_path + type + name + signature_hash)
- * - Graceful fallback for legacy summaries without signature_hash
- * - Atomic operations with transaction support
  *
  * Restore Strategy (cascading match):
  * 1. Try stable ID match first (fastest, most reliable for unchanged signatures)
@@ -25,9 +16,6 @@ import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { chunkedInExec } from '../infrastructure/db-utils.js';
 
-// =============================================================================
-// CRASH-SAFE DISK PERSISTENCE
-// =============================================================================
 //
 // The in-memory backup model has a fatal gap: if the process is killed
 // between `backupSummaries` and `restoreSummaries` (e.g., mid-`buildCodeGraph`
@@ -122,12 +110,8 @@ async function unlinkDiskBackup(dbPath) {
 }
 
 /**
- * Backup summaries from existing database.
- * Returns all entities with non-null summaries for later restoration.
- *
  * Includes id and signature_hash for collision-proof restore of overloaded methods.
  *
- * @param {string} [dbPath] - Path to the database (defaults to DB_PATHS.codeGraph)
  * @returns {Promise<{summaries: Array, count: number, error?: string}>}
  */
 export async function backupSummaries(dbPath = DB_PATHS.codeGraph) {
@@ -158,7 +142,6 @@ export async function backupSummaries(dbPath = DB_PATHS.codeGraph) {
     const db = new Database(dbPath, { readonly: true });
     applyReadPragmas(db);
 
-    // Query all entities with summaries, including id and signature_hash for collision-proof restore
     const summaries = db.prepare(`
       SELECT id, name, file_path, type, signature, signature_hash, summary, summary_embedding
       FROM entities
@@ -208,14 +191,6 @@ export async function backupSummaries(dbPath = DB_PATHS.codeGraph) {
 }
 
 /**
- * Restore summaries to new database with collision-proof matching.
- *
- * Uses cascading match strategy for maximum compatibility:
- * 1. Try stable ID match first (fastest, handles most cases)
- * 2. Fall back to (file_path, type, name, signature_hash) for overloaded methods
- * 3. Fall back to (file_path, type, name) only if exactly one match (legacy data)
- *
- * @param {string} [dbPath] - Path to the database (defaults to DB_PATHS.codeGraph)
  * @param {Object} backup - Backup object from backupSummaries()
  * @param {Array} backup.summaries - Array of summary records with id, signature_hash
  * @returns {Promise<{restored: number, skipped: {total: number, idMatch: number, sigHashMatch: number, legacyMatch: number, ambiguous: number, notFound: number}}>}
@@ -231,15 +206,12 @@ export async function restoreSummaries(dbPath = DB_PATHS.codeGraph, backup) {
   const Database = (await import('better-sqlite3')).default;
   const db = new Database(dbPath);
 
-  // Prepared statements for cascading match strategy
-  // Strategy 1: Match by stable ID (most reliable if signature unchanged)
   const updateByIdStmt = db.prepare(`
     UPDATE entities
     SET summary = ?, summary_embedding = ?
     WHERE id = ?
   `);
 
-  // Strategy 2: Match by (file_path, type, name, signature_hash) for overloaded methods
   const updateBySigHashStmt = db.prepare(`
     UPDATE entities
     SET summary = ?, summary_embedding = ?
@@ -260,12 +232,10 @@ export async function restoreSummaries(dbPath = DB_PATHS.codeGraph, backup) {
   let restored = 0;
   const skipped = { total: 0, idMatch: 0, sigHashMatch: 0, legacyMatch: 0, ambiguous: 0, notFound: 0 };
 
-  // Use transaction for atomic bulk update
   const transaction = db.transaction(() => {
     for (const row of backup.summaries) {
       let matched = false;
 
-      // Strategy 1: Try ID match first
       if (row.id) {
         const result = updateByIdStmt.run(row.summary, row.summary_embedding, row.id);
         if (result.changes > 0) {
@@ -275,7 +245,6 @@ export async function restoreSummaries(dbPath = DB_PATHS.codeGraph, backup) {
         }
       }
 
-      // Strategy 2: Try signature_hash match for overloaded methods
       if (!matched && row.signature_hash) {
         const result = updateBySigHashStmt.run(
           row.summary,
@@ -292,11 +261,9 @@ export async function restoreSummaries(dbPath = DB_PATHS.codeGraph, backup) {
         }
       }
 
-      // Strategy 3: Legacy fallback - only if exactly one match
       if (!matched) {
         const countResult = countByNameStmt.get(row.file_path, row.type, row.name);
         if (countResult.cnt === 1) {
-          // Safe to restore - only one entity with this name
           const result = updateByNameStmt.run(
             row.summary,
             row.summary_embedding,
@@ -341,9 +308,6 @@ export async function restoreSummaries(dbPath = DB_PATHS.codeGraph, backup) {
 }
 
 /**
- * Get summary statistics from database.
- *
- * @param {string} [dbPath] - Path to the database
  * @returns {Promise<{total: number, withSummary: number, withoutSummary: number, byType: Object}>}
  */
 export async function getSummaryStats(dbPath = DB_PATHS.codeGraph) {
@@ -389,9 +353,6 @@ export async function getSummaryStats(dbPath = DB_PATHS.codeGraph) {
 }
 
 /**
- * Mark entities for regeneration by setting their summaries to NULL.
- *
- * @param {string} [dbPath] - Path to the database
  * @param {string[]} filePaths - Array of file paths whose entities should be marked
  * @returns {Promise<{marked: number}>}
  */
@@ -420,11 +381,8 @@ export async function markForRegeneration(dbPath = DB_PATHS.codeGraph, filePaths
 }
 
 /**
- * Get entities that need summary generation (summary IS NULL).
- *
  * Includes signature_hash for entity identification in subsequent operations.
  *
- * @param {string} [dbPath] - Path to the database
  * @returns {Promise<Array>}
  */
 export async function getEntitiesNeedingSummary(dbPath = DB_PATHS.codeGraph) {
@@ -449,11 +407,6 @@ export async function getEntitiesNeedingSummary(dbPath = DB_PATHS.codeGraph) {
 }
 
 /**
- * Store a single summary with optional embedding.
- *
- * @param {string} [dbPath] - Path to the database
- * @param {number} entityId - Entity ID
- * @param {string} summary - Generated summary
  * @param {Buffer|null} [embedding] - Optional summary embedding
  * @returns {Promise<{success: boolean}>}
  */
@@ -476,9 +429,6 @@ export async function storeSummary(dbPath = DB_PATHS.codeGraph, entityId, summar
 }
 
 /**
- * Store multiple summaries in a batch (transactional).
- *
- * @param {string} [dbPath] - Path to the database
  * @param {Array<{id: number, summary: string, embedding?: Buffer}>} summaries
  * @returns {Promise<{stored: number}>}
  */
@@ -515,10 +465,6 @@ export async function storeSummariesBatch(dbPath = DB_PATHS.codeGraph, summaries
 }
 
 /**
- * Get child summaries for an entity (for hierarchical aggregation).
- *
- * @param {string} [dbPath] - Path to the database
- * @param {number} parentId - Parent entity ID
  * @returns {Promise<Array<{name: string, type: string, summary: string}>>}
  */
 export async function getChildSummaries(dbPath = DB_PATHS.codeGraph, parentId) {

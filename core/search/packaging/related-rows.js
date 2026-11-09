@@ -116,13 +116,11 @@ export function relatedRowScore(row, queryTokens, candidates = []) {
   return nameHits + 0.5 * pathHits + (candidate ? 1 : 0);
 }
 
-// ---------------------------------------------------------------------------
-// Container rows (2026-10-05, r3hb-sequel-08). A summary row that names a large type
+// Container rows. A summary row that names a large type
 // (`lib/sequel/model/base.rb 4-2449 class Model`, an entity hit on the name Model) points at
 // 2,445 lines and gave the agent nothing to read; the method that answered,
 // primary_key_lookup at 1079, sat inside it. Such a row now names the type's members whose
 // names agree with the query on at least CONTAINER_MEMBER_MIN_AGREE subtokens, best first.
-// ---------------------------------------------------------------------------
 export const CONTAINER_ROW_MIN_LINES = 120;
 
 const CONTAINER_MEMBER_MIN_AGREE = 2;

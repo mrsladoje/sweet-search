@@ -1,6 +1,4 @@
 /**
- * Community Detector Module
- *
  * Discovers logical communities of code entities using the Leiden algorithm
  * on the entity/relationship graph stored in SQLite (code-graph.db).
  *
@@ -18,19 +16,13 @@ import { leidenCommunities, findConnectedComponents } from './leiden-algorithm.j
 import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
 import { liveEntitySql, liveRelationshipSql } from '../infrastructure/code-graph-visibility.js';
 
-// Re-export for existing consumers
 export { leidenCommunities } from './leiden-algorithm.js';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const ENTITY_CUTOFF = 50_000;
 const RELATIONSHIP_CUTOFF = 200_000;
 const DEFAULT_TIMEOUT_MS = 2000;
 const LIVE_RELATIONSHIPS = `type != 'importsFile' AND type NOT IN ${TRACE_ONLY_TYPES_SQL} AND ${liveRelationshipSql()}`;
 
-// Relationship type weights for adjacency construction
 const REL_WEIGHTS = {
   imports: 3,
   extends: 3,
@@ -39,16 +31,6 @@ const REL_WEIGHTS = {
   uses: 1,
 };
 
-// ---------------------------------------------------------------------------
-// Graph Hash
-// ---------------------------------------------------------------------------
-
-/**
- * Compute sha256 hash of the code graph structure.
- *
- * @param {string} [dbPath] - Path to code-graph.db
- * @returns {string} hex digest
- */
 export function computeGraphHash(dbPath) {
   const resolvedPath = dbPath || DB_PATHS.codeGraph;
   const db = new Database(resolvedPath, { readonly: true, timeout: 5000 });
@@ -77,13 +59,7 @@ export function computeGraphHash(dbPath) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Directory Fallback
-// ---------------------------------------------------------------------------
-
 /**
- * Fallback: group entities by top-2 directory path segments.
- *
  * @param {Array<{id: number|string, name: string, file_path: string}>} entities
  * @returns {Array<{id: number, entityIds: Array, fileIds: Array, entityCount: number}>}
  */
@@ -117,13 +93,7 @@ export function fallbackDirectoryGrouping(entities) {
   return communities;
 }
 
-// ---------------------------------------------------------------------------
-// Main API
-// ---------------------------------------------------------------------------
-
 /**
- * Detect communities from code-graph.db relationships.
- *
  * @param {string} [dbPath] - Path to code-graph.db
  * @param {object} [options]
  * @param {number} [options.resolution=1.0]
@@ -160,7 +130,6 @@ export function detectCommunities(dbPath, options = {}) {
       ORDER BY source_id, target_id, type
     `).all();
 
-    // Hard cutoffs: fall back to directory grouping
     if (entities.length > ENTITY_CUTOFF || relationships.length > RELATIONSHIP_CUTOFF) {
       const graphHash = computeGraphHashFromRows(relationships);
       return {
@@ -171,10 +140,8 @@ export function detectCommunities(dbPath, options = {}) {
       };
     }
 
-    // Build weighted adjacency (undirected)
     const adjacency = buildWeightedAdjacency(entities, relationships);
 
-    // Run Leiden
     const startTime = Date.now();
     const { assignment, converged } = leidenCommunities(adjacency, {
       resolution: options.resolution,
@@ -186,11 +153,9 @@ export function detectCommunities(dbPath, options = {}) {
     const elapsed = Date.now() - startTime;
     const stale = !converged && elapsed >= timeoutMs;
 
-    // Build entity lookup for file_path mapping
     const entityMap = new Map();
     for (const ent of entities) entityMap.set(ent.id, ent);
 
-    // Group by community
     const commGroups = new Map();
     for (const [nodeId, commId] of assignment) {
       if (!commGroups.has(commId)) {
@@ -202,7 +167,6 @@ export function detectCommunities(dbPath, options = {}) {
       if (ent?.file_path) g.fileIds.add(ent.file_path);
     }
 
-    // Connectivity sanity check per community (BFS on induced subgraph)
     const finalCommunities = [];
     let nextId = 0;
 
@@ -245,14 +209,7 @@ export function detectCommunities(dbPath, options = {}) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Internal Helpers
-// ---------------------------------------------------------------------------
-
 /**
- * Build weighted undirected adjacency from entities and relationships.
- * @param {Array} entities
- * @param {Array} relationships
  * @returns {Map<number, Map<number, number>>}
  */
 function buildWeightedAdjacency(entities, relationships) {

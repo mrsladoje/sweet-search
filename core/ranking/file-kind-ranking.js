@@ -70,13 +70,8 @@ export { avgFnBodyLines, rawStringDensity } from './file-kind/chunk-signals.js';
 export function applyResultDemotions(results, opts = {}) {
   if (!Array.isArray(results) || results.length === 0) return results;
 
-  // Attach intra-call (and optionally cross-call) memoization for the three
-  // hot lookups inside the demotion sub-rules:
-  //   - _entityKindCache    : enclosing/contained entity from SQLite
-  //   - _entityNameCache    : findEntityWithNameInRange (symbol-target adopt)
-  //   - _resultTextCache    : readFileSync source span — biggest win, since
-  //                           5+ rules call resolveResultText per result and
-  //                           each cache-miss fires a full readFileSync.
+  // _resultTextCache is the biggest win: 5+ rules call resolveResultText per
+  // result and each cache-miss fires a full readFileSync.
   // Caller may pass pre-allocated Maps via opts to share across both
   // applyResultDemotions calls in the same search() invocation.
   opts = {
@@ -125,8 +120,6 @@ export function applyResultDemotions(results, opts = {}) {
   // format='agent', so their behaviour is preserved; GCSN bench uses
   // mode='auto' without format, so boosts are skipped — restoring the
   // 85.99% MRR heldout baseline.
-  //
-  // See docs/SOTA_RESEARCH_2026_FIXES.md for full rationale.
   const isAgentFormat = AGENT_FORMATS.has(opts.format)
     || process.env.SWEET_SEARCH_FORCE_BM25F_BOOSTS === '1';
   const symbolExactTarget = isAgentFormat && !hasAblation(ablations, 'no-symbol-exact-boost')
@@ -148,12 +141,11 @@ export function applyResultDemotions(results, opts = {}) {
     ? querySpellingWords(opts.query || '')
     : null;
 
-  // F9 (2026-05-12): pre-compute query word tokens once for additional_symbols
-  // re-anchoring (see findAdditionalSymbolRelabel docstring). Format-gated;
-  // skipped entirely when isAgentFormat=false so GCSN benchmark traffic is
-  // untouched (same gate as the other BM25F-family signals above).
+  // F9: query word tokens for additional_symbols re-anchoring (see
+  // findAdditionalSymbolRelabel). Format-gated like the other BM25F-family signals
+  // so GCSN benchmark traffic is untouched.
   //
-  // F10 (2026-05-12): the extraction regex preserves a leading `$` so
+  // F10: the extraction regex preserves a leading `$` so
   // identifiers like $ZodType / $ZodTypeInternals (zod v4/core public-API
   // convention — the structural interfaces are $-prefixed while the runtime
   // classes are not) round-trip through tokenization. `\b[A-Za-z0-9_]+\b`
@@ -169,7 +161,6 @@ export function applyResultDemotions(results, opts = {}) {
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
 
-  // Per-rule timers — accumulator pattern, no object allocation per call.
   // No-op in production; only fires when profile-search-stages.mjs sets
   // globalThis.__stageTimings. Adds ~1ms overhead per call when profiling
   // (12 rules × 100 results × 2 performance.now() calls), acceptable for
@@ -208,14 +199,8 @@ export function applyResultDemotions(results, opts = {}) {
     ? new Set((ENTITY_KIND_KEYWORDS[preferredKind] || []).map(normalizeType))
     : null;
 
-  // For-loop with a pre-allocated array. The hot path here was a `.map()`
-  // callback that always allocated a `details` array per result and a fresh
-  // result spread `{ ...result, _resultDemotionOrigIndex: index }` even when
-  // no rule fired. With ~100 results × 2 demotion sites that's hundreds of
-  // empty arrays + light spreads per query for nothing. Lazy `details`
-  // allocation skips the array when the result has zero rule hits;
-  // unchanged-result spreads keep going through the same shape (the caller
-  // expects new references — cascade scoring writes back r.score).
+  // Lazy `details` allocation skips the array when the result has zero rule hits.
+  // Unchanged results still get a new reference (cascade scoring writes back r.score).
   const adjusted = new Array(window);
   for (let index = 0; index < window; index++) {
     const result = results[index];
@@ -357,7 +342,7 @@ export function applyResultDemotions(results, opts = {}) {
 
     const baseScore = typeof result.score === 'number' ? result.score : 0;
     if (__profOn) __ruleT0 = performance.now();
-    // F8 (2026-05-07): when the query has an explicit symbol target (extractSymbolDefinitionTarget)
+    // F8: when the query has an explicit symbol target (extractSymbolDefinitionTarget)
     // AND the chunk contains an entity matching that name, prefer THAT entity for labeling
     // over kind-preference / name-precision heuristics. Targets cases like S3-Q4 (chunk
     // labeled "Binding" but contains the Default function the user asked for) and parallels
@@ -382,7 +367,7 @@ export function applyResultDemotions(results, opts = {}) {
           return resolved;
         })()
       : null;
-    // F9 (2026-05-12): when F8 (verb-anchored explicit target) did not fire,
+    // F9: when F8 (verb-anchored explicit target) did not fire,
     // try additional_symbols re-anchoring. JS/TS/TSX/JSX-gated inside the
     // helper. Pure label adoption — no score change. See helper docstring.
     const additionalSymbolRelabelEntity = !exactSymbolTargetEntity
@@ -435,10 +420,8 @@ export function applyResultDemotions(results, opts = {}) {
     const entityToAdopt = shouldAdoptEntity ? preferredEntity : shouldAdoptContained ? containedEntity : null;
     if (__profOn) __ruleTime[11] += performance.now() - __ruleT0;
     if (mult === 1 && !entityToAdopt) {
-      // Unchanged: shallow copy preserves the caller-expected new-reference
-      // shape (downstream cascade scoring writes back r.score) without the
-      // redundant _resultDemotionOrigIndex field — V8 Array.sort is stable
-      // since ES2019, so the in-place index-order tie-break is implicit.
+      // Unchanged: shallow copy keeps the new-reference shape (downstream cascade
+      // scoring writes back r.score). Array.sort is stable, so no index tie-break field.
       adjusted[index] = { ...result };
       continue;
     }
@@ -526,9 +509,7 @@ export function applyResultDemotions(results, opts = {}) {
 
   if (!changed) return results;
 
-  // V8 Array.sort is stable (ES2019) — same-score results retain their
-  // original-window order without needing the explicit _origIndex tiebreak
-  // the prior implementation carried.
+  // Array.sort is stable: same-score results keep their original-window order.
   adjusted.sort((a, b) => (b.score || 0) - (a.score || 0));
   return window === results.length ? adjusted : adjusted.concat(results.slice(window));
 }
@@ -600,7 +581,6 @@ export function applyFileKindRanking(results, opts = {}) {
     ? opts
     : { ...opts, _fileKindCache: new Map() };
 
-  // Walk the window once: classify kinds and check for competition.
   const kinds = new Array(windowSize);
   let demotableCount = 0;
   let implCount = 0;
@@ -652,7 +632,6 @@ export function applyFileKindRanking(results, opts = {}) {
     };
   }
 
-  // Stable sort: descending score, tie-break on original index.
   reranked.sort((a, b) => {
     const d = (b.score || 0) - (a.score || 0);
     return d !== 0 ? d : a._fileKindOrigIndex - b._fileKindOrigIndex;

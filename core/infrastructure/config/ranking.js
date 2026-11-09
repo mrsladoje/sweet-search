@@ -1,14 +1,5 @@
-/**
- * Ranking Configuration — reranking, cascade scoring, late interaction.
- * Split from core/config.js during DDD migration.
- */
-
 const VOYAGEAI_API_KEY = process.env.VOYAGEAI_API_KEY || '';
 const JINA_API_KEY = process.env.JINA_API_KEY || '';
-
-// =============================================================================
-// RERANKING CONFIGURATION (Tiered)
-// =============================================================================
 
 export const RERANK_CONFIG = {
   // Shared settings for remote rerankers
@@ -55,9 +46,7 @@ export const RERANK_CONFIG = {
   },
 };
 
-// =============================================================================
-// LOCAL RERANKER CONFIGURATION (GTE ModernBERT INT8)
-//
+// Local reranker: GTE ModernBERT INT8.
 // Architecture:
 // - Model: Alibaba-NLP/gte-reranker-modernbert-base (INT8 quantized)
 // - Library: Direct onnxruntime-node + native-tokenizer.js
@@ -65,7 +54,6 @@ export const RERANK_CONFIG = {
 // - Latency: ~700ms for 50 docs (~14ms/doc after warmup), ~15s cold start
 //
 // Default direct reranker priority: Local ModernBERT → Jina API → Voyage API
-// =============================================================================
 
 export const LOCAL_RERANKER_CONFIG = {
   // Master switch for local reranker — DISABLED by default.
@@ -82,7 +70,6 @@ export const LOCAL_RERANKER_CONFIG = {
   // still activate via their API keys if present.
   useLocalReranker: false,
 
-  // Model settings
   model: {
     name: 'gte-reranker-modernbert-base-int8',
     huggingfaceId: 'Alibaba-NLP/gte-reranker-modernbert-base',
@@ -91,7 +78,6 @@ export const LOCAL_RERANKER_CONFIG = {
     maxLength: 512,  // Max tokens per query-document pair
   },
 
-  // Direct reranker settings
   stage2: {
     candidateCount: 50,
     requestTimeout: 10000,        // 10s timeout per request
@@ -99,14 +85,8 @@ export const LOCAL_RERANKER_CONFIG = {
 };
 
 /**
- * Check if local reranker should be used.
- *
- * DEFAULT: TRUE (local reranker enabled by default)
- * Set LOCAL_RERANKER_CONFIG.useLocalReranker = false to use Voyage/Jina API instead.
- *
+ * The local reranker is OFF by default (see LOCAL_RERANKER_CONFIG).
  * Priority when enabled: Local ModernBERT > Voyage API > Jina API
- *
- * @returns {boolean} True if local reranker should be used
  */
 export function shouldUseLocalReranker() {
   // Env-var kill switch takes precedence (set SWEET_SEARCH_DISABLE_LOCAL_RERANKER=1).
@@ -118,7 +98,6 @@ export function shouldUseLocalReranker() {
   return LOCAL_RERANKER_CONFIG.useLocalReranker;
 }
 
-// Jina Reranker helpers (separate from embeddings)
 export function isJinaRerankerAvailable() {
   return RERANK_CONFIG.jina.enabled;
 }
@@ -127,10 +106,7 @@ export function getJinaRerankerApiKey() {
   return RERANK_CONFIG.jina.apiKey;
 }
 
-// =============================================================================
-// CASCADE SCORING CONFIGURATION (Section 26)
-// =============================================================================
-// Streamlined semantic pipeline: HNSW → expand → MaxSim → gate → conditional CE.
+// Cascade scoring. Streamlined semantic pipeline: HNSW → expand → MaxSim → gate → conditional CE.
 // Default-on. Set SWEET_SEARCH_CASCADE_ENABLED=false to opt out.
 
 export const CASCADE_CONFIG = {
@@ -155,10 +131,6 @@ export const CASCADE_CONFIG = {
   // for identifying the CE-helpful query subset.
   shadowMode: process.env.SWEET_SEARCH_CASCADE_SHADOW === 'true',
 };
-
-// =============================================================================
-// LATE INTERACTION CONFIGURATION
-// =============================================================================
 
 export const LATE_INTERACTION_CONFIG = {
   // false = disabled, 'lateon-code' = full 149M, 'lateon-code-edge' = 17M

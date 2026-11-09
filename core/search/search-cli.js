@@ -1,7 +1,5 @@
 /**
- * Search CLI Module
- *
- * Extracted from sweet-search.js (SOLID refactor). Argument parsing + runCli.
+ * Search CLI: argument parsing + runCli.
  * Decoration rendering lives in cli-decoration.js; the where-to-emit decision
  * lives in output-policy.js.
  *
@@ -22,10 +20,6 @@ import { detectOutputPolicy } from './output-policy.js';
 import { emitDecoration, emitIndexFormatNotice } from './cli-decoration.js';
 import { cwdGrepScope } from './cwd-paths.js';
 import { resolveProjectRoot } from './server-identity.js';
-
-// =============================================================================
-// CLI entry point
-// =============================================================================
 
 export async function runCli(args) {
   // Dynamic imports to avoid circular dependencies
@@ -96,7 +90,6 @@ Examples:
     process.exit(0);
   }
 
-  // Handle --serve
   if (args[0] === '--serve') {
     await startServer();
   } else if (args[0] === '--stop') {
@@ -140,7 +133,6 @@ Examples:
     }
   } else {
     const isGrepCommand = args[0] === 'grep';
-    // Normal query mode
     let query = '';
     let mode = 'auto';
     let regex = '';
@@ -289,16 +281,13 @@ Examples:
       stream: process.stdout,
     });
 
-    // Check if warm server is running (unless --cold)
     let serverRunning = !forceCold && await isServerRunning();
 
-    // Auto-start server if not running (unless --cold)
     if (!serverRunning && !forceCold) {
       serverRunning = await autoSpawnServer();
     }
 
     if (serverRunning) {
-      // Use warm server (fast path)
       try {
         const response = await queryServer(query, {
           mode,
@@ -327,7 +316,6 @@ Examples:
           process.exit(1);
         }
 
-        // Agent mode: response is already a fully packaged agent response
         if (response.format === 'agent') {
           console.log(JSON.stringify(response, null, 2));
         } else {
@@ -357,19 +345,16 @@ Examples:
         }
       } catch (err) {
         console.error('Server query failed, falling back to cold start:', err.message);
-        // Fall through to cold start
       }
       process.exit(0);
     }
 
-    // Cold start (server auto-start failed or --cold flag)
     const searcher = new SweetSearch({
       verbose,
       returnSummaryFirst: summaryFirst,
       useLateInteraction,
     });
 
-    // Auto-persist frequent queries to vocabulary on exit
     registerAutoPersistOnExit(2);
 
     try {
@@ -393,13 +378,11 @@ Examples:
         ...(agentFormat && { format: agentFormat, ...(agentBudget && { tokenBudget: agentBudget }) }),
       });
 
-      // Agent mode: already fully packaged
       if (searchResult.format === 'agent') {
         console.log(JSON.stringify(searchResult, null, 2));
       } else {
         let { results, stats } = searchResult;
 
-        // HCGS: Enrich with summaries if summary-first mode
         if (summaryFirst) {
           results = await searcher.enrichWithSummaries(results);
         }

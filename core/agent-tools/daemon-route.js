@@ -77,7 +77,6 @@ export function validateAgentToolPayload(payload) {
 }
 
 /**
- * @param {object} payload
  * @param {object} deps
  * @param {boolean} deps.isUnixSocket
  * @param {object} deps.searcher                 the daemon's SweetSearch

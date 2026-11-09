@@ -66,9 +66,6 @@ const ORPHAN_TEMP_SUFFIXES = [
  * True when a basename is a reconcile/maintenance crash-orphan staging temp
  * (and therefore safe to remove), false for canonical artifacts and
  * cold-build full-artifact stages.
- *
- * @param {string} name
- * @returns {boolean}
  */
 export function isOrphanTempName(name) {
   if (typeof name !== 'string' || name.length === 0) return false;
@@ -82,9 +79,6 @@ export function isOrphanTempName(name) {
 /**
  * True for the canonical artifact subdirs that hold compaction temps
  * (sparse-gram `*.deltas`, LI `*.segments`).
- *
- * @param {string} name
- * @returns {boolean}
  */
 export function isScannableArtifactSubdir(name) {
   if (typeof name !== 'string') return false;
@@ -129,7 +123,6 @@ function sweepDir(dir, ctx) {
  * Scans the top level plus immediate `*.deltas` / `*.segments` artifact
  * subdirs. Pure of environment access — callers thread `maxAgeMs` / `now`.
  *
- * @param {string} stateDir
  * @param {{maxAgeMs?:number, now?:number}} [opts]
  * @returns {{scanned:number, removed:number, skippedRecent:number, bytesReclaimed:number, removedPaths:string[]}}
  */

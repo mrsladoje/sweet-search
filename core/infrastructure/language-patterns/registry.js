@@ -1,7 +1,3 @@
-// =============================================================================
-// Composed Language Registry
-// =============================================================================
-// Aggregates all themed registries into a single `LANGUAGES` object.
 import { CORE_LANGUAGES } from './registry-core.js';
 import { OBJECT_ORIENTED_LANGUAGES } from './registry-object-oriented.js';
 import { WEB_STYLE_LANGUAGES } from './registry-web-style.js';

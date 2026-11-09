@@ -53,10 +53,6 @@ const PKG_VERSION = (() => {
   }
 })();
 
-// ---------------------------------------------------------------------------
-// Project root resolution (once at startup)
-// ---------------------------------------------------------------------------
-
 function resolveProjectRoot() {
   const args = process.argv.slice(2);
   const rootFlagIdx = args.indexOf('--project-root');
@@ -91,14 +87,11 @@ function resolveProjectRoot() {
 
 const PROJECT_ROOT = resolveProjectRoot();
 
-// Fix #3: Propagate resolved root to environment so core/config.js picks it up
+// Propagate resolved root to environment so core/config.js picks it up
 // even when --project-root CLI flag was used instead of env var.
 process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;
 
-// ---------------------------------------------------------------------------
-// Lazy-loaded search engine (dynamic import to keep stdout safe)
-// ---------------------------------------------------------------------------
-
+// Dynamic import keeps module-load output off stdout.
 let _searcher = null;
 
 async function getSearcher() {
@@ -113,10 +106,6 @@ async function getSearcher() {
 async function getConfig() {
   return import('../core/infrastructure/config/index.js');
 }
-
-// ---------------------------------------------------------------------------
-// Shared dependency objects passed to handlers
-// ---------------------------------------------------------------------------
 
 const coreDir = path.join(__dirname, '..', 'core');
 
@@ -139,10 +128,6 @@ async function touchAgentCall(extra, spans = [], { query, regex } = {}) {
   if (!sessionId) return;
   await sendAgentSpanOperation({ operation: 'observe', sessionId, spans, query, regex });
 }
-
-// ---------------------------------------------------------------------------
-// MCP Server
-// ---------------------------------------------------------------------------
 
 // MCP `instructions` — the agent-routing policy delivered to hosts that connect
 // to this server WITHOUT a project file to inject into (Claude Desktop, a remote
@@ -173,10 +158,6 @@ const server = new McpServer({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Maintainer supervision
-// ---------------------------------------------------------------------------
-
 // The search daemon re-checks its maintainer on every query; this server searches
 // in-process and has no such loop, so a maintainer that stopped (an RSS recycle that
 // could not hand off, a worktree clone that stopped the main checkout's maintainer)
@@ -200,10 +181,6 @@ function superviseMaintainer() {
     return handler(...args);
   });
 }
-
-// ---------------------------------------------------------------------------
-// Tools
-// ---------------------------------------------------------------------------
 
 server.registerTool('search', {
   description: 'Hybrid code search (semantic + lexical + structural). USE INSTEAD OF native Grep for code-discovery tasks. Returns ranked, auto-expanded, self-contained code blocks by default (`format="agent"`) — no follow-up Read needed. Pass `regex` for ColGrep pattern search (regex anchor + semantic re-rank), `structural=true` for callers/callees/impact, or omit for hybrid auto-routing. Pass `format="benchmark"` only for retrieval-quality measurement, not agent consumption.',
@@ -395,10 +372,6 @@ server.registerTool('read-semantic', {
   return result;
 });
 
-// ---------------------------------------------------------------------------
-// Resources
-// ---------------------------------------------------------------------------
-
 server.resource(
   'status',
   'sweet-search://status',
@@ -434,10 +407,6 @@ server.resource(
   },
 );
 
-// ---------------------------------------------------------------------------
-// Prompts
-// ---------------------------------------------------------------------------
-
 server.prompt(
   'search-codebase',
   'Guided codebase search with focused results',
@@ -472,16 +441,8 @@ server.prompt(
   }),
 );
 
-// ---------------------------------------------------------------------------
-// Start server
-// ---------------------------------------------------------------------------
-
 // TODO: Streamable HTTP transport (--transport http --port <port>) — future work.
 // Currently only stdio is implemented (universal baseline for Claude Code + Codex).
-
-// ---------------------------------------------------------------------------
-// Graceful shutdown (F-18)
-// ---------------------------------------------------------------------------
 
 // Searches run in this process, so its query models run in an idle-exiting child (the
 // search daemon does the same, core/search/query-encoder.mjs): the child starts on the first

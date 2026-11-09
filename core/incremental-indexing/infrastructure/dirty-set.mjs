@@ -97,9 +97,6 @@ export class DirtySet {
   /**
    * Bulk-add an iterable of paths. Useful when polling identifies a
    * batch of dirty paths in one syscall pass.
-   *
-   * @param {Iterable<string>} paths
-   * @param {string} [source]
    */
   addMany(paths, source = 'polling') {
     let added = 0;
@@ -128,28 +125,16 @@ export class DirtySet {
     return out;
   }
 
-  /**
-   * Peek without draining — primarily for tests / debug.
-   *
-   * @returns {string[]}
-   */
   peek() {
     return Array.from(this._set.keys());
   }
 
-  /**
-   * Remove a single path without draining the rest.
-   *
-   * @param {string} filePath
-   */
   remove(filePath) {
     return this._set.delete(normalise(filePath));
   }
 
   /**
    * Diagnostic counters for the operator dashboard (plan § 20.2).
-   *
-   * @returns {{size:number, maxSize:number, totalEnqueued:number, totalDropped:number}}
    */
   stats() {
     return {
@@ -169,8 +154,6 @@ export class DirtySet {
  * outside the worktree while still allowing delete events for missing
  * files under a real in-tree parent.
  *
- * @param {string} projectRoot
- * @param {string} relativeOrAbsolute
  * @returns {string|null}     null if the path escapes projectRoot.
  */
 export function canonicaliseInsideRoot(projectRoot, relativeOrAbsolute) {

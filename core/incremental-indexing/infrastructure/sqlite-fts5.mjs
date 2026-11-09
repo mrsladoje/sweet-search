@@ -65,7 +65,6 @@ function readVarint(buf, offset) {
  * the two methods agree, return the parsed value; otherwise prefer the
  * shift-based fallback (it cannot be wrong about distinct rowid prefixes).
  *
- * @param {import('better-sqlite3').Database} db
  * @param {string} tableName  Name of the FTS5 virtual table (not the shadow).
  * @returns {number}
  */
@@ -100,9 +99,6 @@ export function fts5SegmentCount(db, tableName) {
  *
  * Returns `{ cookie, nLevel, nSegment, levels: [{ nMerge, nSeg }] }` on
  * success, or `null` if the table has no structure record yet.
- *
- * @param {import('better-sqlite3').Database} db
- * @param {string} tableName
  */
 export function fts5StructureDescribe(db, tableName) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tableName)) {
@@ -159,8 +155,6 @@ export function fts5StructureDescribe(db, tableName) {
  * transaction rewrite of the FTS5 index, which trips the 256 MiB WAL bloat
  * alarm on a populated table.
  *
- * @param {import('better-sqlite3').Database} db
- * @param {string} tableName
  * @param {number} pages   Page budget per merge call (plan defaults: 16 or 500).
  */
 export function fts5Merge(db, tableName, pages) {

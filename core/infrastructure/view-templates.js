@@ -44,10 +44,6 @@ export function viewTemplateKind(filePath) {
   return null;
 }
 
-// ---------------------------------------------------------------------------------------------
-// C# lexing: literals, comments and balanced brackets
-// ---------------------------------------------------------------------------------------------
-
 const isIdStart = (c) => c !== undefined && /[\p{L}_]/u.test(c);
 const isIdChar = (c) => c !== undefined && /[\p{L}\p{N}_]/u.test(c);
 const isAlnum = (c) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
@@ -176,10 +172,6 @@ function readIdent(t, i) {
 function startsWithWord(t, i, word) {
   return t.startsWith(word, i) && !isIdChar(t[i + word.length]);
 }
-
-// ---------------------------------------------------------------------------------------------
-// Razor
-// ---------------------------------------------------------------------------------------------
 
 // `@word (...) { }` statements. `using` is a statement only with a parenthesis (else a directive).
 const RAZOR_CONTROL_KEYWORDS = new Set(['if', 'for', 'foreach', 'while', 'switch', 'lock', 'try', 'do', 'using']);
@@ -694,10 +686,6 @@ export function scanRazor(text) {
   return new RazorScanner(String(text)).scan();
 }
 
-// ---------------------------------------------------------------------------------------------
-// ASP.NET pages (<% %>)
-// ---------------------------------------------------------------------------------------------
-
 function parseDirectiveAttributes(body) {
   const attrs = {};
   for (const m of body.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g)) {
@@ -815,10 +803,6 @@ export function scanViewTemplate(text, filePath) {
   if (kind === 'aspnet') return scanAspNet(text, filePath);
   return null;
 }
-
-// ---------------------------------------------------------------------------------------------
-// C# projection
-// ---------------------------------------------------------------------------------------------
 
 /** The class a view compiles to: `Counter` for Counter.razor, `List_cshtml`, `Default_aspx`. */
 export function viewClassName(filePath) {

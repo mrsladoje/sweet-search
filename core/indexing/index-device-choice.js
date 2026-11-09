@@ -191,14 +191,12 @@ export function decideIndexDevice({ cpuMs, acceleratorMs, margin = CPU_WIN_MARGI
   return cpuMs * margin < acceleratorMs ? 'cpu' : 'accelerator';
 }
 
-/** True when a result is close enough to the margin to need a second run. */
 export function isCloseResult({ cpuMs, acceleratorMs }, band = CLOSE_RATIO_BAND) {
   if (!(cpuMs > 0) || !(acceleratorMs > 0)) return false;
   const ratio = acceleratorMs / cpuMs;
   return ratio > band[0] && ratio < band[1];
 }
 
-/** Whether a cached entry may still be used at time `now`. */
 export function isEntryFresh(entry, now = Date.now()) {
   if (!entry || (entry.device !== 'cpu' && entry.device !== 'accelerator')) return false;
   const expires = Date.parse(entry.expiresAt ?? '');

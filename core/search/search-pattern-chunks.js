@@ -4,18 +4,12 @@
  * Provides the interval-map data structure that converts file:line grep hits
  * into indexed chunk IDs for MaxSim reranking, plus helpers for reading file
  * ranges, building bare-grep result objects, and symbol-type filtering.
- *
- * Split from search-pattern.js for the 500-line-limit rule.
  */
 
 import path from 'path';
 import { readFileSync } from 'fs';
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
-
-// =============================================================================
-// Code path detection and symbol type helpers
-// =============================================================================
 
 export function isRipgrepCodePath(filePath) {
   const ext = path.extname(filePath || '').slice(1).toLowerCase();
@@ -44,10 +38,6 @@ export function normalizeSearchSymbolType(symbolType) {
 export function resolveSearchSymbolFilter(options = {}) {
   return normalizeSearchSymbolType(options.symbolType || options.type || '');
 }
-
-// =============================================================================
-// Chunk location map — maps file:line → chunk IDs
-// =============================================================================
 
 /**
  * Build a sorted interval map from late interaction index metadata.
@@ -84,7 +74,6 @@ export function buildChunkLocationMap(liIndex) {
     addInterval(id, ptr.metadata);
   }
 
-  // Sort each file's intervals by startLine for binary search
   for (const bucket of map.values()) {
     bucket.sort((a, b) => a.startLine - b.startLine);
     let maxEnd = -Infinity;
@@ -239,19 +228,16 @@ export function mapMatchesToChunks(matches, locationMap, opts = {}) {
       // Adjacent chunk inclusion: if the match is near a chunk boundary,
       // also include the next/prev chunk. This catches signature/body splits.
       if (includeAdjacent) {
-        // If match is within 2 lines of chunk end and there's a next chunk
         if (match.line >= iv.endLine - 1 && idx + 1 < intervals.length) {
           const nextId = intervals[idx + 1].id;
           if (!chunkMatchCounts.has(nextId)) chunkMatchCounts.set(nextId, 0);
         }
-        // If match is within 2 lines of chunk start and there's a prev chunk
         if (match.line <= iv.startLine + 1 && idx > 0) {
           const prevId = intervals[idx - 1].id;
           if (!chunkMatchCounts.has(prevId)) chunkMatchCounts.set(prevId, 0);
         }
       }
     } else {
-      // Match falls in a gap — binary search for nearest following chunk
       if (includeAdjacent) {
         let lo = 0;
         let hi = intervals.length - 1;
@@ -273,10 +259,6 @@ export function mapMatchesToChunks(matches, locationMap, opts = {}) {
 
   return { chunkIds: new Set(chunkMatchCounts.keys()), chunkMatchCounts, unindexed };
 }
-
-// =============================================================================
-// File content loader (per-search cache to avoid re-reading the same file)
-// =============================================================================
 
 /**
  * Read a range of lines from a file (1-indexed, inclusive).
@@ -353,10 +335,6 @@ export function buildBareGrepResults(matches, options = {}) {
     };
   });
 }
-
-// =============================================================================
-// Lazy chunk location map initialization (wired onto SweetSearch.prototype)
-// =============================================================================
 
 /**
  * Get or build the chunk location map. Cached on this._chunkLocationMap.

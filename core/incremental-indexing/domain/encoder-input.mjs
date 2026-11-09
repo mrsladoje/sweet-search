@@ -53,9 +53,6 @@ export const DEDUP_INPUT_POLICY_VERSION = 1;
 /**
  * The LI input text of a chunk: the text the late-interaction encoder reads
  * (`pickLiInput`), so the hash changes exactly when the encoder input does.
- *
- * @param {object} chunk
- * @returns {string}
  */
 export function pickLiInputText(chunk) {
   return chunk ? pickLiInput(chunk) : '';
@@ -65,9 +62,6 @@ export function pickLiInputText(chunk) {
  * Compute the dense `embedding_input_hash`. The input is the exact
  * `embedding_text` produced by the chunker + graph-enrichment pass, mixed
  * with the policy fingerprint.
- *
- * @param {object} chunk
- * @returns {string}
  */
 export function denseInputHash(chunk) {
   if (!chunk) return '';
@@ -78,9 +72,6 @@ export function denseInputHash(chunk) {
 /**
  * Compute the LI `li_input_hash`. Resolves the LI input text via the
  * language taxonomy and mixes the policy fingerprint.
- *
- * @param {object} chunk
- * @returns {string}
  */
 export function liInputHash(chunk) {
   if (!chunk) return '';
@@ -104,9 +95,6 @@ export function liInputHash(chunk) {
  *
  * The fingerprint is built from a stable JSON of these fields plus the
  * policy version.
- *
- * @param {object} chunk
- * @returns {string}
  */
 export function dedupFingerprint(chunk) {
   const meta = (chunk && chunk.metadata) || {};
@@ -155,8 +143,6 @@ function firstSafeRelativePath(...candidates) {
  * Pass `{ includeDedup: false }` when the caller never persists the dedup
  * fingerprint (the full-indexing insert path) to skip that hash entirely.
  *
- * @param {object} chunk
- * @param {{includeDedup?: boolean}} [opts]
  * @returns {{chunk_text_hash:string, embedding_input_hash:string, li_input_hash:string, metadata_fingerprint:string, dedup_fingerprint?:string}}
  */
 export function chunkInputHashes(chunk, { includeDedup = true } = {}) {

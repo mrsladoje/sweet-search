@@ -453,8 +453,7 @@ export function buildIndexedGrepFamilyManifest(results, codeGraphRepo, { keepFil
   return findIndexedFamily(seeds, codeGraphRepo, keepFile)?.manifest || null;
 }
 
-// ---------------------------------------------------------------------------
-// Singleton-grep sibling line (2026-09-03, smoke-loss forensics L1a).
+// Singleton-grep sibling line (smoke-loss forensics).
 //
 // A 1-match ss-grep took NO enrichment path: the family manifest needs >=2
 // results and digit-bearing names, the "across N files" header needs >1 file,
@@ -467,7 +466,6 @@ export function buildIndexedGrepFamilyManifest(results, codeGraphRepo, { keepFil
 // prints code lines, not names, and is additive (a singleton has no body
 // lines to reclaim). Gate: agent format, no --in, 1-3 hits in ONE file, and
 // the client-side SS_SIBLING_LINE=0 off-switch (option `_siblingLine`).
-// ---------------------------------------------------------------------------
 
 const MAX_SIBLING_SITES = 4;
 const MAX_SIBLING_HITS = 3;
@@ -799,13 +797,11 @@ export function applyAgentPackCompletion({
   };
 }
 
-// ---------------------------------------------------------------------------
 // Entry labels: every top-level symbol of the entry's span (query time).
 //
 // The chunker names a chunk after its first symbol; a cAST-merged chunk holds more
 // (sequel timed_queue.rb 174-234 was labelled `can_make_new?` and also holds try_make_new and
 // acquire, the answer). The entities table already knows every symbol declared in the span.
-// ---------------------------------------------------------------------------
 
 // Entity kinds that are no symbol a reader looks for (config keys, generated markers, imports).
 const LABEL_SKIP_KINDS = new Set(['chunk', 'message', 'topkey', 'target', 'import', 'imports']);
@@ -870,7 +866,6 @@ export function annotateEntrySymbols(results, codeGraphRepo) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Declaration blocks: a code entry that only lists member declarations of a type.
 //
 // okhttp `Interceptor.Chain` (an interface) came back as three entries: its head (84-104) and
@@ -879,7 +874,6 @@ export function annotateEntrySymbols(results, codeGraphRepo) {
 // foldDeclarationBlocks) prints such a block as one row when a better-ranked code entry of
 // the same type already shows code. A block with any member body longer than a signature
 // is never marked: two methods of one class are two answers (sequel TimedQueue hold/acquire).
-// ---------------------------------------------------------------------------
 
 /** Longest member, in lines, that still counts as a bare declaration (a wrapped signature). */
 export const DECLARATION_MAX_LINES = 4;

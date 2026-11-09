@@ -1,9 +1,4 @@
 /**
- * Search Fusion Module
- *
- * Extracted from sweet-search.js (SOLID refactor).
- * Contains all score fusion logic: CC, RRF, quantile normalization, variance.
- *
  * Functions that use `this` are regular function declarations (not arrows)
  * so they work correctly when wired onto SweetSearch.prototype.
  */
@@ -11,10 +6,6 @@
 import { createHash } from 'crypto';
 
 let _fallbackKeyCount = 0;
-
-// =============================================================================
-// ROUTE_ALPHAS (shared constant for CC fusion)
-// =============================================================================
 
 export const ROUTE_ALPHAS = {
   'identifier': 0.85,    // Heavy lexical (BM25)
@@ -26,16 +17,11 @@ export const ROUTE_ALPHAS = {
   'hybrid': 0.55,        // Alias
 };
 
-// =============================================================================
-// Pure helpers (no `this`)
-// =============================================================================
-
 /**
  * Get unique key for a result.
  * Pure function — no `this`. On prototype because callers use this.getResultKey().
  */
 export function getResultKey(result) {
-  // Use stable identity fields first.
   if (result.id) return String(result.id);
   if (result.file && result.startLine != null) return `${result.file}:${result.startLine}`;
   if (result.name) return String(result.name);
@@ -67,7 +53,7 @@ export function minMaxNormalize(scores) {
 }
 
 /**
- * Quantile-based normalization (PHASE_1_FIXES Change 2)
+ * Quantile-based normalization
  * Robust to outliers from pre-fusion boosts
  *
  * @param {number[]} scores - Raw scores to normalize
@@ -109,7 +95,6 @@ export function quantileNormalize(scores, lowQuantile = 0.05, highQuantile = 0.9
 export function convexCombination(lexicalResults, semanticResults, routeType = 'mixed', options = {}) {
   const alpha = options.alpha ?? ROUTE_ALPHAS[routeType] ?? 0.5;
 
-  // Build score + result maps in one key derivation per result
   const lexicalScoreMap = new Map();
   const semanticScoreMap = new Map();
   const lexResultMap = new Map();
@@ -130,7 +115,6 @@ export function convexCombination(lexicalResults, semanticResults, routeType = '
     allKeys.add(key);
   }
 
-  // Get all scores for normalization
   const lexScores = Array.from(lexicalScoreMap.values());
   const semScores = Array.from(semanticScoreMap.values());
 
@@ -150,7 +134,6 @@ export function convexCombination(lexicalResults, semanticResults, routeType = '
   for (let i = 0; i < lexKeys.length; i++) lexNormMap.set(lexKeys[i], lexUniform ? 0 : (lexNorm[i] ?? 0));
   for (let i = 0; i < semKeys.length; i++) semNormMap.set(semKeys[i], semUniform ? 0 : (semNorm[i] ?? 0));
 
-  // Compute CC scores
   const ccResults = [];
 
   for (const key of allKeys) {
@@ -161,10 +144,8 @@ export function convexCombination(lexicalResults, semanticResults, routeType = '
     const normLex = lexScore !== undefined ? (lexNormMap.get(key) ?? 0) : 0;
     const normSem = semScore !== undefined ? (semNormMap.get(key) ?? 0) : 0;
 
-    // Convex combination
     const ccScore = alpha * normLex + (1 - alpha) * normSem;
 
-    // Merge result data
     const lexResult = lexResultMap.get(key) || {};
     const semResult = semResultMap.get(key) || {};
     const sources = [];
@@ -185,22 +166,19 @@ export function convexCombination(lexicalResults, semanticResults, routeType = '
     });
   }
 
-  // Sort by CC score descending
   return ccResults.sort((a, b) => b.ccScore - a.ccScore);
 }
 
 /**
- * Detect when CC fusion would be unreliable (PHASE_1_FIXES Change 2)
+ * Detect when CC fusion would be unreliable
  *
  * Uses `this` — calls this.variance.
  */
 export function shouldFallbackToRRF(lexicalResults, semanticResults) {
-  // Case 1: Too few results on one side
   if (lexicalResults.length < 3 || semanticResults.length < 3) {
     return { fallback: true, reason: 'insufficient_results' };
   }
 
-  // Case 2: Near-zero variance (degenerate range)
   // Filter out undefined/NaN scores to keep variance robust.
   const lexScores = lexicalResults.map(r => r.score ?? 0).filter(s => !isNaN(s));
   const semScores = semanticResults.map(r => r.score ?? 0).filter(s => !isNaN(s));
@@ -230,7 +208,7 @@ export function shouldFallbackToRRF(lexicalResults, semanticResults) {
 }
 
 /**
- * RRF fusion (rank-based fallback) (PHASE_1_FIXES Change 2)
+ * RRF fusion (rank-based fallback)
  *
  * Uses `this` — calls this.getResultKey.
  */
@@ -238,7 +216,6 @@ export function rrfFusion(lexicalResults, semanticResults, k = 60) {
   const scores = new Map();
   const results = new Map();
 
-  // Lexical contribution by rank
   lexicalResults.forEach((result, rank) => {
     const id = this.getResultKey(result);
     scores.set(id, (scores.get(id) || 0) + 1 / (k + rank + 1));
@@ -246,7 +223,6 @@ export function rrfFusion(lexicalResults, semanticResults, k = 60) {
     else results.get(id).sources.push('lexical');
   });
 
-  // Semantic contribution by rank
   semanticResults.forEach((result, rank) => {
     const id = this.getResultKey(result);
     scores.set(id, (scores.get(id) || 0) + 1 / (k + rank + 1));
@@ -263,13 +239,12 @@ export function rrfFusion(lexicalResults, semanticResults, k = 60) {
 }
 
 /**
- * Robust CC fusion with RRF fallback (PHASE_1_FIXES Change 2)
+ * Robust CC fusion with RRF fallback
  *
  * Uses `this` — calls this.shouldFallbackToRRF, this.log, this.rrfFusion,
  *   this.quantileNormalize, this.getResultKey.
  */
 export function robustCCFusion(lexicalResults, semanticResults, routeType = 'mixed', options = {}) {
-  // Check if we should fallback to RRF
   const { fallback, reason } = this.shouldFallbackToRRF(lexicalResults, semanticResults);
 
   if (fallback) {
@@ -283,14 +258,12 @@ export function robustCCFusion(lexicalResults, semanticResults, routeType = 'mix
 
   const alpha = options.alpha ?? ROUTE_ALPHAS[routeType] ?? 0.5;
 
-  // Quantile normalization (robust to outliers)
   const lexScores = lexicalResults.map(r => r.score);
   const semScores = semanticResults.map(r => r.score);
 
   const lexNormalized = this.quantileNormalize(lexScores, 0.05, 0.95);
   const semNormalized = this.quantileNormalize(semScores, 0.05, 0.95);
 
-  // Build combined score map
   const combinedScores = new Map();
   const results = new Map();
 
@@ -325,9 +298,6 @@ export function robustCCFusion(lexicalResults, semanticResults, routeType = 'mix
   };
 }
 
-/**
- * Compute variance of an array (PHASE_1_FIXES helper)
- */
 export function variance(arr) {
   if (arr.length === 0) return 0;
   const mean = arr.reduce((a, b) => a + b, 0) / arr.length;

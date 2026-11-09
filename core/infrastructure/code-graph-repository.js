@@ -82,7 +82,6 @@ export class CodeGraphRepository {
     this._refCountIndex = null;
   }
 
-  /** Lazy read-only connection with optimized pragmas. */
   _open() {
     this._syncAdjacentManifest();
     if (!this._db) {
@@ -154,39 +153,6 @@ export class CodeGraphRepository {
   }
 
   /**
-   * Find the first indexed entity fully contained in a chunk range.
-   * Useful when a chunk starts at file line 1 but includes the declaration
-   * shortly after imports/comments, so strict enclosing lookup cannot match.
-   *
-   * @param {string} filePath
-   * @param {number} startLine
-   * @param {number} endLine
-   * @returns {{ id: string, name: string, type: string, startLine: number, endLine: number, parentClass: string|null }|null}
-   */
-  /**
-   * Check whether a chunk range contains an entity whose name matches the target
-   * (case-insensitive, also tries snake_case ↔ camelCase normalization).
-   * Used by symbol-exact-match boost when chunk's labeled symbol doesn't match
-   * but a sibling/contained entity does.
-   *
-   * @param {string} filePath
-   * @param {number} startLine
-   * @param {number} endLine
-   * @param {string} targetName
-   * @returns {boolean}
-   */
-  /**
-   * Find the matching entity by name within a chunk range, if it exists.
-   * Returns the actual canonical name + type (so callers can relabel chunks
-   * to the contained-entity name when the query target matches).
-   *
-   * @param {string} filePath
-   * @param {number} startLine
-   * @param {number} endLine
-   * @param {string} targetName
-   * @returns {{ name: string, type: string, startLine: number, endLine: number }|null}
-   */
-  /**
    * An entity named `member` owned by `owner` (parent_class, case-insensitive) that starts in
    * lines startLine..endLine of the file, or null. For `Owner.member` query mentions.
    */
@@ -208,6 +174,17 @@ export class CodeGraphRepository {
     }
   }
 
+  /**
+   * Find the matching entity by name within a chunk range, if it exists.
+   * Returns the actual canonical name + type (so callers can relabel chunks
+   * to the contained-entity name when the query target matches).
+   *
+   * @param {string} filePath
+   * @param {number} startLine
+   * @param {number} endLine
+   * @param {string} targetName
+   * @returns {{ name: string, type: string, startLine: number, endLine: number }|null}
+   */
   findEntityWithNameInRange(filePath, startLine, endLine, targetName) {
     if (!targetName) return null;
     const db = this._open();
@@ -291,6 +268,18 @@ export class CodeGraphRepository {
     });
   }
 
+  /**
+   * Check whether a chunk range contains an entity whose name matches the target
+   * (case-insensitive, also tries snake_case ↔ camelCase normalization).
+   * Used by symbol-exact-match boost when chunk's labeled symbol doesn't match
+   * but a sibling/contained entity does.
+   *
+   * @param {string} filePath
+   * @param {number} startLine
+   * @param {number} endLine
+   * @param {string} targetName
+   * @returns {boolean}
+   */
   hasEntityWithNameInRange(filePath, startLine, endLine, targetName) {
     return this.findEntityWithNameInRange(filePath, startLine, endLine, targetName) !== null;
   }
@@ -332,22 +321,6 @@ export class CodeGraphRepository {
     }
   }
 
-  /**
-   * Return ALL entities whose start_line falls in [startLine, endLine]
-   * (i.e. every entity declared inside the chunk's range). Used by the
-   * F9 additional_symbols re-anchoring rule (file-kind-ranking.js): when a
-   * chunk merged ≥2 top-level boundaries, the chunker's stored `symbol` is
-   * just the first boundary's name. Re-querying the entities table picks up
-   * every declared symbol in the chunk and lets ranking pick the best name
-   * match against the user's query.
-   *
-   * Capped at 64 to bound the per-result scan cost. Ordered by start_line.
-   *
-   * @param {string} filePath
-   * @param {number} startLine
-   * @param {number} endLine
-   * @returns {Array<{ id, name, type, startLine, endLine, parentClass }>}
-   */
   /**
    * Calls made in [startLine, endLine] of `filePath` that dispatch through an interface /
    * protocol / trait method, each with the methods that implement it (`overrides` edges
@@ -489,6 +462,22 @@ export class CodeGraphRepository {
     return out;
   }
 
+  /**
+   * Return ALL entities whose start_line falls in [startLine, endLine]
+   * (i.e. every entity declared inside the chunk's range). Used by the
+   * F9 additional_symbols re-anchoring rule (file-kind-ranking.js): when a
+   * chunk merged ≥2 top-level boundaries, the chunker's stored `symbol` is
+   * just the first boundary's name. Re-querying the entities table picks up
+   * every declared symbol in the chunk and lets ranking pick the best name
+   * match against the user's query.
+   *
+   * Capped at 64 to bound the per-result scan cost. Ordered by start_line.
+   *
+   * @param {string} filePath
+   * @param {number} startLine
+   * @param {number} endLine
+   * @returns {Array<{ id, name, type, startLine, endLine, parentClass }>}
+   */
   findEntitiesInRange(filePath, startLine, endLine) {
     const db = this._open();
     if (!db) return [];
@@ -996,7 +985,6 @@ export class CodeGraphRepository {
         ? [...uniq, ...types, ...this._entityVisibilityParams(db), excludeFile, limit]
         : [...uniq, ...types, ...this._entityVisibilityParams(db), limit];
       const rows = prepareCached(db, sql).all(...args);
-      // De-dup by name+type, keeping the first (smallest body).
       const seen = new Set();
       const out = [];
       for (const r of rows) {

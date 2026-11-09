@@ -14,9 +14,8 @@ export function normalizePathSlug(relativePath) {
 }
 
 // Languages that share Java's slug-stripped-path li_text policy.
-// (At LI input routing time these will all be sent to chunk.li_text;
-// see LI_TEXT_LANGUAGES in core/indexing/indexer-ann.js, which imports
-// this set so the policy stays consistent in one place.)
+// (At LI input routing time these are sent to chunk.li_text; pickLiInput in
+// chunk-embed-text.js imports this set so the policy stays in one place.)
 export const JAVA_FAMILY = new Set([
   'java', 'php',
   'csharp', 'c#',

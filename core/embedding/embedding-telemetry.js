@@ -1,16 +1,11 @@
 /**
  * Embedding Telemetry - Per-mode query telemetry for vocabulary prewarm pipeline.
- * Extracted from embedding-cache.js for SOLID compliance (single responsibility).
  */
 
 import fs from 'fs/promises';
 import { existsSync, mkdirSync, appendFileSync } from 'fs';
 import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
-
-// =============================================================================
-// PER-MODE QUERY TELEMETRY (Step 0 of Vocabulary Prewarm)
-// =============================================================================
 
 const TELEMETRY_PATH = path.join(path.dirname(DB_PATHS.vocabulary), 'query-telemetry.jsonl');
 const TELEMETRY_MAX_LINES = 10_000;
@@ -22,7 +17,6 @@ export const telemetryStats = {
   hybrid:   { hits: 0, misses: 0, totalLatencyMs: 0, count: 0 },
 };
 
-// P1.2: Buffer entries in memory, flush periodically instead of per-query I/O
 const _telemetryBuffer = [];
 let _lineCountEstimate = -1; // -1 = unknown, needs initial read
 let _flushPromise = null;
@@ -32,11 +26,11 @@ let _flushPromise = null;
 let _flushInterval = null;
 
 function _ensureShutdownHooks() {
-  if (_flushInterval) return; // already registered
+  if (_flushInterval) return;
   _flushInterval = setInterval(() => {
     if (_telemetryBuffer.length > 0) flushTelemetry().catch(() => {});
   }, 30_000);
-  _flushInterval.unref(); // don't keep process alive for telemetry
+  _flushInterval.unref();
 
   // Synchronous best-effort flush on exit — beforeExit fires for empty event
   // loop (normal exit), but NOT for SIGTERM/uncaughtException. We use both
@@ -98,12 +92,10 @@ export async function recordQueryTelemetry(mode, hit, latencyMs, query, source, 
 }
 
 /**
- * Flush buffered telemetry entries to disk.
  * Safe to call multiple times; coalesces concurrent flushes.
  */
 export async function flushTelemetry() {
   if (_telemetryBuffer.length === 0) return;
-  // Coalesce concurrent flush calls
   if (_flushPromise) return _flushPromise;
   _flushPromise = _flushTelemetryInner();
   try { await _flushPromise; } finally { _flushPromise = null; }
@@ -126,7 +118,6 @@ async function _flushTelemetryInner() {
       }
     }
 
-    // Rotate if over limit
     if (_lineCountEstimate + batch.length >= TELEMETRY_MAX_LINES) {
       if (existsSync(TELEMETRY_PATH)) {
         await fs.rename(TELEMETRY_PATH, TELEMETRY_PATH + '.bak');
@@ -142,9 +133,6 @@ async function _flushTelemetryInner() {
 }
 
 /**
- * Read the last N telemetry entries and compute per-mode statistics.
- *
- * @param {number} [lastN=100] - Number of recent entries to analyze
  * @returns {Promise<{modes: Record<string, {hits: number, misses: number, hitRate: string, avgLatencyMs: number, count: number}>, total: number}>}
  */
 export async function getTelemetryReport(lastN = 100) {
@@ -209,7 +197,6 @@ export function resetTelemetryStats() {
   }
   _telemetryBuffer.length = 0;
   _lineCountEstimate = -1;
-  // Tear down hooks to prevent listener leaks during tests
   if (_flushInterval) {
     clearInterval(_flushInterval);
     _flushInterval = null;

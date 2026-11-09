@@ -27,7 +27,7 @@ let lateInteractionPipeline = null;
 let loadPromise = null;
 let lateInteractionRuntimeConfig = {
   intraOpThreads: null,
-  // G3-LI: background/maintainer ORT profile for the LI session. When truthy,
+  // Background/maintainer ORT profile for the LI session. When truthy,
   // the session is created with the CPU mem arena OFF and force_spinning_stop
   // instead of allow_spinning — the same profile buildLocalSessionOptions
   // applies to the dense session. ORT never returns arena memory once grown
@@ -41,7 +41,6 @@ let lateInteractionRuntimeConfig = {
   background: null,
 };
 
-// Lightweight timing accumulators for profiling (Phase 6a).
 // Cleared on read via getLateInteractionTimings().
 const _timings = { tokenize_us: 0, inference_us: 0, calls: 0 };
 
@@ -54,15 +53,12 @@ export function getLateInteractionTimings() {
   return snap;
 }
 
-/**
- * Get the late interaction pipeline singleton (lazy-loaded).
- * Returns null if late interaction is disabled.
- */
 // The search daemon's query encoding runs in its query-encoder child (see
 // core/search/query-encoder.mjs): { warm(): Promise, liQuery(text): Promise } or null.
 let _queryDelegate = null;
 export function setLateInteractionQueryDelegate(delegate) { _queryDelegate = delegate; }
 
+/** Lazy-loaded singleton. Null if late interaction is disabled. */
 export async function getLateInteractionPipeline() {
   if (!LATE_INTERACTION_CONFIG.enabled) return null;
   if (_queryDelegate) { await _queryDelegate.warm(); return null; }
@@ -74,11 +70,9 @@ export async function getLateInteractionPipeline() {
   return lateInteractionPipeline;
 }
 
-/** Check if the late interaction model is currently loaded */
 export function isLateInteractionModelLoaded() { return lateInteractionPipeline != null; }
 
-// Lightweight tokenizer + skiplist cache for native inference path
-// (avoids loading the full ORT pipeline just for tokenization)
+// Avoids loading the full ORT pipeline just for tokenization on the native path.
 let _nativeLiTokenizer = null;
 let _nativeLiSkiplist = null;
 
@@ -113,16 +107,13 @@ export function resetLateInteractionRuntime() {
   };
 }
 
-/** Release model memory */
 export async function unloadLateInteractionModel() {
   if (lateInteractionPipeline) {
-    // Release ORT session. Note: ORT has a known native memory leak in
-    // session.release() (microsoft/onnxruntime#25325) — avoid frequent
-    // load/unload cycles. Prefer singleton reuse.
+    // ORT has a known native memory leak in session.release()
+    // (microsoft/onnxruntime#25325) — avoid frequent load/unload cycles.
     if (lateInteractionPipeline.session) {
       try { await lateInteractionPipeline.session.release(); } catch { /* ignore */ }
     }
-    // Release projection weight buffers
     if (lateInteractionPipeline.projectionStages) {
       for (const stage of lateInteractionPipeline.projectionStages) {
         stage.weight = null;
@@ -133,14 +124,9 @@ export async function unloadLateInteractionModel() {
   loadPromise = null;
 }
 
-// =========================================================================
-// Safetensors Parser — extracts Float32 weight matrices
-// =========================================================================
-
 /**
- * Parse a safetensors file and extract the first Float32 weight tensor.
+ * Extracts the first Float32 weight tensor.
  * Safetensors format: 8-byte LE header length + JSON header + raw tensor data.
- * @param {string} filePath - Path to .safetensors file
  * @returns {Float32Array} Weight matrix as flat array
  */
 function parseSafetensorsWeight(filePath) {
@@ -157,7 +143,7 @@ function parseSafetensorsWeight(filePath) {
     if (info.dtype === 'F32') {
       const byteOffset = dataStart + info.data_offsets[0];
       const byteLength = info.data_offsets[1] - info.data_offsets[0];
-      // Copy to new buffer to avoid alignment issues
+      // Copy: the file buffer offset may be misaligned for Float32Array
       const copy = new Float32Array(byteLength / 4);
       const src = buffer.subarray(byteOffset, byteOffset + byteLength);
       copy.set(new Float32Array(src.buffer, src.byteOffset, src.length / 4));
@@ -167,10 +153,6 @@ function parseSafetensorsWeight(filePath) {
   throw new Error(`No F32 tensor found in ${filePath}`);
 }
 
-// =========================================================================
-// Model Loading
-// =========================================================================
-
 async function loadModel() {
   const modelConfig = LATE_INTERACTION_CONFIG.activeModel;
   if (!modelConfig) throw new Error(`[LateInteraction] Unknown model: ${LATE_INTERACTION_CONFIG.model}`);
@@ -178,11 +160,9 @@ async function loadModel() {
   const start = Date.now();
   bootLog(`[LateInteraction] Loading ${LATE_INTERACTION_CONFIG.model} (${modelConfig.tokenDimension}d)...`);
 
-  // Load tokenizer from managed cache (native Rust → JS fallback)
   const tokenizerPath = join(getModelCacheDir(modelConfig.hfId), 'tokenizer.json');
   const tokenizer = await createTokenizer(tokenizerPath);
 
-  // Build skiplist token IDs from the 32 punctuation chars
   const skiplistTokenIds = new Set();
   for (const ch of LATE_INTERACTION_CONFIG.skiplistChars) {
     const enc = tokenizer(ch, { add_special_tokens: false });
@@ -190,11 +170,9 @@ async function loadModel() {
     if (ids.length === 1) skiplistTokenIds.add(Number(ids[0]));
   }
 
-  // Download ONNX model if not cached
   const registryKey = LATE_INTERACTION_CONFIG.model;
   const onnxPath = await resolveOrFetchFile(modelConfig.hfId, modelConfig.onnxFile, registryKey);
 
-  // Create ORT session
   const ort = await import('onnxruntime-node');
   const { bestIntraOpThreads } = await import('../infrastructure/onnx-session-utils.js');
 
@@ -203,10 +181,8 @@ async function loadModel() {
   // constant CPU↔CoreML data transfer that makes inference ~18x slower.
   // The MLProgram format fails entirely; NeuralNetwork loads but regresses.
   //
-  // Phase 1a: harmonized session options with embedding path — adds graph
-  // optimization, memory arena, mem pattern, and optimized graph caching.
   // executionMode defaults to 'sequential' (BERT encoder, no branch parallelism).
-  // Phase 1a/1c: LI session options benchmarked across hosts.
+  // LI session options benchmarked across hosts.
   // Findings: graphOptimizationLevel 'all' triggers NchwcTransformer → 14% regression.
   // 'extended' + memArena + memPattern: marginal overhead for no measurable gain.
   // Conclusion: keep LI session lean. Only proven-beneficial options added.
@@ -218,7 +194,7 @@ async function loadModel() {
     intraOpNumThreads: lateInteractionRuntimeConfig.intraOpThreads ?? bestIntraOpThreads(),
     interOpNumThreads: 1,
     optimizedModelFilePath: getOptimizedGraphPath(modelConfig.hfId, 'lateon'),
-    // G3-LI: background (maintainer) profile disables the CPU mem arena — ORT
+    // Background (maintainer) profile disables the CPU mem arena — ORT
     // never returns arena memory once grown (#25325), and variable-shaped
     // per-file reconcile batches make the arena extend monotonically (128MB
     // steps) in a resident daemon. Foreground keeps the arena for throughput.
@@ -235,12 +211,10 @@ async function loadModel() {
   });
   const coremlActive = false;
 
-  // Probe: run a single inference to check output dimension
   const probeTokenized = tokenizer('[Q] probe', { padding: true, truncation: true, max_length: 8 });
   const probeHidden = await runRawInference(session, probeTokenized, ort);
   const outputDim = probeHidden.dims[2];
 
-  // Determine if we need manual projection
   let projectionStages = [];
   const projectionBakedIn = outputDim === modelConfig.tokenDimension;
   const projectionNeeded = outputDim === modelConfig.backboneDim;
@@ -250,8 +224,7 @@ async function loadModel() {
   } else if (projectionNeeded) {
     bootLog(`[LateInteraction] ONNX output is raw ${outputDim}d backbone — loading projection weights...`);
 
-    // Load each projection weight and derive dims from weight.length + known input dim.
-    // Stage 1 input dim = backbone dim. Each subsequent stage input = previous output.
+    // Dims come from weight.length + known input dim. Stage 1 input = backbone dim; each later stage input = previous output.
     let currentInDim = modelConfig.backboneDim;
     for (let i = 0; i < modelConfig.projectionPaths.length; i++) {
       const weightPath = await resolveOrFetchFile(modelConfig.hfId, modelConfig.projectionPaths[i], registryKey);
@@ -266,7 +239,6 @@ async function loadModel() {
       currentInDim = outDim;
     }
 
-    // Verify final output matches expected token dimension
     if (currentInDim !== modelConfig.tokenDimension) {
       throw new Error(`[LateInteraction] Final projection output ${currentInDim}d !== expected ${modelConfig.tokenDimension}d`);
     }
@@ -298,16 +270,9 @@ async function loadModel() {
   return { tokenizer, session, modelConfig, skiplistTokenIds, ort, projectionStages };
 }
 
-// =========================================================================
-// Encode API
-// =========================================================================
-
 /**
- * Encode a query into per-token vectors.
- * - Prepends [Q] prefix
- * - Max 256 tokens
- * - NO skiplist filtering (keeps ALL tokens)
- * - NO [MASK] padding
+ * Encode a query into per-token vectors: [Q] prefix, max 256 tokens, no skiplist
+ * filtering, no [MASK] padding.
  *
  * @param {string} text - Raw query text (without prefix)
  * @returns {Float32Array[]} Array of L2-normalized token vectors
@@ -316,7 +281,6 @@ export async function encodeQuery(text) {
   if (!LATE_INTERACTION_CONFIG.enabled) return [];
   if (_queryDelegate) return _queryDelegate.liQuery(text);
 
-  // Native inference path: candle FP32 with Metal GPU
   if (isNativeInferenceAvailable() && isNativeLiModelLoaded()) {
     const modelConfig = LATE_INTERACTION_CONFIG.activeModel;
     if (!modelConfig) return [];
@@ -326,10 +290,9 @@ export async function encodeQuery(text) {
     const t1 = performance.now();
     _timings.inference_us += Math.round((t1 - t0) * 1000);
     _timings.calls++;
-    return result[0]; // Float32Array[] — one per token
+    return result[0];
   }
 
-  // ORT fallback path
   const pipeline = await getLateInteractionPipeline();
   if (!pipeline) return [];
 
@@ -352,30 +315,22 @@ export async function encodeQuery(text) {
 }
 
 /**
- * Encode documents into per-token vectors.
- * - Prepends [D] prefix to each
- * - Max 2048 tokens per doc
- * - Skiplist filtering applied (removes punctuation token embeddings)
- * - Optional token pooling (reduces token count by pool_factor)
- * - Optional extended skiplist (additional code-noise tokens)
+ * Encode documents into per-token vectors: [D] prefix, max 2048 tokens per doc,
+ * skiplist filtering removes punctuation token embeddings.
  *
  * @param {string[]} texts - Array of raw document texts (without prefix)
- * @param {object} [options] - Encoding options
  * @param {number} [options.poolFactor=1] - Token pooling factor (1=no pooling, 2=halve tokens, etc.)
  * @param {boolean} [options.extendedSkiplist=false] - Use code-extended skiplist
  * @returns {Float32Array[][]} Array of (array of token vectors) per document
  */
 export async function encodeDocuments(texts, options = {}) {
-  // Default dispatcher: pick the best path that's available. Hybrid CPU+GPU
-  // dispatching is done at the indexer level (indexer-ann.js LI loop) which
-  // calls encodeDocumentsGpu and encodeDocumentsCpu directly in parallel.
+  // Hybrid CPU+GPU dispatching is done at the indexer level (indexer-ann.js LI
+  // loop), which calls encodeDocumentsGpu and encodeDocumentsCpu directly in parallel.
   //
-  // SWEET_SEARCH_LI_USE_CPU=1 forces the ORT INT8 CPU path even when the
-  // native Metal addon is available. Use this when running in parallel with
-  // the embedding phase: embed gets exclusive Metal access, LI gets exclusive
-  // CPU access — eliminating Metal queue contention that otherwise starves
-  // the LI GPU encoder when embed is feeding it a continuous stream of
-  // small batches.
+  // SWEET_SEARCH_LI_USE_CPU=1 forces the ORT INT8 CPU path even when the native
+  // Metal addon is available. Use it when running in parallel with the embedding
+  // phase: embed gets exclusive Metal access, LI gets exclusive CPU access,
+  // eliminating Metal queue contention that otherwise starves the LI GPU encoder.
   const forceCpu = process.env.SWEET_SEARCH_LI_USE_CPU === '1';
   if (!forceCpu && isNativeInferenceAvailable() && isNativeLiModelLoaded()) {
     return encodeDocumentsGpu(texts, options);
@@ -396,9 +351,8 @@ export function liDocumentEncoderLabel() {
 }
 
 /**
- * Encode documents using the native Metal GPU path (candle + Metal SDPA).
- * Throws if the native addon is not available — the caller is expected to
- * have verified availability before routing batches here.
+ * Native Metal GPU path (candle + Metal SDPA).
+ * Throws if the native addon is not available.
  */
 export async function encodeDocumentsGpu(texts, options = {}) {
   const { poolFactor = 1, extendedSkiplist = false } = options;
@@ -406,7 +360,6 @@ export async function encodeDocumentsGpu(texts, options = {}) {
   const modelConfig = LATE_INTERACTION_CONFIG.activeModel;
   if (!modelConfig) return texts.map(() => []);
 
-  // Lightweight tokenizer + skiplist (no ORT session needed)
   const { tokenizer, skiplistTokenIds } = await getNativeLiTokenizerAndSkiplist();
 
   let effectiveSkiplist = skiplistTokenIds;
@@ -416,16 +369,13 @@ export async function encodeDocumentsGpu(texts, options = {}) {
 
   const prefixedTexts = texts.map((text) => modelConfig.docPrefix + text);
 
-  // Tokenize once; reuse the same batch for both skiplist lookup and model
-  // inference. `nativeLiEncodeTokenized` accepts the already-tokenized batch
-  // directly so we don't double-tokenize.
   const t0 = performance.now();
   const tokenized = tokenizer(prefixedTexts, {
     padding: true, truncation: true, max_length: modelConfig.maxDocLength,
   });
   const t1 = performance.now();
 
-  // Native inference — returns Float32Array[][] already projected + normalized
+  // Returns Float32Array[][] already projected + normalized
   const allVectorsByDoc = await nativeLiEncodeTokenized(tokenized);
   const t2 = performance.now();
 
@@ -433,7 +383,6 @@ export async function encodeDocumentsGpu(texts, options = {}) {
   _timings.inference_us += Math.round((t2 - t1) * 1000);
   _timings.calls++;
 
-  // Apply skiplist filtering
   const { data: inputIdsData, dims: inputIdDims } = tokenized.input_ids;
   const seqLen = inputIdDims[1];
   const results = new Array(texts.length);
@@ -455,15 +404,6 @@ export async function encodeDocumentsGpu(texts, options = {}) {
 }
 
 /**
- * Encode documents using the ORT INT8 CPU path (onnxruntime-node, accelerated
- * by the platform BLAS — Accelerate/AMX on Apple Silicon, MKL on x86, etc).
- * Returns the SAME shape as the GPU path so the caller can mix results from
- * both pipelines transparently.
- *
- * Used by the opt-in hybrid dispatcher (SWEET_SEARCH_LI_HYBRID=1) and as the
- * default fallback when the native GPU addon isn't available on the host.
- */
-/**
  * Each document's token count as encodeDocumentsCpu feeds it to the model (doc prefix and
  * special tokens included, truncated at maxDocLength), for planning batches by real length.
  * A character estimate can be 3x short on symbol-heavy text. Null when the pipeline does not
@@ -482,6 +422,15 @@ export async function countDocumentTokensCpu(texts) {
   });
 }
 
+/**
+ * Encode documents using the ORT INT8 CPU path (onnxruntime-node, accelerated
+ * by the platform BLAS — Accelerate/AMX on Apple Silicon, MKL on x86, etc).
+ * Returns the SAME shape as the GPU path so the caller can mix results from
+ * both pipelines transparently.
+ *
+ * Used by the opt-in hybrid dispatcher (SWEET_SEARCH_LI_HYBRID=1) and as the
+ * default fallback when the native GPU addon isn't available on the host.
+ */
 export async function encodeDocumentsCpu(texts, options = {}) {
   const { poolFactor = 1, extendedSkiplist = false } = options;
 
@@ -490,7 +439,6 @@ export async function encodeDocumentsCpu(texts, options = {}) {
 
   const { tokenizer, session, modelConfig, skiplistTokenIds, ort, projectionStages } = pipeline;
 
-  // Build effective skiplist (base + optional extended for code)
   let effectiveSkiplist = skiplistTokenIds;
   if (extendedSkiplist) {
     effectiveSkiplist = buildExtendedSkiplist(tokenizer, skiplistTokenIds);
@@ -537,12 +485,7 @@ export async function encodeDocumentsCpu(texts, options = {}) {
   return results;
 }
 
-// =========================================================================
-// Projection + L2 Normalization
-// =========================================================================
-
 /**
- * Apply projection stages (if any) and L2-normalize per token.
  * @param {object} hiddenTensor - ORT output tensor with .dims and .data
  * @param {Array<{weight: Float32Array, inDim: number, outDim: number}>} projectionStages
  * @returns {Float32Array[]} Array of L2-normalized token vectors
@@ -553,7 +496,6 @@ function projectAndNormalizeBatch(hiddenTensor, projectionStages, attentionMask 
   let currentDim = hiddenDim;
   const maskData = attentionMask?.data || null;
 
-  // Apply sequential projection stages
   for (const { weight, inDim, outDim } of projectionStages) {
     const projected = new Float32Array(batch * seqLen * outDim);
     for (let b = 0; b < batch; b++) {
@@ -571,10 +513,9 @@ function projectAndNormalizeBatch(hiddenTensor, projectionStages, attentionMask 
     currentDim = outDim;
   }
 
-  // L2 normalize per token, grouped by batch item.
-  // Also record pre-normalization norms — these measure how much the model
-  // "activated" for each token. Low pre-norm = low information content.
-  // Stored on each per-document array for optional norm-based pruning.
+  // Pre-normalization norms measure how much the model "activated" for each
+  // token (low = low information content). Stored on each per-document array
+  // for optional norm-based pruning.
   const results = new Array(batch);
   for (let b = 0; b < batch; b++) {
     const vectors = [];
@@ -600,22 +541,16 @@ function projectAndNormalizeBatch(hiddenTensor, projectionStages, attentionMask 
   return results;
 }
 
-// =========================================================================
-// Token Pooling (Phase 7.1)
-// =========================================================================
-
 /**
  * Hierarchical token pooling — reduces N tokens to ~N/poolFactor tokens.
  * Uses agglomerative clustering (Ward-like, cosine distance) to merge the
  * most similar tokens first, preserving semantic information far better than
  * consecutive-pair averaging.
  *
- * CRA-1: Replaces naive consecutive-pair pooling with similarity-based
- * hierarchical pooling per LIR'26 Workshop findings (arXiv 2603.22434).
+ * Similarity-based pooling follows LIR'26 Workshop findings (arXiv 2603.22434).
  *
  * First token always preserved (protected_tokens=1, following PyLate convention).
  *
- * @param {Float32Array[]} tokens - L2-normalized token vectors
  * @param {number} poolFactor - Pooling factor (2 = halve, 3 = third, etc.)
  * @returns {Float32Array[]} Pooled and re-normalized token vectors
  */
@@ -624,15 +559,12 @@ export function poolTokens(tokens, poolFactor) {
 
   const dim = tokens[0].length;
 
-  // Protect first token
   const protectedToken = tokens[0];
   const rest = tokens.length - 1;
   if (rest === 0) return [protectedToken];
 
   const targetCount = Math.ceil(rest / poolFactor);
 
-  // For very small inputs (≤2 non-protected tokens) or targetCount >= rest,
-  // skip clustering overhead.
   if (targetCount >= rest) {
     return tokens;
   }
@@ -640,7 +572,7 @@ export function poolTokens(tokens, poolFactor) {
   // Cap clustering input at 64 non-protected tokens to avoid O(n^3) blowup.
   // If more tokens exist, pre-reduce with consecutive-pair averaging first.
   const CLUSTER_CAP = 64;
-  let clusterInput = tokens.slice(1); // non-protected tokens
+  let clusterInput = tokens.slice(1);
   if (clusterInput.length > CLUSTER_CAP) {
     const prePoolFactor = Math.ceil(clusterInput.length / CLUSTER_CAP);
     const prePooled = [];
@@ -660,21 +592,17 @@ export function poolTokens(tokens, poolFactor) {
     clusterInput = prePooled;
   }
 
-  // Recompute target for the (possibly pre-reduced) input
   const clusterTarget = Math.max(1, Math.min(targetCount, clusterInput.length - 1));
   if (clusterTarget >= clusterInput.length) {
     return [protectedToken, ...clusterInput];
   }
   const restN = clusterInput.length;
 
-  // ---- Agglomerative clustering (average-link, cosine distance) ----
-  // Each cluster starts as a single token. We maintain cluster centroids
-  // (sum vectors + size) and a condensed distance matrix.
-
-  // Cluster state: indices 0..restN-1 map to clusterInput[0..restN-1]
+  // Agglomerative clustering (average-link, cosine distance) over cluster
+  // centroids (sum vectors + size) and a condensed distance matrix.
   const clusterSum = new Array(restN);
   const clusterSize = new Uint16Array(restN);
-  const alive = new Uint8Array(restN); // 1 = active cluster
+  const alive = new Uint8Array(restN);
 
   for (let i = 0; i < restN; i++) {
     clusterSum[i] = new Float32Array(clusterInput[i]);
@@ -699,7 +627,6 @@ export function poolTokens(tokens, poolFactor) {
 
   let numClusters = restN;
 
-  // Merge until we reach clusterTarget
   while (numClusters > clusterTarget) {
     let minDist = Infinity;
     let mi = -1, mj = -1;
@@ -730,7 +657,6 @@ export function poolTokens(tokens, poolFactor) {
     alive[mj] = 0;
     numClusters--;
 
-    // Update distances from mi to all other alive clusters.
     const centroid = new Float32Array(dim);
     let cNorm = 0;
     for (let d = 0; d < dim; d++) {
@@ -762,7 +688,6 @@ export function poolTokens(tokens, poolFactor) {
     }
   }
 
-  // ---- Extract pooled tokens ----
   const pooled = [protectedToken];
 
   for (let i = 0; i < restN; i++) {
@@ -771,7 +696,6 @@ export function poolTokens(tokens, poolFactor) {
     const s = clusterSize[i];
     for (let d = 0; d < dim; d++) avg[d] = clusterSum[i][d] / s;
 
-    // L2 re-normalize
     let norm = 0;
     for (let d = 0; d < dim; d++) norm += avg[d] * avg[d];
     norm = Math.sqrt(norm) + 1e-12;
@@ -782,10 +706,6 @@ export function poolTokens(tokens, poolFactor) {
 
   return pooled;
 }
-
-// =========================================================================
-// Extended Skiplist for Code (Phase 7.2)
-// =========================================================================
 
 /**
  * Additional single-char tokens that are pure syntax noise in code.
@@ -800,10 +720,7 @@ const CODE_EXTENDED_SKIPLIST_CHARS = [
 
 let _extendedSkiplistCache = null;
 
-/**
- * Build extended skiplist = base punctuation + code-specific noise tokens.
- * Cached after first build (tokenizer is deterministic).
- */
+/** Base punctuation + code-specific noise tokens. Cached: the tokenizer is deterministic. */
 export function buildExtendedSkiplist(tokenizer, baseSkiplist) {
   if (_extendedSkiplistCache) return _extendedSkiplistCache;
 
@@ -818,12 +735,7 @@ export function buildExtendedSkiplist(tokenizer, baseSkiplist) {
   return extended;
 }
 
-/** Reset extended skiplist cache (for testing) */
 export function _resetExtendedSkiplistCache() { _extendedSkiplistCache = null; }
-
-// =========================================================================
-// ORT Inference (raw — no projection)
-// =========================================================================
 
 async function runRawInference(session, tokenized, ort) {
   // Fast path: native tokenizer always produces BigInt64Array via formatResult.
@@ -852,13 +764,8 @@ async function runRawInference(session, tokenized, ort) {
   return result[session.outputNames[0]];
 }
 
-// =========================================================================
-// HuggingFace File Download + Cache
-// =========================================================================
-
 /**
- * Resolve or download a model file from HuggingFace using the managed model fetcher.
- * Checks local cache first (with checksum validation for LFS files).
+ * Checks the local cache first (with checksum validation for LFS files).
  * Respects MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload.
  */
 async function resolveOrFetchFile(hfId, filePath, registryKey) {

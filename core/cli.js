@@ -16,7 +16,6 @@ function envFalsey(name) {
   return isOffValue(process.env[name]);
 }
 
-// Package-management commands always run in JS (never native dispatch)
 if (args[0] === 'init') {
   const { runInit } = await import('../scripts/init.js');
   await runInit(args.slice(1));
@@ -110,7 +109,6 @@ if (args[0] === 'init') {
       } catch { /* best-effort */ }
     }
   }
-  // Warm search server lifecycle is implemented in JS.
   const { runCli } = await import('./search/index.js');
   await runCli(args);
 } else if (args[0] === 'status') {

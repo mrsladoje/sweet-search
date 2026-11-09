@@ -283,8 +283,6 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
   return { isIndexed, dirHasIndexedFiles, exclusionReason, notIndexedNote, filesEndingWith, dirsNamed, close };
 }
 
-// --- helpers ---------------------------------------------------------------------------
-
 /**
  * Content-shape bundle check, matching the indexer's own rule closely enough to name a
  * reason. Deliberately a cheap head+tail read, not a re-import of the indexer: this runs

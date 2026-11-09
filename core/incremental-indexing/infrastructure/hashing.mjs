@@ -221,7 +221,6 @@ async function resolveBackends() {
   if (resolved) return;
   resolved = true;
 
-  // Resolve native crate (preferred).
   try {
     const mod = await import('../../../crates/sweet-search-native/index.js');
     nativeXxh3 = makeNativeXxh3(mod);
@@ -229,7 +228,6 @@ async function resolveBackends() {
     // Native crate not built or missing the export; fall through.
   }
 
-  // Resolve @node-rs/xxhash (second preference).
   if (!nativeXxh3) {
     try {
       const mod = await import('@node-rs/xxhash');
@@ -242,9 +240,6 @@ async function resolveBackends() {
 
 /**
  * Hash arbitrary input (string or buffer) to a 16-hex-char digest.
- *
- * @param {Buffer|Uint8Array|string} input
- * @returns {Promise<string>}
  */
 export async function contentHash(input) {
   await resolveBackends();
@@ -269,9 +264,6 @@ export function contentHashSync(input) {
 /**
  * Stable JSON stringify used by metadata-fingerprint hashing. Sorts object
  * keys recursively so two equivalent objects produce identical bytes.
- *
- * @param {*} value
- * @returns {string}
  */
 export function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -280,12 +272,6 @@ export function stableStringify(value) {
   return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
 }
 
-/**
- * Hash a metadata-bearing object deterministically.
- *
- * @param {object} payload
- * @returns {Promise<string>}
- */
 export async function metadataFingerprint(payload) {
   return contentHash(stableStringify(payload));
 }

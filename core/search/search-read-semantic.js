@@ -57,9 +57,7 @@ function _ensurePersistedLiModelApplied(projectRoot) {
   _appliedLiPerRoot.set(key, r.applied);
 }
 
-// ---------------------------------------------------------------------------
 // Defaults — keep modest so a one-file call stays under ~100ms after warmup.
-// ---------------------------------------------------------------------------
 
 const DEFAULTS = {
   topK: 5,
@@ -88,10 +86,6 @@ const DEFAULTS = {
 };
 
 const APPROX_CHARS_PER_TOKEN = 4;
-
-// ---------------------------------------------------------------------------
-// Module-level lazy singletons
-// ---------------------------------------------------------------------------
 
 const RECONCILE_MANIFEST_FILENAME = 'reconcile-manifest.json';
 
@@ -254,10 +248,6 @@ async function _getEncodeQuery() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function _projectRelative(absOrRelPath, projectRoot) {
   const root = projectRoot || process.cwd();
   const abs = path.isAbsolute(absOrRelPath)
@@ -324,10 +314,6 @@ function _escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// ---------------------------------------------------------------------------
-// Candidate enumeration — load chunk metadata + per-chunk on-disk text slice
-// ---------------------------------------------------------------------------
-
 async function _loadFileChunks(filePathRel, projectRoot, manifest = _readReconcileManifest(projectRoot)) {
   const repo = _getRepo(projectRoot, manifest);
   if (!repo) return { chunks: [], language: null };
@@ -388,10 +374,6 @@ async function _loadFileChunks(filePathRel, projectRoot, manifest = _readReconci
   chunks.sort((c1, c2) => c1.startLine - c2.startLine);
   return { chunks, language, totalLines, fileText };
 }
-
-// ---------------------------------------------------------------------------
-// Candidate scoring signals (per file)
-// ---------------------------------------------------------------------------
 
 function _scoreLexical(chunks, queryTerms) {
   if (queryTerms.length === 0) return new Map();
@@ -476,10 +458,6 @@ async function _scoreLateInteraction(chunks, query, projectRoot, lateInteraction
   return { scores: out, ran: true };
 }
 
-// ---------------------------------------------------------------------------
-// Reciprocal Rank Fusion over multiple signal maps
-// ---------------------------------------------------------------------------
-
 function _rrfFuse(signalMaps, weights, rrfK) {
   // signalMaps: [{ id -> score }] in same order as `weights`
   const fused = new Map();
@@ -496,10 +474,6 @@ function _rrfFuse(signalMaps, weights, rrfK) {
   }
   return fused;
 }
-
-// ---------------------------------------------------------------------------
-// Span post-processing — context expansion, merging, budget enforcement
-// ---------------------------------------------------------------------------
 
 // Lines of the same definition between two selected pieces that still print as one span.
 const SAME_DEFINITION_GAP_LINES = 40;
@@ -537,7 +511,6 @@ function _expandAndMergeSpans(selected, totalLines, contextLines, gapMergeFits =
     const touching = last && span.startLine <= last.endLine + 1
       && (coresOverlap || gapMergeFits(last.startLine, Math.max(last.endLine, span.endLine)));
     if (last && (touching || sameDefinition)) {
-      // Overlap or touching — merge.
       last.endLine = Math.max(last.endLine, span.endLine);
       last.coreStart = Math.min(last.coreStart, span.coreStart);
       last.coreEnd = Math.max(last.coreEnd, span.coreEnd);
@@ -618,7 +591,6 @@ function _enforceCharBudget(spans, fileText, lineOffsets, maxChars) {
     kept.push({ ...span, text });
     used += cost;
   }
-  // Restore line order in the final output for readability.
   kept.sort((a, b) => a.startLine - b.startLine);
   return { spans: kept, charsUsed: used };
 }
@@ -664,10 +636,6 @@ function _fallbackSpanFromText(fileText, totalLines, maxChars) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
 /**
  * @param {Object} req
  * @param {string} req.path - File path (project-relative or absolute)
@@ -686,7 +654,6 @@ function _fallbackSpanFromText(fileText, totalLines, maxChars) {
  * @param {number} [req.wholeFileMaxChars] - a file of at most this many characters is never
  *   cut: the budget grows to the file's size (spanBudget)
  * @param {Object} [req._lateInteractionIndex] - private daemon injection; same-project index only
- * @returns {Promise<Object>}
  */
 async function _readSemanticUnpinned(req) {
   const t0 = performance.now();
@@ -758,7 +725,6 @@ async function _readSemanticUnpinned(req) {
 
   const budget = spanBudget(fileText, maxChars, wholeFileMaxChars);
 
-  // Build line-offset table over the disk text once for span re-reads.
   const lineOffsets = (() => {
     const offsets = [0];
     for (let i = 0; i < fileText.length; i++) {
@@ -794,7 +760,6 @@ async function _readSemanticUnpinned(req) {
     }
   }
 
-  // Fuse — all three signals contribute via RRF.
   const fused = _rrfFuse(
     [lexicalScores, symbolScores, maxsimScores],
     [DEFAULTS.lexicalWeight, DEFAULTS.symbolWeight, DEFAULTS.maxsimWeight],
@@ -831,7 +796,6 @@ async function _readSemanticUnpinned(req) {
     };
   }
 
-  // Take top-K by fused score, then pull the actual chunk records.
   const idToChunk = new Map(chunks.map(c => [c.id, c]));
   // A chunk whose definition the question names is the place it asks about. A mention
   // shaped like code (`preConnect`, `pre_connect`, `preconnect(`, a backticked name, or a
@@ -1005,10 +969,6 @@ export async function readSemantic(req) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Formatting
-// ---------------------------------------------------------------------------
-
 export function formatReadSemanticResult(result, format = 'agent') {
   if (format === 'json') return JSON.stringify(result, null, 2);
 
@@ -1040,12 +1000,10 @@ export function formatReadSemanticResult(result, format = 'agent') {
   return lines.join('\n');
 }
 
-// ---------------------------------------------------------------------------
-// CLI handler
+// CLI usage:
 //   sweet-search read-semantic path/to/file.ts "how does X work"
 //   sweet-search read-semantic path/to/file.ts "..." --top 5 --threshold 0.4
 //   sweet-search read-semantic path/to/file.ts "..." --json --verbose
-// ---------------------------------------------------------------------------
 
 function _parseArgs(args) {
   const positional = [];

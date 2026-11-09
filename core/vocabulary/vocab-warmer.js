@@ -1,5 +1,5 @@
 /**
- * Vocabulary Warmer Module (Step 4 of Vocabulary Prewarm)
+ * Vocabulary Warmer Module
  *
  * Per-mode warmup functions that exercise caches and indexes with
  * real codebase vocabulary. Three warmup tracks:
@@ -24,25 +24,16 @@ import Database from 'better-sqlite3';
 import { DB_PATHS, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
 import { generateEmbeddings, truncateForHNSW } from '../embedding/embedding-service.js';
 
-// ---------------------------------------------------------------------------
-// Constants — imported from vocab-constants.js (shared with orchestrator,
-// no circular dependency).  Re-exported for backward compatibility.
-// ---------------------------------------------------------------------------
+// Constants imported from vocab-constants.js (shared with orchestrator,
+// no circular dependency).
 
 import { DATA_DIR, ARTIFACT_PATHS } from './vocab-constants.js';
 export { DATA_DIR, ARTIFACT_PATHS };
 
 const DEFAULT_TIME_BUDGET_MS = 2000;
 
-// ---------------------------------------------------------------------------
-// 4a. Lexical Warmup
-// ---------------------------------------------------------------------------
-
 /**
- * Warm FTS5 page cache by executing MATCH queries with real codebase identifiers.
- *
  * @param {Array<{term: string, score: number}>} terms - PageRank-ranked identifiers
- * @param {string} [dbPath] - Path to code-graph.db
  * @returns {Promise<{queriesRun: number, elapsedMs: number}>}
  */
 export async function warmLexical(terms, dbPath) {
@@ -59,7 +50,6 @@ export async function warmLexical(terms, dbPath) {
     db = new Database(resolvedPath, { readonly: true, timeout: 5000 });
     applyReadPragmas(db);
 
-    // Check FTS5 table exists
     const ftsCheck = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='entities_fts'"
     ).get();
@@ -69,12 +59,10 @@ export async function warmLexical(terms, dbPath) {
 
     // Keep warmup read-only; skip FTS5 optimize (write operation).
 
-    // Prepare statements
     const matchStmt = db.prepare(
       'SELECT rowid FROM entities_fts WHERE name MATCH ? LIMIT 1'
     );
 
-    // Run MATCH queries in a read transaction for top-N terms
     const topTerms = terms.slice(0, 50);
     const matchedIds = [];
 
@@ -86,7 +74,7 @@ export async function warmLexical(terms, dbPath) {
         // Wrap in FTS5 double-quoted phrase to neutralise all operator chars
         // (AND, OR, NOT, NEAR, -, +, ^, etc.). Internal double-quotes are
         // escaped by doubling them per the FTS5 string-literal spec.
-        const safeTerm = term.replace(/"/g, '""'); // escape internal quotes for FTS5
+        const safeTerm = term.replace(/"/g, '""');
         if (!safeTerm) continue;
 
         try {
@@ -97,7 +85,6 @@ export async function warmLexical(terms, dbPath) {
           if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
         }
 
-        // Time budget check
         if (performance.now() - start > DEFAULT_TIME_BUDGET_MS) break;
       }
     });
@@ -128,13 +115,7 @@ export async function warmLexical(terms, dbPath) {
   return { queriesRun, elapsedMs: Math.round(performance.now() - start) };
 }
 
-// ---------------------------------------------------------------------------
-// 4b. Semantic Warmup
-// ---------------------------------------------------------------------------
-
 /**
- * Pre-compute embeddings for hub entities and community phrases, warm HNSW.
- *
  * Track A: Hub entity embeddings (enrichEmbeddingText format)
  * Track B: Community phrase + question variant embeddings
  *
@@ -155,7 +136,6 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
   let embeddingsGenerated = 0;
   let hnswTraversals = 0;
 
-  // Collect all texts to embed
   const textsToEmbed = [];
   const textLabels = []; // parallel array tracking origin
   const hubTexts = new Map(); // term -> the enriched text embedded for it
@@ -187,7 +167,6 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
     }
   }
 
-  // Track B: Community phrases + variants
   if (communityPhrases && communityPhrases.length > 0) {
     for (const cp of communityPhrases) {
       const phrase = typeof cp === 'string' ? cp : cp.phrase;
@@ -195,7 +174,6 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
         textsToEmbed.push(phrase);
         textLabels.push('phrase');
       }
-      // Also embed question variants
       const variants = cp.variants || [];
       for (const v of variants) {
         textsToEmbed.push(v);
@@ -234,7 +212,6 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
     };
   }
 
-  // Build a map of text -> embedding for persistence
   const embeddingMap = new Map();
   for (let i = 0; i < textsToEmbed.length; i++) {
     if (allEmbeddings[i]) {
@@ -242,7 +219,6 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
     }
   }
 
-  // Warm HNSW traversal paths if index is available
   if (hnswIndex && typeof hnswIndex.search === 'function') {
     const hnswDim = dimension || EMBEDDING_CONFIG.hnswDimension;
     for (const emb of allEmbeddings) {
@@ -266,13 +242,7 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
   };
 }
 
-// ---------------------------------------------------------------------------
-// 4c. Hybrid Warmup
-// ---------------------------------------------------------------------------
-
 /**
- * Exercise the full hybrid pipeline with representative queries.
- *
  * @param {Array<{query: string, communityId?: number}>} representativeQueries - 10-20 queries
  * @param {object} [searcher] - SweetSearch instance (must be pre-initialized)
  * @returns {Promise<{queriesRun: number, elapsedMs: number}>}
@@ -304,16 +274,11 @@ export async function warmHybrid(representativeQueries, searcher) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
     }
 
-    // Don't let hybrid warmup run too long
     if (performance.now() - start > 30_000) break;
   }
 
   return { queriesRun, elapsedMs: Math.round(performance.now() - start) };
 }
-
-// ---------------------------------------------------------------------------
-// 4d. Cache-Based Warmup (Light Tier)
-// ---------------------------------------------------------------------------
 
 /**
  * Light warmup: load cached binary artifacts and warm FTS5/HNSW without
@@ -332,7 +297,6 @@ export async function warmFromCache(options = {}) {
   let fts5Queries = 0;
   let hnswTraversals = 0;
 
-  // Load identifier binary metadata
   let idTerms = [];
   try {
     if (existsSync(ARTIFACT_PATHS.identifiersBin) && existsSync(ARTIFACT_PATHS.identifiersMeta)) {
@@ -343,7 +307,6 @@ export async function warmFromCache(options = {}) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
 
-  // Load semantic seeds binary
   let seedEmbeddings = [];
   try {
     if (existsSync(ARTIFACT_PATHS.semanticSeedsBin) && existsSync(ARTIFACT_PATHS.semanticSeedsMeta)) {
@@ -374,12 +337,10 @@ export async function warmFromCache(options = {}) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
 
-  // Graceful fallback if nothing cached
   if (idTerms.length === 0 && seedEmbeddings.length === 0) {
     return { fts5Queries: 0, hnswTraversals: 0, elapsedMs: Math.round(performance.now() - start), skip: 'no cached artifacts' };
   }
 
-  // FTS5 warmup with cached identifier names
   if (idTerms.length > 0) {
     const lexResult = await warmLexical(
       idTerms.slice(0, maxFts5).map(t => ({ term: t, score: 1 }))
@@ -387,7 +348,6 @@ export async function warmFromCache(options = {}) {
     fts5Queries = lexResult.queriesRun;
   }
 
-  // HNSW traversal with cached embeddings
   const hnswIndex = options.hnswIndex;
   if (hnswIndex && typeof hnswIndex.search === 'function' && seedEmbeddings.length > 0) {
     for (const emb of seedEmbeddings.slice(0, maxHnsw)) {
@@ -408,13 +368,8 @@ export async function warmFromCache(options = {}) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Internal Helpers
-// ---------------------------------------------------------------------------
-
 /**
- * F4: Load entity metadata from code-graph.db for hub entities.
- * Fetches type, file_path, and parent scope info to build enriched
+ * F4: Fetches type, file_path, and parent scope info to build enriched
  * embedding text matching the indexer's enrichEmbeddingText() format:
  *   # file_path
  *   # Scope: parent_type > symbol  (or # Defines: type symbol)
@@ -429,7 +384,6 @@ export function _loadEntityMetadata(hubEntities, options = {}) {
   const meta = new Map();
   if (!hubEntities || hubEntities.length === 0) return meta;
 
-  // Collect unique term names for a single batch query.
   const terms = [];
   for (const ent of hubEntities) {
     const term = typeof ent === 'string' ? ent : ent.term;
@@ -511,10 +465,6 @@ export function _loadEntityMetadata(hubEntities, options = {}) {
 
   return meta;
 }
-
-// ---------------------------------------------------------------------------
-// Exports
-// ---------------------------------------------------------------------------
 
 export default {
   warmLexical,

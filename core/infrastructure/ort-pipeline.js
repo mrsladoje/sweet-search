@@ -1,8 +1,6 @@
 /**
  * Direct ORT Pipeline — loads an ONNX session + tokenizer without HuggingFace wrappers.
- *
- * Replaces pipeline() and AutoModel.from_pretrained() by loading onnxruntime-node
- * sessions directly from managed-cache ONNX files.
+ * Sessions load directly from managed-cache ONNX files.
  */
 
 import { createTokenizer } from './native-tokenizer.js';
@@ -70,11 +68,9 @@ export function buildFeed(tokenized, inputNames) {
 }
 
 /**
- * Create a direct ORT pipeline from local ONNX + tokenizer.json files.
- *
- * @param {string} onnxPath - Absolute path to the ONNX model file
+ * @param {string} onnxPath - Absolute path
  * @param {string} tokenizerPath - Absolute path to tokenizer.json
- * @param {object} [sessionOptions] - ORT session options (from buildSessionOptions)
+ * @param {object} [sessionOptions] - from buildSessionOptions
  * @returns {{ session, tokenizer, run, dispose }}
  */
 export async function createOrtPipeline(onnxPath, tokenizerPath, sessionOptions = {}) {
@@ -84,9 +80,6 @@ export async function createOrtPipeline(onnxPath, tokenizerPath, sessionOptions 
   const tokenizer = await createTokenizer(tokenizerPath);
 
   /**
-   * Tokenize texts and run inference.
-   *
-   * @param {string|string[]} texts - Input text(s)
    * @param {object} [opts] - Tokenizer options (padding, truncation, max_length, text_pair)
    * @returns {object} Raw ORT output tensors
    */
