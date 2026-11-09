@@ -53,7 +53,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { selectEvictionTargets, privateRuntimeDir, registryTrustworthy, entryPredatesBoot } from '../search/daemon-registry.js';
+import { pidAlive, selectEvictionTargets, privateRuntimeDir, registryTrustworthy, entryPredatesBoot } from '../search/daemon-registry.js';
 import { resolveMaintainerMemoryProfile } from '../incremental-indexing/domain/interval-autotune.mjs';
 
 const DEFAULT_REGISTRY_FILE = 'sweet-search-rss-daemons.json';
@@ -319,18 +319,6 @@ async function writeRssRegistryAtomic(daemons, env = process.env) {
   } catch {
     try { await fs.unlink(tmp); } catch { /* ignore */ }
     return false;
-  }
-}
-
-/** Is a pid alive right now? `kill -0`; EPERM (other-user) counts as alive. */
-function pidAlive(pid) {
-  const n = Number(pid);
-  if (!Number.isInteger(n) || n <= 0) return false;
-  try {
-    process.kill(n, 0);
-    return true;
-  } catch (err) {
-    return !!(err && err.code === 'EPERM');
   }
 }
 

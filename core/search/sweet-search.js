@@ -24,8 +24,7 @@ import { assertIndexSchemas } from '../infrastructure/index-schema.js';
 import { CodeGraphRepository } from '../infrastructure/code-graph-repository.js';
 import { readJsonFileCachedIfExists } from '../infrastructure/cached-json-file.js';
 import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
-import { setRepoMapModule } from '../ranking/quality-scorer.js';
-import { pageRank, loadGraph, buildAdjacency } from '../graph/repo-map.js';
+import { RECONCILE_MANIFEST } from '../infrastructure/state-files.mjs';
 import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
 
 import * as fusion from './search-fusion.js';
@@ -41,7 +40,7 @@ import { isAgentFormat } from '../infrastructure/agent-format.js';
 import { hasAblation } from './ablations.js';
 
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
-import { __ptStart, __ptEnd } from './stage-timing.js';
+import { __ptStart, __ptEnd } from '../infrastructure/stage-timing.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
 
@@ -175,7 +174,6 @@ export class SweetSearch {
       ?? CASCADE_CONFIG.forceFullCrossEncoder;
     this.cascadeShadowMode = options.cascadeShadowMode
       ?? CASCADE_CONFIG.shadowMode;
-    setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
     this._qualityScorer = null;
     this.codebaseRepo = new CodebaseRepository(this._manifestCodebaseDbPath);
     this.sparseGramIndex = null;
@@ -403,7 +401,7 @@ export class SweetSearch {
 
   _readReconcileManifest() {
     try {
-      const manifestPath = path.join(this._manifestStateDir, 'reconcile-manifest.json');
+      const manifestPath = path.join(this._manifestStateDir, RECONCILE_MANIFEST);
       const manifest = readJsonFileCachedIfExists(manifestPath);
       return Number.isInteger(manifest?.epoch) ? manifest : null;
     } catch {
@@ -417,7 +415,7 @@ export class SweetSearch {
    */
   _currentManifestEpoch() {
     try {
-      const manifest = JSON.parse(readFileSync(path.join(this._manifestStateDir, 'reconcile-manifest.json'), 'utf8'));
+      const manifest = JSON.parse(readFileSync(path.join(this._manifestStateDir, RECONCILE_MANIFEST), 'utf8'));
       return Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
     } catch {
       return null;

@@ -30,6 +30,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { getOrtGraphCacheDir } from '../infrastructure/onnx-session-utils.js';
+import { pidAlive } from '../infrastructure/pid-alive.js';
 
 /** The CPU must be at least this much faster to take indexing off the accelerator. */
 export const CPU_WIN_MARGIN = 1.2;
@@ -248,16 +249,6 @@ export function writeIndexDeviceChoice(key, entry, { cacheDir, now = Date.now() 
     return true;
   } catch {
     return false;
-  }
-}
-
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err?.code === 'EPERM';
   }
 }
 

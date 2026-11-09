@@ -189,7 +189,7 @@ export class QualityScorer {
   }
 
   _repoMapFunctions() {
-    const repoMap = this._repoMap ?? _repoMapModule;
+    const repoMap = this._repoMap;
     if (!repoMap) throw new Error('QualityScorer needs the repoMap option ({ pageRank, loadGraph, buildAdjacency })');
     return repoMap;
   }
@@ -303,18 +303,6 @@ export class QualityScorer {
       };
     });
   }
-}
-
-// Process-wide fallback for a scorer built without the `repoMap` option.
-let _repoMapModule = null;
-
-/**
- * @deprecated Pass `repoMap` to the QualityScorer constructor. Kept until core/search/sweet-search.js
- * stops calling it.
- * @param {{ pageRank: Function, loadGraph: Function, buildAdjacency: Function }} mod
- */
-export function setRepoMapModule(mod) {
-  _repoMapModule = mod;
 }
 
 export default QualityScorer;

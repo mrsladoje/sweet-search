@@ -1,10 +1,11 @@
 import { dirname, isAbsolute, join } from 'path';
 import { readJsonFileCachedIfExists } from './cached-json-file.js';
 import { assertGraphSchema } from './index-schema.js';
+import { RECONCILE_MANIFEST } from './state-files.mjs';
 
 export function readAdjacentManifest(dbPath) {
   try {
-    const manifest = readJsonFileCachedIfExists(join(dirname(dbPath), 'reconcile-manifest.json'));
+    const manifest = readJsonFileCachedIfExists(join(dirname(dbPath), RECONCILE_MANIFEST));
     return Number.isInteger(manifest?.epoch) ? manifest : null;
   } catch {
     return null;

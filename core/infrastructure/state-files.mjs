@@ -9,6 +9,7 @@ export const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
 export const MERKLE_STATE = 'merkle-state.json';
 export const PAUSE_FILE = 'reconcile-pause.json';
 export const MAINTAINER_LOCK = 'index-maintainer.lock';
+export const RECONCILE_MANIFEST = 'reconcile-manifest.json';
 
 export const CODEBASE_DB = 'codebase.db';
 export const CODE_GRAPH_DB = 'code-graph.db';

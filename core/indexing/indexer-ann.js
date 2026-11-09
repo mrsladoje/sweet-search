@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 
 import { DB_PATHS } from '../infrastructure/config/index.js';
+import { isEmbedForcedToCpu } from '../infrastructure/env-flag.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
 import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebuild, updateArtifactState } from './artifact-builder.js';
 import { log, logProgress } from './indexer-utils.js';
@@ -78,7 +79,7 @@ export function decideHybridDispatcher({
   // is NOT forced onto the CPU ORT path. Either condition unblocks hybrid.
   const metalContendedByEmbed =
     parallelLateInteraction === true
-    && env.SWEET_SEARCH_EMBED_USE_CPU !== '1';
+    && !isEmbedForcedToCpu(env);
   if (metalContendedByEmbed) {
     return { armed: false, reason: 'metal-contended-by-embed' };
   }

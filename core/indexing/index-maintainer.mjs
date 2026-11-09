@@ -37,6 +37,8 @@ import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 // in the shutdown path can wedge.
 import { launchMaintainer, readReconcilePause } from './maintainer-launcher.mjs';
 import { recordSpawn } from '../infrastructure/spawn-ledger.js';
+import { DIRTY_QUEUE, MAINTAINER_LOCK } from '../infrastructure/state-files.mjs';
+import { pidAlive } from '../infrastructure/pid-alive.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -328,7 +330,7 @@ async function sigtermAndStealLock(existing, lockFile, reason) {
  */
 export async function acquireStateLock(stateDir) {
   mkdirSync(stateDir, { recursive: true });
-  const lockFile = join(stateDir, 'index-maintainer.lock');
+  const lockFile = join(stateDir, MAINTAINER_LOCK);
   // THREE attempts, not two. A takeover can now legitimately spend an attempt
   // WITHOUT clearing the lock: sigtermAndStealLock abandons the steal when the
   // holder was replaced during its grace (an RSS-recycle handoff does exactly
@@ -531,7 +533,7 @@ export async function runReconcileV2Tick(ctx) {
   // A cold encoder process spent 2.4 s loading its models in sequence after the parse;
   // with work queued, load them now, alongside hashing, parsing and graph writes.
   try {
-    if (statSync(join(ctx.stateDir, 'index-maintainer-queue.jsonl')).size > 0) encoders.warm();
+    if (statSync(join(ctx.stateDir, DIRTY_QUEUE)).size > 0) encoders.warm();
   } catch { /* no queue */ }
   const counters = await runProductionReconcileTick({
     projectRoot: ctx.projectRoot,
@@ -1101,16 +1103,6 @@ export function daemonPidFromArgv(argv = process.argv) {
   return Number.isInteger(pid) && pid > 0 ? pid : null;
 }
 
-/** True when a process with this pid exists (EPERM = alive, owned by another user). */
-function pidRunning(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err?.code === 'EPERM';
-  }
-}
-
 /** True when the pid file names a running process. Missing/garbage file → false. */
 export function daemonPidFileLive(pidFile) {
   let pid;
@@ -1120,7 +1112,7 @@ export function daemonPidFileLive(pidFile) {
     return false;
   }
   if (!Number.isFinite(pid) || pid <= 0) return false;
-  return pidRunning(pid);
+  return pidAlive(pid);
 }
 
 /**
@@ -1369,7 +1361,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   const daemonCheck = (daemonPidFile || daemonPid)
     ? setInterval(() => {
         if (shutdownRequested) return;
-        const live = daemonPidFile ? daemonPidFileLive(daemonPidFile) : pidRunning(daemonPid);
+        const live = daemonPidFile ? daemonPidFileLive(daemonPidFile) : pidAlive(daemonPid);
         if (daemonGoneLongEnough(daemonFollow, { live, nowMs: Date.now(), graceMs: daemonAbsentGraceMs() })) {
           log('INFO', `No search daemon behind ${daemonLabel} for ${daemonAbsentGraceMs()}ms; stopping with it.`);
           // Nothing left to serve, so no successor either.

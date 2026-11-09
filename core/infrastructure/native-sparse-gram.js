@@ -122,18 +122,20 @@ function extractCoveringGramsFromSpan(span, weights) {
   return grams;
 }
 
+/** Does this loaded native module have the sparse-gram build, load and regex-literal functions? */
+export function isSparseGramAddon(m) {
+  return typeof m.buildSparseGramIndex === 'function'
+    && typeof m.NativeSparseGramIndex?.load === 'function'
+    && typeof m.extractRegexLiterals === 'function';
+}
+
 function loadAddon() {
   if (_addonLoaded) return _addon;
   _addonLoaded = true;
 
   // CUDA-preferred with CPU fallback (see loadNativeAddon): a CUDA addon that
   // can't load on a no-GPU box falls back to the plain CPU addon.
-  const res = loadNativeAddon({
-    validate: (m) =>
-      typeof m.buildSparseGramIndex === 'function' &&
-      typeof m.NativeSparseGramIndex?.load === 'function' &&
-      typeof m.extractRegexLiterals === 'function',
-  });
+  const res = loadNativeAddon({ validate: isSparseGramAddon });
   if (res) _addon = res.mod;
 
   return _addon;

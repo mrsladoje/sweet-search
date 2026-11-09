@@ -27,6 +27,7 @@ import path from 'path';
 
 const RAZOR_EXTENSIONS = ['.cshtml', '.razor'];
 const ASPNET_EXTENSIONS = ['.aspx', '.ascx', '.master', '.asax', '.ashx', '.asmx', '.svc'];
+export const VIEW_TEMPLATE_EXTENSIONS = new Set([...RAZOR_EXTENSIONS, ...ASPNET_EXTENSIONS]);
 // Files whose body after the directive is C# (not markup).
 const ASPNET_CODE_FILE_EXTENSIONS = new Set(['.ashx', '.asmx']);
 

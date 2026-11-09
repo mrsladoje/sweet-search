@@ -20,7 +20,8 @@ import {
   readMaintenanceQueue,
 } from './maintenance-worker.mjs';
 import { readJsonFile } from '../infrastructure/json-file.mjs';
-import { DIRTY_QUEUE, MAINTAINER_LOCK, MERKLE_STATE, PAUSE_FILE, PROCESSING_QUEUE } from '../infrastructure/state-files.mjs';
+import { pidAlive } from '../../infrastructure/pid-alive.js';
+import { DIRTY_QUEUE, MAINTAINER_LOCK, MERKLE_STATE, PAUSE_FILE, PROCESSING_QUEUE } from '../../infrastructure/state-files.mjs';
 
 
 const METRICS_FILE = 'reconcile-metrics.jsonl';
@@ -114,20 +115,6 @@ function dirtySnapshot(stateDir) {
 
 function deadLetterSnapshot(stateDir) {
   return readJsonl(path.join(stateDir, DEAD_LETTER_FILENAME));
-}
-
-/**
- * Whether a process id is currently alive. EPERM (a live process owned by
- * another user) counts as alive; ESRCH (no such process) counts as dead.
- */
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === 'EPERM';
-  }
 }
 
 /**

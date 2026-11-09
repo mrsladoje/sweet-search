@@ -51,7 +51,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { CODE_GRAPH_DB } from './state-files.mjs';
+import { CODE_GRAPH_DB } from '../../infrastructure/state-files.mjs';
 
 const DEFAULT_GRAPH_GC_BATCH = 2000;
 const DEFAULT_GRAPH_GC_MAX_ROWS = 100_000;

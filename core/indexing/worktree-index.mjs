@@ -59,11 +59,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { DEAD_LEGACY_ARTIFACTS } from './legacy-artifact-sweep.js';
+import { pidAlive } from '../infrastructure/pid-alive.js';
+import { CODEBASE_DB, CODE_GRAPH_DB, DIRTY_QUEUE, MAINTAINER_LOCK, PAUSE_FILE, PROCESSING_QUEUE, RECONCILE_MANIFEST } from '../infrastructure/state-files.mjs';
 import { projectPidFile, projectSocketPath, resolveProjectRoot } from '../search/server-identity.js';
 
 const STATE_DIR_NAME = '.sweet-search';
-const INDEX_FILE = 'codebase.db';
-const QUEUE_FILE = 'index-maintainer-queue.jsonl';
 // A failed bootstrap is not retried on every call: once per this interval at most.
 const RETRY_AFTER_MS = 10 * 60_000;
 // A claim whose holder died, or that is older than this, no longer blocks a bootstrap.
@@ -76,9 +76,9 @@ const WORKTREES_DIR = 'worktrees';
 // Runtime files of the main checkout's processes, and the other worktrees' indexes:
 // never carried into a worktree's index.
 const RUNTIME_FILES = new Set([
-  'index-maintainer.lock', 'maintainer-spawn.claim', 'index-maintainer-queue.jsonl',
-  'index-maintainer-queue.processing.jsonl', 'index-maintainer-failures.json', 'maintainer-status.json',
-  'maintainer-last-exit.json', 'maintainer-watch-snapshot.bin', 'reconcile-pause.json', 'worktree-stamp.json',
+  MAINTAINER_LOCK, 'maintainer-spawn.claim', DIRTY_QUEUE,
+  PROCESSING_QUEUE, 'index-maintainer-failures.json', 'maintainer-status.json',
+  'maintainer-last-exit.json', 'maintainer-watch-snapshot.bin', PAUSE_FILE, 'worktree-stamp.json',
   'daemon-starts.jsonl', 'index-device.lock', 'phase-progress.json', 'readers', WORKTREES_DIR,
 ]);
 const RUNTIME_PREFIXES = ['index-maintainer.log', 'daemon.log', 'query-telemetry.jsonl', 'reconcile-metrics.jsonl', 'worktree-bootstrap'];
@@ -117,11 +117,6 @@ export function worktreeIndexDir(mainCheckout, worktree) {
   return path.join(mainCheckout, STATE_DIR_NAME, WORKTREES_DIR, `${name}-${pathKey(worktree).slice(0, 12)}`);
 }
 
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (err) { return err?.code === 'EPERM'; }
-}
-
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
@@ -154,8 +149,8 @@ export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env
   try {
     if (!worktreeIndexEnabled(env)) return { started: false, reason: 'disabled' };
     if (!mainCheckout || !worktree || mainCheckout === worktree) return { started: false, reason: 'not-linked' };
-    if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE))) return { started: false, reason: 'indexed' };
-    if (!fs.existsSync(path.join(mainCheckout, STATE_DIR_NAME, INDEX_FILE))) return { started: false, reason: 'no-main-index' };
+    if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, CODEBASE_DB))) return { started: false, reason: 'indexed' };
+    if (!fs.existsSync(path.join(mainCheckout, STATE_DIR_NAME, CODEBASE_DB))) return { started: false, reason: 'no-main-index' };
     // A state dir of the worktree's own with no index in it (an index run that stopped
     // early): the bootstrap leaves it alone, so starting one would only repeat forever.
     if (ownStateDir(worktree)) return { started: false, reason: 'own-state-dir' };
@@ -455,7 +450,7 @@ export function indexDateMs(newestSameNs, oldestChangedNs) {
  */
 function dateIndexAs(stateDir, publishedAtMs) {
   if (!(publishedAtMs > 0)) return;
-  const manifestPath = path.join(stateDir, 'reconcile-manifest.json');
+  const manifestPath = path.join(stateDir, RECONCILE_MANIFEST);
   const manifest = readJson(manifestPath);
   if (manifest && typeof manifest === 'object') {
     manifest.publishedAt = new Date(publishedAtMs).toISOString();
@@ -463,7 +458,7 @@ function dateIndexAs(stateDir, publishedAtMs) {
     fs.writeFileSync(tmp, `${JSON.stringify(manifest, null, 2)}\n`);
     fs.renameSync(tmp, manifestPath);
   }
-  const graph = path.join(stateDir, 'code-graph.db');
+  const graph = path.join(stateDir, CODE_GRAPH_DB);
   try {
     const st = fs.statSync(graph);
     fs.utimesSync(graph, st.atime, new Date(publishedAtMs));
@@ -475,7 +470,7 @@ function writeQueue(stateDir, files) {
   const now = Date.now();
   const iso = new Date(now).toISOString();
   const lines = files.map((rel) => `${JSON.stringify({ file_path: rel, timestamp: now, queued_at: iso, source: 'worktree' })}\n`).join('');
-  fs.appendFileSync(path.join(stateDir, QUEUE_FILE), lines);
+  fs.appendFileSync(path.join(stateDir, DIRTY_QUEUE), lines);
 }
 
 function gitOut(args, cwd) {
@@ -557,7 +552,7 @@ export function gcWorktreeIndexes(worktreesDir, { selfPid = 0, nowMs = Date.now(
       if (live) continue;
       const stampedMs = Date.parse(stamp.stampedAt || '');
       if (fs.existsSync(root) && Number.isFinite(stampedMs) && nowMs - stampedMs < CLAIM_STALE_MS) continue;
-      const lock = readJson(path.join(dir, 'index-maintainer.lock'));
+      const lock = readJson(path.join(dir, MAINTAINER_LOCK));
       const holder = Number(lock?.pid);
       if (holder && holder !== selfPid && pidAlive(holder)) continue;
       fs.rmSync(dir, { recursive: true, force: true });
@@ -678,8 +673,8 @@ export async function bootstrapWorktreeIndex({
 }) {
   const t0 = Date.now();
   const mainState = path.join(mainCheckout, STATE_DIR_NAME);
-  if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE))) return { skipped: 'indexed' };
-  if (!fs.existsSync(path.join(mainState, INDEX_FILE))) return { skipped: 'no-main-index' };
+  if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, CODEBASE_DB))) return { skipped: 'indexed' };
+  if (!fs.existsSync(path.join(mainState, CODEBASE_DB))) return { skipped: 'no-main-index' };
   if (ownStateDir(worktree)) return { skipped: 'own-state-dir' };
   // Cheap checks first: a worktree that cannot hold the link must not cost a copy and a
   // stopped main maintainer, again on every retry.
@@ -740,7 +735,7 @@ export async function bootstrapWorktreeIndex({
     log(`file records: ${same} unchanged, ${changed.length} queued for re-indexing`);
     // A leftover index for this path (its worktree was removed and re-added, and the
     // clean-up has not run) is replaced: it describes other files.
-    const old = readJson(path.join(finalDir, 'index-maintainer.lock'));
+    const old = readJson(path.join(finalDir, MAINTAINER_LOCK));
     if (old?.pid && pidAlive(Number(old.pid))) {
       // The earlier worktree's maintainer is still shutting down: try again soon.
       throw Object.assign(new Error(`a maintainer still runs on ${finalDir}`), { retryAfterMs: 30_000 });
@@ -811,7 +806,7 @@ async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = nu
  * @returns {Promise<boolean>} true when the worktree has an index of its own
  */
 export async function ensureWorktreeIndex({ mainCheckout, worktree, env = process.env, waitMs = 20_000, daemonPid = 0 }) {
-  const indexed = () => fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE));
+  const indexed = () => fs.existsSync(path.join(worktree, STATE_DIR_NAME, CODEBASE_DB));
   if (indexed()) return true;
   const r = requestWorktreeIndex({ mainCheckout, worktree, env, daemonPid });
   if (!r.started && r.reason !== 'running') return indexed();

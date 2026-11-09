@@ -52,7 +52,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readManifest } from './manifest.mjs';
 import { validateConfigFingerprint } from '../../indexing/config-fingerprint.js';
-import { LI_STUB_DB, MERKLE_STATE } from './state-files.mjs';
+import { LI_STUB_DB, MERKLE_STATE } from '../../infrastructure/state-files.mjs';
 
 /** Status label surfaced in logs and `reconcile status` when no baseline exists. */
 export const WAITING_FOR_INITIAL_INDEX = 'waiting_for_initial_index';

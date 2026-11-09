@@ -29,6 +29,7 @@
 import fs from 'node:fs/promises';
 import { lstatSync, mkdirSync, statSync } from 'node:fs';
 import { daemonRequest } from './daemon-client.js';
+import { pidAlive as processAlive } from '../infrastructure/pid-alive.js';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -146,14 +147,7 @@ export function entryPredatesBoot(entry, nowMs = Date.now(), uptimeSec = os.upti
  * another user) as alive — standard `kill -0` probe.
  */
 export function pidAlive(pid) {
-  const n = Number(pid);
-  if (!Number.isInteger(n) || n <= 0) return false;
-  try {
-    process.kill(n, 0);
-    return true;
-  } catch (err) {
-    return err && err.code === 'EPERM';
-  }
+  return processAlive(Number(pid));
 }
 
 /** Read + parse the registry, returning a { "<pid>": entry } map ({} on any error). */

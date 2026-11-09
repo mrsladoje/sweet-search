@@ -56,7 +56,7 @@ import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import {
   loadBitmap, popcount, isSet,
 } from '../infrastructure/tombstone-bitmap.mjs';
-import { BINARY_HNSW_INDEX, CODE_GRAPH_DB, LI_STUB_DB } from '../infrastructure/state-files.mjs';
+import { BINARY_HNSW_INDEX, CODE_GRAPH_DB, LI_STUB_DB } from '../../infrastructure/state-files.mjs';
 
 function safeUnlink(p) { try { fs.unlinkSync(p); } catch { /* ok */ } }
 function progressFn(onProgress) {

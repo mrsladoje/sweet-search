@@ -30,7 +30,7 @@ import { deltaHeader, deltaPathFor, encodeDeltaRecord } from '../../vector-store
 import { FullVectorWriter, NO_ROW, fullVectorPaths } from '../../vector-store/full-vector-file.js';
 import { createBitmap, isSet, saveBitmap, setBit } from './tombstone-bitmap.mjs';
 import { startBackgroundBuild } from './background-build.mjs';
-import { CODEBASE_DB } from './state-files.mjs';
+import { CODEBASE_DB } from '../../infrastructure/state-files.mjs';
 
 export function compactionPaths(indexPath) {
   const staged = path.join(path.dirname(indexPath), `${path.basename(indexPath, '.idx')}.compact.idx`);

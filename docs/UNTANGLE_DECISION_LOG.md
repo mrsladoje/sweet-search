@@ -410,3 +410,43 @@ Four fresh read-only agents read the code again with this log and the constraint
 - Not shared, because the copies differ: the six state-dir resolvers (table in `reports/w4-indexing.md`).
 - Checked: `hashing.mjs` never uses its "native crate" backend (no Rust export `xxhash3_64` exists), so every setup
   hashes with `@node-rs/xxhash` and the values agree.
+
+## Done: wave 5 (cross-folder follow-ups; report `docs/untangle/reports/w5-followups.md`)
+
+- `core/infrastructure/state-files.mjs` owns the names of the index state files for the full build, the incremental
+  build and search (it was in `incremental-indexing`, where the full build and search could not import it).
+- `core/infrastructure/stage-timing.js` owns the profiling hooks; `graph-expansion.js` uses it too.
+  `file-kind-ranking.js` keeps its own per-rule timing (it is not a copy).
+- `core/infrastructure/pid-alive.js` replaces 11 identical copies of the liveness probe. Four copies differ and stay
+  (table in the report).
+- `isEmbedForcedToCpu` (env-flag.js) replaces 5 identical checks. `VIEW_EXT` is built from `view-templates.js`.
+- The tombstone bitmap writer and the sparse-gram delta writer import the layout from their readers.
+- `hashing.mjs`: the dead "native crate" backend is gone; hash values for six sample inputs are equal before and after.
+- `setRepoMapModule` is gone; `search-postprocess.js` passes `repoMap` to `QualityScorer`.
+- `LI_SEGMENT_SIZE` has one definition (exported from `late-interaction-index.js`).
+
+## State at the end of this session (2026-11-10)
+
+- 11 commits, local on `main`, not pushed. Full suite: 9,436 tests, 0 failures, 51 to 61 s wall. Lint (with
+  `no-unused-vars`) and the boundary check (12 domains) are clean. The only import cycle left is in research code.
+- Measures: product import cycles 4 -> 0; cross-area edges out of `core/infrastructure` 3 -> 0; unused identifiers
+  125 -> 0 (enforced); test failures 2 -> 0; full-suite time about 10 min -> about 1 min; comment lines -5,026.
+
+## Open: larger items (not started; each needs a decision or a dedicated session)
+
+1. `core/agent-tools/run-agent-tool.mjs` is still one function of about 1,870 lines with 48 closures. Plan: one call
+   context object, one module per tool; `crates/ss-grep-core/fixtures-gen/args.mjs` must change in the same commit;
+   verify with the lane shadow check (`SS_LANE_SHADOW_LOG`).
+2. `startServer` in `search-server.js` is one function of about 950 lines with the routes inline.
+3. Experiment switches (`SS_FIX_*`, `SS_VARIANT_*`, `SS_SMOKE_*`, A3 / B7 paths) and about 20 ranking tuning variables
+   that nothing in the repository sets: remove or keep? (owner is still tuning)
+4. Three renderers of the agent-search result (ss-search, daemon, MCP) with different output bytes; two parallel
+   implementations of read / trace / read-semantic (`sweet-search read|trace` vs `ss-read|ss-trace`).
+5. Three daemon spawners; `autoSpawnServer` skips `applyPersistedLiModel()`.
+6. `SweetSearch` prototype mixin and the seven per-request caches passed as options (blocked until the MaxSim paper is
+   out: its hook wraps the prototype methods by name).
+7. Folder moves blocked by research references: graph storage out of `core/infrastructure`, `index-maintainer.mjs` to
+   the incremental build.
+8. Parity differences between the full build and the incremental build (section above).
+9. Rust: comments pass and the JS/Rust constant parity test (about 45 constants) are not done.
+10. Product seams that tests ask for (section above); `scripts/` experiment files and research helpers (out of scope).

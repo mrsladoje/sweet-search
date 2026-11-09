@@ -18,7 +18,8 @@ import { applyFinalListMMR, SPAN_MMR_WEIGHTS, CONTENT_MMR_WEIGHTS } from '../ran
 import { refrontPins } from './body-lexical.js';
 import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
 import { hasAblation } from './ablations.js';
-import { __ptStart, __ptEnd } from './stage-timing.js';
+import { __ptStart, __ptEnd } from '../infrastructure/stage-timing.js';
+import { pageRank, loadGraph, buildAdjacency } from '../graph/repo-map.js';
 
 /**
  * Min-max normalize an array of scores to [0, 1].
@@ -710,6 +711,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     if (!this._qualityScorer) {
       this._qualityScorer = new QualityScorer({
         dbPath: this.graphSearch?.dbPath || DB_PATHS.codeGraph,
+        repoMap: { pageRank, loadGraph, buildAdjacency },
       });
     }
     results = this._qualityScorer.scoreResults(results);

@@ -14,16 +14,13 @@
 import fs from 'node:fs';
 import { loadNativeAddon } from '../infrastructure/native-resolver.js';
 import { isOffValue } from '../infrastructure/env-flag.js';
+import { isSparseGramAddon } from '../infrastructure/native-sparse-gram.js';
 
 let lane = null; // { addon, socketPath, projectRoot, stateDir }
 let sqliteBridge = null;
 
 function laneAddon() {
-  const res = loadNativeAddon({
-    validate: (m) => typeof m.buildSparseGramIndex === 'function'
-      && typeof m.NativeSparseGramIndex?.load === 'function'
-      && typeof m.extractRegexLiterals === 'function',
-  });
+  const res = loadNativeAddon({ validate: isSparseGramAddon });
   const mod = res?.mod;
   return mod && typeof mod.grepLaneStart === 'function' ? { mod, path: res.path } : null;
 }

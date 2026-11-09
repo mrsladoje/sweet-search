@@ -36,10 +36,12 @@ import { fileURLToPath } from 'node:url';
 import { reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { applyBackgroundPriority } from './os-priority.mjs';
 import { recordSpawn } from '../infrastructure/spawn-ledger.js';
+import { pidAlive } from '../infrastructure/pid-alive.js';
+import { MAINTAINER_LOCK, PAUSE_FILE } from '../infrastructure/state-files.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export const MAINTAINER_LOCK_FILENAME = 'index-maintainer.lock';
+export const MAINTAINER_LOCK_FILENAME = MAINTAINER_LOCK;
 
 /**
  * Cross-process spawn budget for supervision (see `runSupervisionTick`).
@@ -173,17 +175,6 @@ function openMaintainerLog(stateDir) {
 
 export function defaultMaintainerEntry() {
   return join(__dirname, 'index-maintainer.mjs');
-}
-
-/** Does a process with this pid exist right now? EPERM (alien owner) = alive. */
-function pidAlive(pid) {
-  if (!Number.isFinite(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === 'EPERM';
-  }
 }
 
 /** Resolve the reconcile state dir the same way the daemon's v2 context does. */
@@ -371,7 +362,7 @@ export function launchMaintainer(options = {}) {
  * @returns {{paused: boolean, pausedAt?: string|null, reason?: string|null, filePath: string}}
  */
 export function readReconcilePause(stateDir, onUnreadable) {
-  const filePath = join(stateDir, 'reconcile-pause.json');
+  const filePath = join(stateDir, PAUSE_FILE);
   try {
     const payload = JSON.parse(readFileSync(filePath, 'utf-8'));
     return {
@@ -428,7 +419,7 @@ export async function holdMaintainerForIndexRun(stateDir, {
   timeoutMs = INDEX_RUN_STOP_TIMEOUT_MS, reason = 'sweet-search index is running', waitForHolderMs = HOLDER_WAIT_MS,
   onWait = null,
 } = {}) {
-  const pauseFile = join(stateDir, 'reconcile-pause.json');
+  const pauseFile = join(stateDir, PAUSE_FILE);
   mkdirSync(stateDir, { recursive: true });
   let ours = false;
   let blockedBy = null;

@@ -12,7 +12,6 @@ export { default as LocalReranker_default } from './local-reranker.js';
 // quality-scorer.js
 export {
   QualityScorer,
-  setRepoMapModule,
   scoreTestProximity,
   scoreCommentDensity,
   scoreComplexity,

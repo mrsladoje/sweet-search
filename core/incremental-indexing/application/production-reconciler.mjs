@@ -36,7 +36,7 @@ import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../inf
 import { extractSparseGramDeltaRecord, loadSparseGramIndex, resolveSparseSymbolMask } from '../../infrastructure/native-sparse-gram.js';
 import { readMaintenanceState as readMaintenanceStateFromArtifacts } from '../infrastructure/maintenance-state-reader.mjs';
 import { prepareCached } from '../../infrastructure/db-utils.js';
-import { BINARY_HNSW_INDEX, CODEBASE_DB, CODE_GRAPH_DB, DIRTY_QUEUE, LI_STUB_DB, MERKLE_STATE, PROCESSING_QUEUE } from '../infrastructure/state-files.mjs';
+import { BINARY_HNSW_INDEX, CODEBASE_DB, CODE_GRAPH_DB, DIRTY_QUEUE, LI_STUB_DB, MERKLE_STATE, PROCESSING_QUEUE } from '../../infrastructure/state-files.mjs';
 
 const METRICS_FILE = 'reconcile-metrics.jsonl';
 // One line per published epoch; past this size the file moves to `.1` (the

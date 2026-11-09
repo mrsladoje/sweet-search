@@ -23,124 +23,29 @@
  * masking kernel; Phase 3 ships the scalar JS path under the same layout.
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
+import {
+  BITS_PER_BYTE,
+  byteAndMask,
+  createBitmap,
+  loadBitmap as loadBitmapView,
+  resizeBitmap,
+  saveBitmap,
+  setBit,
+} from '../../infrastructure/tombstone-bitmap-reader.js';
 
-const HEADER_MAGIC = Buffer.from('SSTB', 'ascii');
-const HEADER_VERSION = 1;
-const HEADER_RESERVED = 64; // bytes reserved before payload (alignment)
-const BITS_PER_BYTE = 8;
-
-function payloadByteLength(capacityBits) {
-  const minBytes = Math.ceil(capacityBits / BITS_PER_BYTE);
-  // Round up to 64-byte alignment so SIMD reads at the tail are safe.
-  return Math.ceil(minBytes / 64) * 64;
-}
-
-/**
- * Create or open a tombstone bitmap. Returns an in-memory bitmap object;
- * callers persist with `saveBitmap`.
- *
- * @returns {{capacity:number, payload:Buffer}}
- */
-export function createBitmap(capacityBits) {
-  if (!Number.isInteger(capacityBits) || capacityBits <= 0) {
-    throw new Error(`createBitmap: capacityBits must be a positive integer, got ${capacityBits}`);
-  }
-  return {
-    capacity: capacityBits,
-    payload: Buffer.alloc(payloadByteLength(capacityBits)),
-  };
-}
+export { createBitmap, resizeBitmap, saveBitmap, setBit };
 
 /**
  * Load a tombstone bitmap from disk. Returns `null` if the file does not
- * exist (caller treats every key as live).
+ * exist (caller treats every key as live). The payload is a private copy:
+ * this writer mutates it, the query-time reader shares a view.
  *
  * @returns {{capacity:number, payload:Buffer}|null}
  */
 export function loadBitmap(filePath) {
-  if (!fs.existsSync(filePath)) return null;
-  const raw = fs.readFileSync(filePath);
-  if (raw.length < HEADER_RESERVED) {
-    throw new Error(`loadBitmap: ${filePath} too short (${raw.length} bytes)`);
-  }
-  if (!raw.subarray(0, 4).equals(HEADER_MAGIC)) {
-    throw new Error(`loadBitmap: ${filePath} magic mismatch`);
-  }
-  const version = raw.readUInt32LE(4);
-  if (version !== HEADER_VERSION) {
-    throw new Error(`loadBitmap: unsupported version ${version}`);
-  }
-  const capacity = Number(raw.readBigUInt64LE(8));
-  const expectedLength = HEADER_RESERVED + payloadByteLength(capacity);
-  if (raw.length < expectedLength) {
-    throw new Error(`loadBitmap: ${filePath} truncated payload (${raw.length} bytes, expected ${expectedLength})`);
-  }
-  const payload = raw.subarray(HEADER_RESERVED, HEADER_RESERVED + payloadByteLength(capacity));
-  return {
-    capacity,
-    payload: Buffer.from(payload),
-  };
-}
-
-/**
- * Persist the bitmap atomically (`*.tmp` + fsync + rename).
- *
- * @param {{capacity:number, payload:Buffer}} bitmap
- */
-export function saveBitmap(filePath, bitmap) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmp = filePath + '.tmp';
-  const header = Buffer.alloc(HEADER_RESERVED);
-  HEADER_MAGIC.copy(header, 0);
-  header.writeUInt32LE(HEADER_VERSION, 4);
-  header.writeBigUInt64LE(BigInt(bitmap.capacity), 8);
-  const out = Buffer.concat([header, bitmap.payload]);
-
-  const fd = fs.openSync(tmp, 'w');
-  try {
-    fs.writeSync(fd, out);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.renameSync(tmp, filePath);
-  try {
-    const dirFd = fs.openSync(path.dirname(filePath), 'r');
-    try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
-  } catch {
-    // Best-effort: some tmpfs/container filesystems reject directory fsync.
-  }
-}
-
-/**
- * Resize a bitmap (used when the underlying graph grows past capacity).
- * Preserves existing bits.
- *
- * @param {{capacity:number, payload:Buffer}} bitmap
- */
-export function resizeBitmap(bitmap, newCapacityBits) {
-  if (newCapacityBits <= bitmap.capacity) return bitmap;
-  const fresh = Buffer.alloc(payloadByteLength(newCapacityBits));
-  bitmap.payload.copy(fresh, 0, 0, bitmap.payload.length);
-  bitmap.capacity = newCapacityBits;
-  bitmap.payload = fresh;
-  return bitmap;
-}
-
-function byteAndMask(index) {
-  const byte = index >>> 3;
-  const mask = 1 << (index & 7);
-  return { byte, mask };
-}
-
-export function setBit(bitmap, index) {
-  if (index < 0 || index >= bitmap.capacity) {
-    throw new RangeError(`setBit: ${index} outside bitmap capacity ${bitmap.capacity}`);
-  }
-  const { byte, mask } = byteAndMask(index);
-  bitmap.payload[byte] |= mask;
+  const bitmap = loadBitmapView(filePath);
+  if (!bitmap) return null;
+  return { capacity: bitmap.capacity, payload: Buffer.from(bitmap.payload) };
 }
 
 export function clearBit(bitmap, index) {

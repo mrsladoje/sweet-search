@@ -25,6 +25,7 @@ import { Minimatch } from 'minimatch';
 import { SECRET_FILE_PATTERNS } from '../infrastructure/config/index.js';
 import { createAdmissionPolicy, isSymlinkedRelUnder } from './admission-policy.js';
 import { fileLooksMinified } from './minified-detector.js';
+import { DIRTY_QUEUE, PROCESSING_QUEUE } from '../infrastructure/state-files.mjs';
 import { changedFilesTracker } from './changed-files-tracker.js';
 import {
   DEFAULT_DENY_DIRS_HARD, DEFAULT_REPO_SIZE_CAP, loadIgnoreFile, patternToRegex,
@@ -205,8 +206,6 @@ export function listChangedGrepFiles(projectRoot, { limit = 2000 } = {}) {
   return files;
 }
 
-const PENDING_QUEUE = 'index-maintainer-queue.jsonl';
-const PENDING_PROCESSING = 'index-maintainer-queue.processing.jsonl';
 const PENDING_TTL_MS = 30_000;
 const pendingCache = new Map();
 
@@ -263,8 +262,8 @@ function gitIgnoredSet(projectRoot, rels) {
  */
 export function listPendingReindexFiles(projectRoot, { stateDir, limit = 2000, inScope = null } = {}) {
   const dir = stateDir || process.env.SWEET_SEARCH_STATE_DIR || path.join(projectRoot, '.sweet-search');
-  const queueFile = path.join(dir, PENDING_QUEUE);
-  const processingFile = path.join(dir, PENDING_PROCESSING);
+  const queueFile = path.join(dir, DIRTY_QUEUE);
+  const processingFile = path.join(dir, PROCESSING_QUEUE);
   const key = `${projectRoot}\0${dir}`;
   const stamp = `${queueStamp(queueFile)}|${queueStamp(processingFile)}`;
   const now = Date.now();

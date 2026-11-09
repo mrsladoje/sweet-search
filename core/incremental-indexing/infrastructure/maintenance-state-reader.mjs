@@ -26,7 +26,8 @@ import { evaluateSegmentRatios, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
 import { fts5SegmentCount } from './sqlite-fts5.mjs';
 import { loadWatermarkConfig } from '../domain/watermark-scheduler.mjs';
 import { readJsonFile } from './json-file.mjs';
-import { BINARY_HNSW_INDEX, CODEBASE_DB, CODE_GRAPH_DB, LI_STUB_DB } from './state-files.mjs';
+import { pidAlive } from '../../infrastructure/pid-alive.js';
+import { BINARY_HNSW_INDEX, CODEBASE_DB, CODE_GRAPH_DB, LI_STUB_DB } from '../../infrastructure/state-files.mjs';
 
 /**
  * FTS5: max segment count across the graph FTS tables. Returns 0 when
@@ -286,11 +287,6 @@ export function readGraphRankState(stateDir, now = Date.now()) {
 export const VOCAB_STATE = 'vocab-refresh-state.json';
 /** Present while a vocab_refresh run is in flight: { pid, startedAt, graphEpoch }. */
 export const VOCAB_RUNNING = 'vocab-refresh.running';
-
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (err) { return err?.code === 'EPERM'; }
-}
 
 /**
  * Vocabulary freshness for the vocab_refresh watermark: `graphEpoch` (graphChangeEpoch),

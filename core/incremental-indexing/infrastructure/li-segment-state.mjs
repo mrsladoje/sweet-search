@@ -23,12 +23,11 @@ import {
   createBitmap, loadBitmap, saveBitmap,
   resizeBitmap, setBit, isSet, filterLive,
 } from './tombstone-bitmap.mjs';
+import { LI_SEGMENT_SIZE } from '../../ranking/late-interaction-index.js';
 
 export const STALE_SIDECAR_EXT = '.stale.bin';
-/** SSLX sealed-segment capacity (docs). Mirrors LI_SEGMENT_SIZE in
- *  core/ranking/late-interaction-index.js; a segment with fewer docs is
- *  "small" and a candidate for batch merge. */
-export const LI_SEGMENT_SIZE = 10_000;
+// SSLX sealed-segment capacity: a segment with fewer docs is "small" and a candidate for batch merge.
+export { LI_SEGMENT_SIZE };
 
 /**
  * PROCESS-scoped verified-identity cache for the positions-only reader.

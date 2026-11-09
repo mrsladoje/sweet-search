@@ -11,12 +11,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const HEADER_MAGIC = Buffer.from('SSTB', 'ascii');
-const HEADER_VERSION = 1;
-const HEADER_RESERVED = 64;
-const BITS_PER_BYTE = 8;
+export const HEADER_MAGIC = Buffer.from('SSTB', 'ascii');
+export const HEADER_VERSION = 1;
+export const HEADER_RESERVED = 64;
+export const BITS_PER_BYTE = 8;
 
-function payloadByteLength(capacityBits) {
+export function payloadByteLength(capacityBits) {
   const minBytes = Math.ceil(capacityBits / BITS_PER_BYTE);
   return Math.ceil(minBytes / 64) * 64;
 }
@@ -89,7 +89,7 @@ export function resizeBitmap(bitmap, newCapacityBits) {
   return bitmap;
 }
 
-function byteAndMask(index) {
+export function byteAndMask(index) {
   const byte = index >>> 3;
   const mask = 1 << (index & 7);
   return { byte, mask };

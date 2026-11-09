@@ -182,6 +182,7 @@ import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { currentCall } from '../infrastructure/call-context.js';
+import { pidAlive } from '../infrastructure/pid-alive.js';
 
 export const GUTTER_FORMS = Object.freeze({
   tab: '\t',
@@ -346,13 +347,9 @@ export function harnessCachePath(env = process.env, tmpDir = os.tmpdir()) {
   return path.join(tmpDir, `sweet-search-harness-${uid}-${key}.json`);
 }
 
-function processAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === 'EPERM'; }
-}
-
 // A cached entry is trusted only while the process it was derived from is still
 // alive and the entry is younger than CACHE_MAX_AGE_MS. ~20 µs.
-export function readHarnessCache(file, { now = Date.now(), isAlive = processAlive } = {}) {
+export function readHarnessCache(file, { now = Date.now(), isAlive = pidAlive } = {}) {
   let entry;
   try { entry = JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
   if (!entry || entry.v !== 1 || !Number.isInteger(entry.pid) || entry.pid <= 1) return null;
@@ -373,7 +370,7 @@ export function writeHarnessCache(file, { harness, pid, now = Date.now() }) {
 }
 
 // Ancestry with the macOS cache in front of it. Linux reads /proc directly.
-export function detectHarnessCached({ env = process.env, platform = process.platform, readProcess = null, file = null, now = Date.now(), isAlive = processAlive } = {}) {
+export function detectHarnessCached({ env = process.env, platform = process.platform, readProcess = null, file = null, now = Date.now(), isAlive = pidAlive } = {}) {
   if (platform === 'linux') return findHarnessAncestor({ readProcess }).harness;
   const cacheFile = file || harnessCachePath(env);
   const hit = readHarnessCache(cacheFile, { now, isAlive });

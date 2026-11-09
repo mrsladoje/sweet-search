@@ -39,11 +39,7 @@ import { DEFAULT_DENY_DIRS_HARD, isGrepCorpusPath } from './grep-corpus.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { openFileState } from '../incremental-indexing/infrastructure/file-state-store.mjs';
-
-// The dirty queue file name MUST match the dirty-scan producer + the reconcile
-// consumer (`dirty-scan.mjs` DIRTY_QUEUE). Kept as a literal here (rather than
-// imported) to avoid a cross-module import cycle through the reconciler.
-const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
+import { DIRTY_QUEUE } from '../infrastructure/state-files.mjs';
 
 // The FSEvents snapshot is written OUTSIDE the watched tree's event surface (it
 // lives under stateDir, which is itself ignored) so writing it on shutdown can

@@ -10,6 +10,7 @@ import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
+import { isEmbedForcedToCpu } from '../infrastructure/env-flag.js';
 import {
   bestIntraOpThreads,
   estimateComputeCores,
@@ -180,7 +181,7 @@ export function planAllocation(resources = detectResources()) {
   // SWEET_SEARCH_EMBEDDING_WORKERS=N overrides for manual tuning.
   const override = parseInt(process.env.SWEET_SEARCH_EMBEDDING_WORKERS || '0', 10);
   const cpuEmbedAlongsideMetalLi =
-    process.env.SWEET_SEARCH_EMBED_USE_CPU === '1' && isNativeInferenceAvailable();
+    isEmbedForcedToCpu() && isNativeInferenceAvailable();
   let embeddingWorkers;
   if (override > 0) {
     embeddingWorkers = Math.min(override, 4);

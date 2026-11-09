@@ -16,6 +16,7 @@ import {
 } from '../infrastructure/code-graph-visibility.js';
 import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
 import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
+import { __ptStart, __ptEnd } from '../infrastructure/stage-timing.js';
 
 const DEFAULT_EDGE_TYPES = new Set(['imports', 'extends', 'implements', 'uses', 'calls']);
 
@@ -53,19 +54,6 @@ function _relationshipVisibility(db, manifestEpoch, alias = '') {
     sql: `${relationshipVisibilitySql(visibility, alias)} AND ${sqlAliasPrefix(alias)}type NOT IN ${TRACE_ONLY_TYPES_SQL}`,
     params: relationshipVisibilityParams(visibility),
   };
-}
-
-// Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
-// by scripts/profile-search-stages.mjs (same convention as search-hybrid.js
-// and search-postprocess.js).
-function __ptStart() {
-  return globalThis.__stageTimings ? performance.now() : null;
-}
-function __ptEnd(stage, t0) {
-  if (t0 == null || !globalThis.__stageTimings) return;
-  const ms = performance.now() - t0;
-  const buf = globalThis.__stageTimings;
-  (buf[stage] = buf[stage] || []).push(ms);
 }
 
 // Language-specific tokens-per-line averages (from CodeSearchNet analysis)

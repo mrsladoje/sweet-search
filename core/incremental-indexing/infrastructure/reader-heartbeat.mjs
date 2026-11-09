@@ -29,6 +29,7 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { pidAlive } from '../../infrastructure/pid-alive.js';
 
 export const READER_GRACE_MS = 60 * 60 * 1000; // 1h default
 const HEARTBEAT_DIR = 'readers';
@@ -133,11 +134,7 @@ export function endRead(stateDir, record) {
 export function isReaderAlive(pid, bootId, procStartMs = null) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   if (bootId !== bootIdStub()) return false;
-  try {
-    process.kill(pid, 0);
-  } catch (err) {
-    if (err.code !== 'EPERM') return false;
-  }
+  if (!pidAlive(pid)) return false;
   // A heartbeat outlives its reads (search-reader-pin.js), so a reader killed without its exit
   // hook leaves a file whose pid a later process can take. That process started after the
   // reader did. (Start times read to the second; a minute of slack.)

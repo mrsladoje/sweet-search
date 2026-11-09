@@ -19,6 +19,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
+import { pidAlive } from '../core/infrastructure/pid-alive.js';
 import {
   DATA_DIR_NAME, artifactsInPlanOrder, artifactsInRunOrder, readCreatedPaths, removeSweetIndexSkill,
 } from './install-artifacts.js';
@@ -216,12 +217,6 @@ const MAINTAINER_LOCK_FILENAME = 'index-maintainer.lock';
 /** Synchronous sleep (uninstall is one-shot; a sub-second block is fine). */
 function sleepSyncMs(ms) {
   try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* ignore */ }
-}
-
-/** Is this pid alive right now? EPERM (foreign owner) counts as alive. */
-function pidAlive(pid) {
-  if (!Number.isFinite(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (err) { return err.code === 'EPERM'; }
 }
 
 /**

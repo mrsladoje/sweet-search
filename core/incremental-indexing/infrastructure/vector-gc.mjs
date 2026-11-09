@@ -30,7 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { CODEBASE_DB } from './state-files.mjs';
+import { CODEBASE_DB } from '../../infrastructure/state-files.mjs';
 
 const DEFAULT_GC_BATCH = 2000;
 const DEFAULT_GC_MAX_ROWS = 100_000;

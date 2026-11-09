@@ -42,7 +42,7 @@ import path from 'node:path';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { readJsonFile, writeJsonAtomic } from './json-file.mjs';
 import { STALE_SIDECAR_EXT, nextSegmentSeq, LI_SEGMENT_SIZE, segmentIdentityCache } from './li-segment-state.mjs';
-import { LI_STUB_DB } from './state-files.mjs';
+import { LI_STUB_DB } from '../../infrastructure/state-files.mjs';
 
 export { nextSegmentSeq, LI_SEGMENT_SIZE };
 

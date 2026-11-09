@@ -20,6 +20,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { VIEW_TEMPLATE_EXTENSIONS } from '../infrastructure/view-templates.js';
 
 // JS/CSS comment strip (best-effort; harmless on other languages — median still holds).
 const COMMENT_PATTERN = /\/\*[\s\S]*?\*\/\r?\n?|\/\/.{0,200}?(?:\r?\n|$)/g;
@@ -33,8 +34,6 @@ const MINIFIABLE_EXT = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.
 // minified HTML page). We do NOT apply the aggressive median rule to these — they are
 // handled by their own chunkers and are rarely a bundle we must exclude. StarCoder2's
 // pipeline likewise exempts HTML/JSON/Markdown from its line-length filter.
-// ASP.NET views: markup, long lines are normal. Only a large one-line file (generated) is minified.
-const VIEW_EXT = new Set(['.cshtml', '.razor', '.aspx', '.ascx', '.master', '.asax', '.ashx', '.asmx', '.svc']);
 const DATA_DOC_EXT = new Set(['.json', '.jsonc', '.json5', '.md', '.mdx', '.markdown', '.rst', '.txt', '.html', '.htm', '.xhtml', '.xml', '.svg', '.csv', '.yaml', '.yml', '.map']);
 
 function median(nums) {
@@ -73,7 +72,7 @@ export function looksMinified(headText, { ext = '', tailText = '', totalBytes } 
 
   // Data/doc/markup: long lines are normal; skip the line-length rules for them.
   if (DATA_DOC_EXT.has(e)) return false;
-  if (VIEW_EXT.has(e)) {
+  if (VIEW_TEMPLATE_EXTENSIONS.has(e)) {
     const lines = headText.split('\n').filter((l) => l.trim()).length;
     return lines <= 1 && bytes >= 20000 ? { rule: 'single-line' } : false;
   }

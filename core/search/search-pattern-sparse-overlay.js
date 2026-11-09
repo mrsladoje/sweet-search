@@ -11,9 +11,8 @@ import {
 import { readSparseGramDeltaRecordsSince } from '../infrastructure/sparse-gram-delta-reader.js';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { readJsonFileCachedIfExists } from '../infrastructure/cached-json-file.js';
+import { RECONCILE_MANIFEST } from '../infrastructure/state-files.mjs';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
-
-const RECONCILE_MANIFEST_FILENAME = 'reconcile-manifest.json';
 
 function sparseGramIndexPath(searcher, options = {}) {
   return options.sparseGramIndexPath || searcher?.sparseGramIndexPath || DB_PATHS.sparseGramIndex;
@@ -110,7 +109,7 @@ function readSparseManifest(searcher, options, indexPath) {
 
 function readSparseManifestFromDir(dir) {
   try {
-    const manifestPath = path.join(dir, RECONCILE_MANIFEST_FILENAME);
+    const manifestPath = path.join(dir, RECONCILE_MANIFEST);
     const manifest = readJsonFileCachedIfExists(manifestPath);
     if (manifest === undefined) return null;
     const epoch = manifest?.sparseGram?.epoch ?? manifest?.epoch;

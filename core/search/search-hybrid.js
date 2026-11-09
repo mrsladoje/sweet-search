@@ -12,7 +12,7 @@ import { runRRFFallback } from './search-rrf.js';
 import { isAgentFormat } from '../infrastructure/agent-format.js';
 import { hasAblation } from './ablations.js';
 import { bodyLexicalSettings, composeSeeds, fuseBodyRRF, retrieveBodyLexical } from './body-lexical.js';
-import { __ptStart, __ptEnd } from './stage-timing.js';
+import { __ptStart, __ptEnd } from '../infrastructure/stage-timing.js';
 
 const QUERY_SCAFFOLD_RE = /^(?:where|when|how)\s+(?:does|do|did|is|are|was|were|can|could|should)?\s*/i;
 const IMPLEMENTATION_VERB_RE = /^(?:abort|bind|build|call|compute|create|decode|decide|detect|encode|handle|load|parse|parsed|redirect|register|run|search|skip|transform|validate|write)s?\b/i;

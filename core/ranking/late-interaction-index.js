@@ -201,7 +201,7 @@ function voronoiPruneTokens(tokens, keepRatio) {
   return tokens.filter((_, i) => keepSet.has(i));
 }
 
-const LI_SEGMENT_SIZE = 10_000;
+export const LI_SEGMENT_SIZE = 10_000;
 // Older on-disk formats this reader no longer reads: the single-file JSON index, LISE
 // (JSON-body) segments and per-document (scalar min/scale) quantized docs. An index in one of
 // them fails with this error code; the full reader then treats the LI tier as unavailable.

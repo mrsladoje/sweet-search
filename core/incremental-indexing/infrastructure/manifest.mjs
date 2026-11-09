@@ -32,8 +32,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { RECONCILE_MANIFEST } from '../../infrastructure/state-files.mjs';
 
-export const MANIFEST_FILENAME = 'reconcile-manifest.json';
+export const MANIFEST_FILENAME = RECONCILE_MANIFEST;
 export const DEFAULT_SPARSE_GRAM_WEIGHTS_ID = 'common-code-bigram-v1';
 
 function manifestPath(stateDir) {

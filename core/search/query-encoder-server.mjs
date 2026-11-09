@@ -25,6 +25,7 @@ import net from 'node:net';
 import v8 from 'node:v8';
 import { fileURLToPath } from 'node:url';
 import { setProcessTitle } from '../infrastructure/process-title.js';
+import { pidAlive } from '../infrastructure/pid-alive.js';
 
 const MAX_FRAME_BYTES = 256 * 1024 * 1024;
 
@@ -181,7 +182,7 @@ function startLockHeld(text, ageMs) {
   if (ageMs >= START_LOCK_STALE_MS) return false;
   const holder = Number(text);
   if (!(holder > 0)) return ageMs < 5_000; // being written (no hard links): young = held
-  try { process.kill(holder, 0); return true; } catch (err) { return err?.code === 'EPERM'; }
+  return pidAlive(holder);
 }
 
 function ageOf(file) {

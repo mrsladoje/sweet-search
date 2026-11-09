@@ -41,9 +41,10 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { CODEBASE_DB } from '../infrastructure/state-files.mjs';
 import { callExistsSync, callRealpathNative } from '../infrastructure/call-fs.js';
 
-const INDEX_FILE = path.join('.sweet-search', 'codebase.db');
+const INDEX_FILE = path.join('.sweet-search', CODEBASE_DB);
 
 // Variables that make git look somewhere other than the cwd's ancestors. With any of
 // them set, only git itself knows the answer.

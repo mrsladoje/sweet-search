@@ -113,7 +113,7 @@ function gutter(text, startLine) {
   return (lineGutterEnabled() && text) ? numberCodeLines(text, startLine || 1) : text;
 }
 
-// core/search/search-server.js, loaded once per process (an `await import()` per call costs ~10 µs).
+// core/search/search-client.js, loaded once per process (an `await import()` per call costs ~10 µs).
 let searchServerModule = null;
 function loadSearchServerModule() {
   searchServerModule ||= import(path.join(REPO_ROOT, 'core/search/search-client.js'))

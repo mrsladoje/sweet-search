@@ -42,9 +42,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { contentHashSync } from './hashing.mjs';
 import { DEFAULT_SPARSE_GRAM_WEIGHTS_ID } from './manifest.mjs';
+import { DELTA_DIR_SUFFIX, DELTA_FILE_EXT } from '../../infrastructure/sparse-gram-delta-reader.js';
 
-export const DELTA_DIR_SUFFIX = '.deltas';
-export const DELTA_FILE_EXT = '.ssgrmdelta';
+export { DELTA_DIR_SUFFIX, DELTA_FILE_EXT };
+
 /** Retired segments awaiting deletion: `{ [segment file name]: retiredAtMs }`. */
 const PENDING_DELETE_FILE = '.pending-delete.json';
 /** How long a retired segment stays on disk for readers holding an older manifest. */

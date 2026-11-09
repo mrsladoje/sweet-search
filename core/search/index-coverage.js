@@ -24,6 +24,7 @@
 import path from 'node:path';
 import { existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { CODEBASE_DB } from '../infrastructure/state-files.mjs';
 
 // better-sqlite3 is a native CommonJS addon and admission-policy.js is loaded through the
 // same bridge, so both resolve relative to THIS file rather than to whatever cwd a wrapper
@@ -91,7 +92,7 @@ export function semanticTargetFor(file, note) {
  */
 export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy = null } = {}) {
   const root = projectRoot || process.cwd();
-  const db = dbPath || path.join(root, '.sweet-search', 'codebase.db');
+  const db = dbPath || path.join(root, '.sweet-search', CODEBASE_DB);
 
   // The admission policy is needed ONLY to explain a miss, and building it costs about 18 ms.
   // The common case is a file that IS indexed, so it is loaded lazily: `ss-read` on an

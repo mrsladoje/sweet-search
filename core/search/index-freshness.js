@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { callStatSync } from '../infrastructure/call-fs.js';
+import { DIRTY_QUEUE, PROCESSING_QUEUE } from '../infrastructure/state-files.mjs';
 
 /**
  * @param {string} absPath
@@ -22,7 +23,7 @@ export function indexFreshness(absPath, manifest) {
   return { known: true, stale: stat.mtimeMs > publishedMs, mtime: stat.mtime };
 }
 
-const QUEUE_FILES = ['index-maintainer-queue.jsonl', 'index-maintainer-queue.processing.jsonl'];
+const QUEUE_FILES = [DIRTY_QUEUE, PROCESSING_QUEUE];
 const pendingMemo = new Map(); // stateDir -> { stamp, files }
 
 function queueStamp(file) {

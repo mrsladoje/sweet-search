@@ -3,6 +3,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 
 import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG, HCGS_CONFIG } from '../infrastructure/config/index.js';
+import { isEmbedForcedToCpu } from '../infrastructure/env-flag.js';
 import { getChangedFiles, updateState, updatePhaseProgress, markPhaseComplete, clearPhaseProgress } from './incremental-tracker.js';
 import { backupSummaries, restoreSummaries, markForRegeneration } from '../graph/summary-manager.js';
 import { colors, log, discoverFiles, readFilesFromStdin, atomicSwapDatabase, shouldStreamVectors } from './indexer-utils.js';
@@ -513,7 +514,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     }
   }
 
-  const forceEmbedCpu = process.env.SWEET_SEARCH_EMBED_USE_CPU === '1';
+  const forceEmbedCpu = isEmbedForcedToCpu();
   const indexTimeEmbedIsCpu = !isNativeInferenceAvailable()
     || !isIndexAcceleratorAvailable()
     || forceEmbedCpu;

@@ -15,11 +15,10 @@
  * with native SIMD.
  *
  * Resolution order:
- *   1. native crate: crates/sweet-search-native exports xxhash3_64 — fastest.
- *   2. @node-rs/xxhash — fast prebuilt N-API binding.
- *   3. pure-JS xxHash3 — present here as a portable last resort; ~3× faster
+ *   1. @node-rs/xxhash — fast prebuilt N-API binding.
+ *   2. pure-JS xxHash3 — present here as a portable last resort; ~3× faster
  *      than SHA-256 truncation but slower than the native paths.
- *   4. SHA-256 truncate-16 — current behaviour, kept as the compliance
+ *   3. SHA-256 truncate-16 — current behaviour, kept as the compliance
  *      override and the fallback when the algorithm switch is `sha256`.
  *
  * The output of every path is a 16-hex-char string so consumers (logs,
@@ -41,7 +40,6 @@ const PURE_JS_PRIME64_4 = 0x85EBCA77C2B2AE63n;
 const PURE_JS_PRIME64_5 = 0x27D4EB2F165667C5n;
 const MASK64 = 0xFFFFFFFFFFFFFFFFn;
 
-let nativeXxh3 = null;
 let nodeRsXxh3 = null;
 let resolved = false;
 
@@ -74,9 +72,7 @@ function readUInt32LE(buf, offset) {
  * Pure-JS xxHash64 (close-enough fallback for environments without the native
  * binding). We use xxHash64 here, not xxHash3, because xxHash3's full algorithm
  * is significantly more complex while still producing different bytes than
- * xxHash64. As soon as the native binding is available the wrapper switches
- * to xxhash3_64 transparently; the pure-JS path is only ever used when neither
- * crates/sweet-search-native nor @node-rs/xxhash is installed.
+ * xxHash64. The pure-JS path is only used when @node-rs/xxhash is not installed.
  *
  * Output is collision-resistant for our working set (sweet-search hashes for
  * local dedup, not cryptographic integrity). See plan § 7.2 hash choice.
@@ -168,11 +164,6 @@ function bufFromInput(input) {
   throw new TypeError(`hashing: unsupported input type ${typeof input}`);
 }
 
-function makeNativeXxh3(mod) {
-  if (!mod || typeof mod.xxhash3_64 !== 'function') return null;
-  return (buf) => toHex64(mod.xxhash3_64(buf));
-}
-
 function makeNodeRsXxh3(mod) {
   if (!mod) return null;
   const ns = mod.default && (mod.default.xxh3 || mod.default.Xxh3) ? mod.default : mod;
@@ -202,19 +193,12 @@ function resolveBackendsSync() {
     return;
   }
   try {
-    nativeXxh3 = makeNativeXxh3(require('../../../crates/sweet-search-native/index.js'));
+    nodeRsXxh3 = makeNodeRsXxh3(require('@node-rs/xxhash'));
   } catch {
-    // Native crate not built or missing the export; try the package dependency.
+    // Dependency not installed or native package failed to load; async resolver
+    // and the portable fallback still keep hashing functional.
   }
-  if (!nativeXxh3) {
-    try {
-      nodeRsXxh3 = makeNodeRsXxh3(require('@node-rs/xxhash'));
-    } catch {
-      // Dependency not installed or native package failed to load; async resolver
-      // and the portable fallback still keep hashing functional.
-    }
-  }
-  resolved = Boolean(nativeXxh3 || nodeRsXxh3);
+  resolved = Boolean(nodeRsXxh3);
 }
 
 async function resolveBackends() {
@@ -222,19 +206,10 @@ async function resolveBackends() {
   resolved = true;
 
   try {
-    const mod = await import('../../../crates/sweet-search-native/index.js');
-    nativeXxh3 = makeNativeXxh3(mod);
+    const mod = await import('@node-rs/xxhash');
+    nodeRsXxh3 = makeNodeRsXxh3(mod);
   } catch {
-    // Native crate not built or missing the export; fall through.
-  }
-
-  if (!nativeXxh3) {
-    try {
-      const mod = await import('@node-rs/xxhash');
-      nodeRsXxh3 = makeNodeRsXxh3(mod);
-    } catch {
-      // Package not installed; pure-JS fallback wins.
-    }
+    // Package not installed; pure-JS fallback wins.
   }
 }
 
@@ -256,7 +231,6 @@ export function contentHashSync(input) {
   if (HASH_ALGORITHM === 'sha256') {
     return crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
   }
-  if (nativeXxh3) return nativeXxh3(buf);
   if (nodeRsXxh3) return nodeRsXxh3(buf);
   return xxh64PureJs(buf).toString(16).padStart(16, '0');
 }

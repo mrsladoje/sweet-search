@@ -4,6 +4,7 @@
 
 import crypto from 'crypto';
 import { bootLog } from '../infrastructure/boot-log.js';
+import { isEmbedForcedToCpu } from '../infrastructure/env-flag.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
 import { join } from 'path';
@@ -588,7 +589,7 @@ export async function callLocalModel(texts, options = {}) {
   // indexer's parallel embed + LI phase then actually runs the two on
   // different devices with no Metal queue contention.
   if (!texts || texts.length === 0) return [];
-  const forceEmbedCpu = process.env.SWEET_SEARCH_EMBED_USE_CPU === '1';
+  const forceEmbedCpu = isEmbedForcedToCpu();
   if (!forceEmbedCpu && isNativeInferenceAvailable() && isNativeEmbeddingModelLoaded()) {
     return callLocalModelGpu(texts, options);
   }
@@ -674,7 +675,7 @@ function ortEncoderLabel() {
 
 /** The encoder callLocalModel would use right now (same test). */
 function localEncoderLabel() {
-  if (process.env.SWEET_SEARCH_EMBED_USE_CPU !== '1' && isNativeInferenceAvailable() && isNativeEmbeddingModelLoaded()) {
+  if (!isEmbedForcedToCpu() && isNativeInferenceAvailable() && isNativeEmbeddingModelLoaded()) {
     return getNativeEmbeddingBackend();
   }
   return ortEncoderLabel();

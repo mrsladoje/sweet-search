@@ -32,6 +32,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
+import { CODEBASE_DB, RECONCILE_MANIFEST } from '../infrastructure/state-files.mjs';
 import { DB_PATHS, LATE_INTERACTION_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { lineGutterEnabled, numberCodeLines, getGraphRepoForProject } from './search-read.js';
@@ -87,8 +88,6 @@ const DEFAULTS = {
 
 const APPROX_CHARS_PER_TOKEN = 4;
 
-const RECONCILE_MANIFEST_FILENAME = 'reconcile-manifest.json';
-
 function _projectKey(projectRoot) {
   return path.resolve(projectRoot || PROJECT_ROOT || process.cwd());
 }
@@ -115,13 +114,13 @@ function _codebasePathForProject(projectRoot, manifest = null) {
 function _defaultCodebasePathForProject(projectRoot) {
   const root = _projectKey(projectRoot);
   if (root === path.resolve(PROJECT_ROOT)) return DB_PATHS.codebase;
-  return path.join(_stateDirForProject(root), 'codebase.db');
+  return path.join(_stateDirForProject(root), CODEBASE_DB);
 }
 
 function _readReconcileManifest(projectRoot) {
   try {
     const manifest = JSON.parse(
-      fs.readFileSync(path.join(_stateDirForProject(projectRoot), RECONCILE_MANIFEST_FILENAME), 'utf-8'),
+      fs.readFileSync(path.join(_stateDirForProject(projectRoot), RECONCILE_MANIFEST), 'utf-8'),
     );
     return Number.isInteger(manifest?.epoch) ? manifest : null;
   } catch {

@@ -26,7 +26,7 @@ import {
 } from '../../infrastructure/native-sparse-gram.js';
 import { collectFileSymbolMasksFromDb, resolveSparseGramWeightsId } from '../../indexing/indexer-sparse-gram.js';
 import { GREP_MAX_FILE_SIZE } from '../../indexing/grep-corpus.js';
-import { CODEBASE_DB } from './state-files.mjs';
+import { CODEBASE_DB } from '../../infrastructure/state-files.mjs';
 
 /** Latest record per fileId over `segmentPaths`, in order (later wins). */
 function latestRecordsOf(segmentPaths) {

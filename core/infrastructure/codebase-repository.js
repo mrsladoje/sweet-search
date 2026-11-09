@@ -10,10 +10,11 @@ import path from 'node:path';
 import { applyReadPragmas, assertInClauseSize } from './db-utils.js';
 import { readJsonFileCachedIfExists } from './cached-json-file.js';
 import { assertVectorSchema } from './index-schema.js';
+import { RECONCILE_MANIFEST } from './state-files.mjs';
 
 function readAdjacentManifest(dbPath) {
   try {
-    const manifestPath = path.join(path.dirname(dbPath), 'reconcile-manifest.json');
+    const manifestPath = path.join(path.dirname(dbPath), RECONCILE_MANIFEST);
     const manifest = readJsonFileCachedIfExists(manifestPath);
     return Number.isInteger(manifest?.epoch) ? manifest : null;
   } catch {
