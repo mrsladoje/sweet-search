@@ -16,6 +16,7 @@ import { DB_PATHS } from '../infrastructure/config/index.js';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
 import { leidenCommunities, findConnectedComponents } from './leiden-algorithm.js';
 import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
+import { liveEntitySql, liveRelationshipSql } from '../infrastructure/code-graph-visibility.js';
 
 // Re-export for existing consumers
 export { leidenCommunities } from './leiden-algorithm.js';
@@ -27,7 +28,7 @@ export { leidenCommunities } from './leiden-algorithm.js';
 const ENTITY_CUTOFF = 50_000;
 const RELATIONSHIP_CUTOFF = 200_000;
 const DEFAULT_TIMEOUT_MS = 2000;
-const LIVE_RELATIONSHIPS = `type != 'importsFile' AND type NOT IN ${TRACE_ONLY_TYPES_SQL} AND epoch_retired IS NULL`;
+const LIVE_RELATIONSHIPS = `type != 'importsFile' AND type NOT IN ${TRACE_ONLY_TYPES_SQL} AND ${liveRelationshipSql()}`;
 
 // Relationship type weights for adjacency construction
 const REL_WEIGHTS = {
@@ -148,7 +149,7 @@ export function detectCommunities(dbPath, options = {}) {
     const entities = db.prepare(`
       SELECT id, name, type, file_path
       FROM entities
-      WHERE stale_since IS NULL AND epoch_retired IS NULL
+      WHERE ${liveEntitySql()}
       ORDER BY id
     `).all();
 

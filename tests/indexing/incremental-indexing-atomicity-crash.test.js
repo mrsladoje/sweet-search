@@ -1,16 +1,13 @@
 /**
  * Atomicity, manifest publish, and crash-recovery tests.
  *
- * Plan § 8.1 (epoch manifest), § 8.1.1 (reader grace), § 8.2 (per-file
- * atomicity), § 8.4 (SQLite WAL discipline), § 8.5 (worktree stamp), § 8.6
- * (stale-lockfile recovery), § 11 (failure modes).
+ * Plan § 8.1 (epoch manifest), § 8.1.1 (reader grace), § 8.2 (per-file * atomicity), § 8.4 (SQLite WAL discipline), § 8.5 (worktree stamp),
+ * § 11 (failure modes).
  *
  * These tests prove the **recovery story** holds:
  *   - Manifest writes survive process kills mid-publish
- *   - Stale lockfiles from a previous boot are reclaimed correctly
  *   - Reader heartbeats correctly bound the prune frontier
  *   - The epoch_visibility predicate hides ε+1 rows from ε readers
- *   - Schema migrations idempotently re-run with no data loss
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -23,13 +20,9 @@ import {
   epochVisibilityPredicate, MANIFEST_FILENAME,
 } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import {
-  acquireLock, releaseLock, LOCK_FILENAME, LockHeldError,
-} from '../../core/incremental-indexing/infrastructure/lockfile.mjs';
-import {
   beginRead, endRead, liveReaders, minLiveEpoch,
   bootIdStub, isReaderAlive, READER_GRACE_MS,
 } from '../../core/incremental-indexing/infrastructure/reader-heartbeat.mjs';
-import { ensureEncoderDepsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
 import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 let stateDir;
@@ -104,69 +97,6 @@ describe('Manifest atomicity (plan § 8.1)', () => {
     const newDir = path.join(stateDir, 'deep', 'nested', 'state');
     writeManifest(newDir, zeroManifest({}));
     expect(fs.existsSync(path.join(newDir, MANIFEST_FILENAME))).toBe(true);
-  });
-});
-
-describe('Lockfile + stale recovery (plan § 8.5, § 8.6)', () => {
-  it('acquireLock succeeds when no lock exists', () => {
-    const token = acquireLock(stateDir);
-    expect(token.pid).toBe(process.pid);
-    expect(token.bootId).toBeDefined();
-    expect(token.staleCleared).toBe(false);
-    releaseLock(stateDir, token);
-    expect(fs.existsSync(path.join(stateDir, LOCK_FILENAME))).toBe(false);
-  });
-
-  it('acquireLock throws LockHeldError on a live conflicting owner', () => {
-    const t1 = acquireLock(stateDir);
-    expect(() => acquireLock(stateDir)).toThrow(LockHeldError);
-    releaseLock(stateDir, t1);
-  });
-
-  it('acquireLock clears a stale lockfile from a different boot', () => {
-    // Write a lock with a fake bootId; emulate "previous boot crashed."
-    fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(path.join(stateDir, LOCK_FILENAME),
-      JSON.stringify({ pid: 99999, bootId: 'fake-boot-from-yesterday', acquiredAt: '2026-01-01' }));
-    const token = acquireLock(stateDir);
-    expect(token.staleCleared).toBe(true);
-    releaseLock(stateDir, token);
-  });
-
-  it('acquireLock clears a lockfile whose pid is dead', () => {
-    // Use pid 1 (always alive on Unix); we can't easily emulate dead pid
-    // cross-platform. Instead use a definitely-impossible pid by writing
-    // a same-boot lockfile then changing pid to a guaranteed-nonexistent
-    // value. The bootId matches but kill(pid, 0) returns ESRCH.
-    fs.mkdirSync(stateDir, { recursive: true });
-    const currentBoot = bootIdStub();
-    // Use pid 2^31 - 1 which is at max int and won't exist.
-    fs.writeFileSync(path.join(stateDir, LOCK_FILENAME),
-      JSON.stringify({ pid: 2147483647, bootId: currentBoot, acquiredAt: '2026-01-01' }));
-    const token = acquireLock(stateDir);
-    expect(token.staleCleared).toBe(true);
-    releaseLock(stateDir, token);
-  });
-
-  it('acquireLock clears a corrupted lockfile', () => {
-    fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(path.join(stateDir, LOCK_FILENAME), '{ not valid JSON');
-    const token = acquireLock(stateDir);
-    expect(token.staleCleared).toBe(true);
-    releaseLock(stateDir, token);
-  });
-
-  it('releaseLock is idempotent (missing file = no-op)', () => {
-    expect(() => releaseLock(stateDir, { pid: process.pid, bootId: 'x' })).not.toThrow();
-  });
-
-  it('releaseLock refuses to unlink another holder\'s lock', () => {
-    const t1 = acquireLock(stateDir);
-    // Simulate "someone else stole the lock" by rewriting the file.
-    fs.writeFileSync(path.join(stateDir, LOCK_FILENAME),
-      JSON.stringify({ pid: 12345, bootId: 'other', acquiredAt: '2026' }));
-    releaseLock(stateDir, t1); // should not touch the "other" lock
-    expect(fs.existsSync(path.join(stateDir, LOCK_FILENAME))).toBe(true);
   });
 });
 
@@ -276,19 +206,6 @@ describe('Reader heartbeat + grace (plan § 8.1.1)', () => {
 
   it('READER_GRACE_MS is a positive duration', () => {
     expect(READER_GRACE_MS).toBeGreaterThan(0);
-  });
-});
-
-describe('Encoder dependency schema', () => {
-  it('ensureEncoderDepsSchema is idempotent', () => {
-    const db = new Database(':memory:');
-    ensureEncoderDepsSchema(db);
-    ensureEncoderDepsSchema(db);
-    const rows = db.prepare(`
-      SELECT name FROM sqlite_master WHERE type='table' AND name='encoder_input_dependencies'
-    `).all();
-    expect(rows.length).toBe(1);
-    db.close();
   });
 });
 

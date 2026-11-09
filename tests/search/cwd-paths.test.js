@@ -165,9 +165,9 @@ describe('cwdGrepScope (ss-grep implicit scope)', () => {
 
 // The wrapper cannot be imported (it runs on import and needs a warm daemon), so its wiring is
 // checked in the source, as in agent-output-fixes-wiring.test.js.
-describe('ss-find → ss-grep fallback wiring (_ss-helpers.mjs)', () => {
+describe('ss-find → ss-grep fallback wiring (run-agent-tool.mjs)', () => {
   const src = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../eval/agent-read-workflows/bin/_ss-helpers.mjs'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../core/agent-tools/run-agent-tool.mjs'),
     'utf8',
   );
   const cmdGrep = src.slice(src.indexOf('async function cmdGrep('), src.indexOf('async function cmdFind('));

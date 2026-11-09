@@ -1,5 +1,5 @@
 // Barrel — search domain (Phase 2E DDD migration)
-export { SweetSearch, SweetSearch as SmartSearch, getWarmSearcher, warmSearch } from './sweet-search.js';
+export { SweetSearch, getWarmSearcher } from './sweet-search.js';
 export { default } from './sweet-search.js';
 export { ROUTE_ALPHAS, getResultKey, quantileNormalize, convexCombination, shouldFallbackToRRF, rrfFusion, robustCCFusion, variance } from './search-fusion.js';
 export { runCli } from './search-cli.js';
@@ -13,7 +13,7 @@ export * from './search-boost.js';
 export * from './search-pattern.js';
 export * from './search-semantic.js';
 export { formatResults, formatGrepResults, formatStructuralResults, enrichWithSummaries, formatSummaryFirst, formatMiddleRes } from './search-format.js';
-export { hybridSearch, hybridSearchV2 } from './search-hybrid.js';
+export { hybridSearchV2 } from './search-hybrid.js';
 
 // Read tools — filesystem-grounded exact reads + hybrid semantic span selection
 export { readFile, readFiles, formatReadResults, handleReadCli } from './search-read.js';

@@ -315,7 +315,7 @@ const AMBIGUOUS_NAME_FANIN = 20;
  * Rows the graph resolved to the target, bare calls, same-file scan rows (both bound to
  * the target's id) and dispatch rows stay.
  */
-export function isGenericTargetName(defs, callerRows) {
+function isGenericTargetName(defs, callerRows) {
   return defs != null && (defs >= GENERIC_NAME_DEFS || (defs >= AMBIGUOUS_NAME_DEFS && callerRows >= AMBIGUOUS_NAME_FANIN));
 }
 

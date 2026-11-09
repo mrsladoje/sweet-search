@@ -9,6 +9,7 @@
  */
 
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
+import { isAgentFormat } from '../infrastructure/agent-format.js';
 
 const IDENTIFIER_AGREEMENT_STOPWORDS = new Set([
   'and', 'are', 'can', 'does', 'for', 'from', 'get', 'has', 'have',
@@ -122,8 +123,7 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
 
   const queryLower = query.toLowerCase().trim();
   const queryTokens = this.extractQueryTokens(query);
-  const agentFormats = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
-  const allowIdentifierAgreement = !agentFormats.has(options.format);
+  const allowIdentifierAgreement = !isAgentFormat(options.format);
 
   return fusedResults.map(result => {
     let totalBoost = 1.0;

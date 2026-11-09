@@ -4,7 +4,7 @@
 //! - core/search/agent-pack-completion.js: buildIndexedGrepFamilyManifest,
 //!   buildSingletonSiblingLine, buildSameFileSiblingLine and their helpers;
 //! - core/search/search-read.js: interfaceCallsInRanges, renderInterfaceImpls (+ helpers);
-//! - eval/agent-read-workflows/bin/_ss-helpers.mjs: writeGrepInterfaceHint, grepSiblingLine.
+//! - core/agent-tools/run-agent-tool.mjs: writeGrepInterfaceHint, grepSiblingLine.
 //!
 //! Data comes in through `CodeGraph` (one method per CodeGraphRepository method used) and
 //! `SourceText` (file reads as the JS does them). Anything the port cannot reproduce exactly
@@ -1427,7 +1427,7 @@ pub fn build_singleton_sibling_line(
     build_same_file_sibling_line(results, graph, regex, source)
 }
 
-// Mirrors: eval/agent-read-workflows/bin/_ss-helpers.mjs:grepSiblingLine
+// Mirrors: core/agent-tools/run-agent-tool.mjs:grepSiblingLine
 /// `# siblings: ...` without the sites that already print as a hit or inside a -B/-A window.
 /// `rows` are the printed hit lines.
 pub fn grep_sibling_line(sibling_line: Option<&SiblingLine>, rows: &[i64], before: i64, after: i64) -> Option<String> {
@@ -1877,7 +1877,7 @@ const GREP_IMPL_HINT_MAX_MATCHES: i64 = 8;
 const GREP_IMPL_HINT_LINES_AFTER: i64 = 3;
 const GREP_IMPL_HINT_MAX_LINES: usize = 3;
 
-// Mirrors: eval/agent-read-workflows/bin/_ss-helpers.mjs:writeGrepInterfaceHint
+// Mirrors: core/agent-tools/run-agent-tool.mjs:writeGrepInterfaceHint
 /// The bytes writeGrepInterfaceHint prints (hint + "\n"), or None when it prints nothing.
 /// `total` = stats.totalMatches; `rows` = the printed hit rows, in print order. Declines
 /// where the JS would throw (a graph answer with fewer windows than asked).

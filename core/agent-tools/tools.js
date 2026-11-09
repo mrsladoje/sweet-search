@@ -1,6 +1,6 @@
 /**
  * The ss-* agent tools: command name → subcommand of runAgentTool
- * (eval/agent-read-workflows/bin/_ss-helpers.mjs). One table for the bin stubs, the
+ * (core/agent-tools/run-agent-tool.mjs). One table for the bin stubs, the
  * in-process fallback, the daemon route and the native-binary installer. The Rust client
  * keeps the same table (crates/sweet-search-cli/src/agent_tools.rs).
  */

@@ -188,9 +188,7 @@ function firstSafeRelativePath(...candidates) {
  * The returned `metadata_fingerprint` here is the "encoder-input-affecting
  * metadata hash" required by plan § 7.2 / § 33 for the `metadata_fingerprint`
  * column. It is distinct from the dedup `dedupFingerprint`; both must be
- * stored when the reconcile path lands the row (the dedup fingerprint is
- * carried inside the encoder-input dependency registry; see
- * `core/incremental-indexing/domain/encoder-deps.mjs`).
+ * stored when the reconcile path lands the row.
  *
  * Pass `{ includeDedup: false }` when the caller never persists the dedup
  * fingerprint (the full-indexing insert path) to skip that hash entirely.

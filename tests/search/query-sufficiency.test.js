@@ -9,7 +9,7 @@ import {
   computeSufficiencyVerdict,
 } from '../../core/search/query-sufficiency.js';
 import { formatRouteMetadata, parseRouteMetadata } from '../../core/search/search-format.js';
-import { renderSufficiency } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
+import { renderSufficiency } from '../../core/agent-tools/argparse.mjs';
 
 describe('containsToken (word-boundary substring)', () => {
   it('matches whole identifiers only', () => {

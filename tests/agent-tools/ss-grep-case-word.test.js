@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bareGrep } from '../../core/search/index.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { grepHitCount } from './grep-listing-helpers.js';
-import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
+import { runAgentTool } from '../../core/agent-tools/run-agent-tool.mjs';
 import {
   buildSparseGramIndexArtifact, hasNativeSparseGramSupport,
 } from '../../core/infrastructure/native-sparse-gram.js';

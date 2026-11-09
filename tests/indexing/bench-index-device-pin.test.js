@@ -15,7 +15,6 @@ const EXT = /\.(sh|js|mjs|cjs|py)$/;
 
 // Files that name the indexer but never start a benchmark build.
 const EXEMPT = new Map([
-  ['eval/agent-read-workflows/bin/_ss-helpers.mjs', 'agent tool: prints an index hint, output mirrored by the native lane'],
   ['scripts/benchmark.js', 'starts the indexer with --dry-run only (no models, no speed test)'],
 ]);
 

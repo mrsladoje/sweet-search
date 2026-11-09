@@ -33,7 +33,7 @@ import { bareGrep } from '../../core/search/index.js';
 import { CodeGraphRepository } from '../../core/infrastructure/code-graph-repository.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { buildAgentToolDaemonResponse } from '../../core/agent-tools/daemon-route.js';
-import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
+import { runAgentTool } from '../../core/agent-tools/run-agent-tool.mjs';
 import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 const FILES = {

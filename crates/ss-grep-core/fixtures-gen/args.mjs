@@ -1,5 +1,5 @@
 // Fixtures for src/args.rs: the argument part of cmdGrep, run from the REAL source text of
-// _ss-helpers.mjs (the helper functions and the start of cmdGrep are cut out of the file and
+// run-agent-tool.mjs (the helper functions and the start of cmdGrep are cut out of the file and
 // evaluated with the real imports), on the 1,600 corpus argument lists from the repository
 // root, from a subdirectory, and from a subdirectory with the --in paths typed relative to it,
 // plus synthetic edge cases. Usage: node fixtures-gen/args.mjs <synthetic repo dir>
@@ -9,11 +9,11 @@ import {
   CORPUS, REPOS, REPOS_DIR, jsPath, readJsonl, resetProbe, takeProbe, writeFixture,
 } from './_common.mjs';
 
-const argparse = await import(jsPath('eval/agent-read-workflows/bin/_ss-argparse.mjs'));
+const argparse = await import(jsPath('core/agent-tools/argparse.mjs'));
 const cwdPaths = await import(jsPath('core/search/cwd-paths.js'));
 const prefilter = await import(jsPath('core/search/search-pattern-prefilter.js'));
 
-const SRC = fs.readFileSync(jsPath('eval/agent-read-workflows/bin/_ss-helpers.mjs'), 'utf8');
+const SRC = fs.readFileSync(jsPath('core/agent-tools/run-agent-tool.mjs'), 'utf8');
 
 function cutFunction(name) {
   const start = SRC.indexOf(`\nfunction ${name}(`);

@@ -29,7 +29,7 @@ import { bareGrep } from '../../core/search/index.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { buildAgentToolDaemonResponse } from '../../core/agent-tools/daemon-route.js';
 import { grepHitCount } from './grep-listing-helpers.js';
-import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
+import { runAgentTool } from '../../core/agent-tools/run-agent-tool.mjs';
 import { GREP_BROAD_HIT_CHARS, GREP_BROAD_MIN_HITS, grepBroadHitMax } from '../../core/search/agent-output-fixes.js';
 
 // dgraph-08-shaped fixture: the answer worker/export.go (22 hits) sorts late in the alphabet;

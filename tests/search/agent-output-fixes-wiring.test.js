@@ -1,5 +1,5 @@
 /**
- * Wiring of the ss-* output fixes (eval/agent-read-workflows/bin/_ss-helpers.mjs).
+ * Wiring of the ss-* output fixes (core/agent-tools/run-agent-tool.mjs).
  *
  * The wrapper cannot be imported (it runs on import and needs a warm daemon), so the parts it
  * wires are tested here through the same functions it calls:
@@ -481,7 +481,7 @@ describe('A4 alternatives after the switch to the non-test definition', () => {
 
 describe('wrapper source checks', () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const src = readFileSync(path.join(here, '../../eval/agent-read-workflows/bin/_ss-helpers.mjs'), 'utf8');
+  const src = readFileSync(path.join(here, '../../core/agent-tools/run-agent-tool.mjs'), 'utf8');
 
   it('the ss-trace usage text has no bracketed or piped mode-word form', () => {
     const usage = src.slice(src.indexOf('const TRACE_USAGE ='), src.indexOf('async function cmdTrace'));

@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import path from 'path';
 import { isTestLikePath } from '../infrastructure/test-paths.js';
+import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
 
 /**
  * Intent-aware file-kind ranking (conservative variant).
@@ -2099,10 +2100,7 @@ export function applyResultDemotions(results, opts = {}) {
   // 85.99% MRR heldout baseline.
   //
   // See docs/SOTA_RESEARCH_2026_FIXES.md for full rationale.
-  const isAgentFormat = opts.format === 'agent'
-    || opts.format === 'agent_full'
-    || opts.format === 'agent_full_xl'
-    || opts.format === 'agent_preview'
+  const isAgentFormat = AGENT_FORMATS.has(opts.format)
     || process.env.SWEET_SEARCH_FORCE_BM25F_BOOSTS === '1';
   const symbolExactTarget = isAgentFormat && !hasAblation(ablations, 'no-symbol-exact-boost')
     ? extractSymbolDefinitionTarget(opts.query || '')

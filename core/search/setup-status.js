@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { DB_PATHS, MODEL_DELIVERY_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { loadInitConfig, resolveRuntimeLiModel } from '../infrastructure/init-config.js';
 import { MODEL_REGISTRY } from '../infrastructure/model-registry.js';
+import { detectSkippedPostinstall } from '../infrastructure/postinstall-check.js';
 import { baselineStatus } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
 import { readManifest } from '../incremental-indexing/infrastructure/manifest.mjs';
 import { classifyProvenance, describeEncoders } from '../infrastructure/inference-provenance.js';
@@ -134,11 +135,7 @@ export async function collectSetupStatus({ env = process.env } = {}) {
   const projectRoot = PROJECT_ROOT;
   const stateDir = path.dirname(DB_PATHS.merkle);
 
-  let skippedPostinstall = null;
-  try {
-    const { detectSkippedPostinstall } = await import('../../scripts/init.js');
-    skippedPostinstall = detectSkippedPostinstall(PACKAGE_ROOT);
-  } catch { /* init script not shipped: nothing to check */ }
+  const skippedPostinstall = detectSkippedPostinstall(PACKAGE_ROOT);
 
   let version = null;
   try { version = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).version; } catch { /* */ }

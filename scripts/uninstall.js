@@ -13,7 +13,7 @@
  *   sweet-search uninstall [--all] [--dry-run] [--force]
  */
 
-import { existsSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,7 @@ import { removeToolEnforcement } from './install-tool-enforcement.js';
 import { projectSocketPath, projectPidFile } from '../core/search/server-identity.js';
 import { existingRegisteredRepos, unregisterRepos } from './repo-registry.js';
 import { planUserShimRemovals, removeUserShims } from './user-shims.js';
+import { detectProjectRoot, writeViaTmp } from './install-fs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -75,22 +76,6 @@ function dirSize(dirPath) {
     }
   } catch { /* skip unreadable dirs */ }
   return total;
-}
-
-// ---------------------------------------------------------------------------
-// Project root detection (same logic as init.js)
-// ---------------------------------------------------------------------------
-
-function detectProjectRoot(cwd = process.cwd()) {
-  let dir = cwd;
-  while (true) {
-    if (existsSync(join(dir, '.git'))) return dir;
-    if (existsSync(join(dir, 'package.json'))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return cwd;
 }
 
 // ---------------------------------------------------------------------------
@@ -379,9 +364,7 @@ export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = 
   }
 
   try {
-    const tmpPath = settingsPath + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
-    renameSync(tmpPath, settingsPath);
+    writeViaTmp(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   } catch (err) {
     return { status: 'error', detail: `write failed: ${err.message}` };
   }
@@ -457,9 +440,7 @@ export function removeCodexSessionStartHook(projectRoot, { dryRun = false } = {}
       // Our hook was the only content — remove the file rather than leave `{}`.
       unlinkSync(hooksPath);
     } else {
-      const tmpPath = hooksPath + '.tmp';
-      writeFileSync(tmpPath, JSON.stringify(doc, null, 2) + '\n', 'utf-8');
-      renameSync(tmpPath, hooksPath);
+      writeViaTmp(hooksPath, JSON.stringify(doc, null, 2) + '\n');
     }
   } catch (err) {
     return { status: 'error', detail: `write failed: ${err.message}` };

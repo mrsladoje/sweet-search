@@ -5,7 +5,7 @@
  */
 
 // The text of a parenthesised list starting at `open` (index of `(`), or null when unbalanced.
-export function parenBody(text, open) {
+function parenBody(text, open) {
   let depth = 0;
   for (let i = open; i < text.length; i++) {
     const ch = text[i];
@@ -23,7 +23,7 @@ export function parenBody(text, open) {
  * a comma or `string id;` inside `"a,b"` or `// …` is no code. Quotes stay, so a blanked
  * literal still reads as a string; newlines stay.
  */
-export function maskCode(text) {
+function maskCode(text) {
   const t = String(text || '');
   let out = '';
   let i = 0;
@@ -84,7 +84,7 @@ function genericEnd(s, i) {
 
 // The index of the bracket that closes the one at `s[open]` (type-argument lists skipped,
 // `=>` no bracket), or -1. `s` is masked text.
-export function closeOf(s, open) {
+function closeOf(s, open) {
   let depth = 0;
   for (let i = open; i < s.length; i++) {
     const c = s[i];
@@ -112,7 +112,7 @@ function listPartsMasked(body, masked) {
 }
 
 // Top-level comma-separated parts of a parameter / argument list.
-export function listParts(body) {
+function listParts(body) {
   const parts = [];
   let depth = 0;
   let cur = '';
@@ -170,7 +170,7 @@ function normalizeType(text) {
 const head = (t) => t.replace(/[<[].*$/, '');
 
 /** One declared parameter: its name (when written) and its type text (when written). */
-export function parseParameter(text) {
+function parseParameter(text) {
   let p = String(text || '')
     .replace(/^\s*(?:\[[^\]]*\]\s*)+/, '') // C# attributes
     .replace(/(?:^|\s)@[\w.]+(?:\([^)]*\))?/g, ' '); // Java / Kotlin annotations

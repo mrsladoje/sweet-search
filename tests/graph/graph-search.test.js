@@ -100,13 +100,12 @@ function insertEpochVisibilityFixture(db) {
 // =============================================================================
 
 describe('GraphSearch - SQL Alias Handling', () => {
-  it('normalizes dotted aliases in visibility and summary SQL fragments', () => {
+  it('normalizes dotted aliases in visibility SQL fragments', () => {
     const graphSearch = new GraphSearch('/tmp/non-existent-code-graph.db');
     try {
       graphSearch._manifestEpoch = 4;
       graphSearch._hasEntityEpochVisibility = true;
       graphSearch._hasRelationshipEpochVisibility = true;
-      graphSearch._hasHcgsSummaryMetadata = true;
 
       expect(graphSearch._entityVisibilitySql('e.')).toContain('e.epoch_written');
       expect(graphSearch._entityVisibilitySql('e.')).not.toContain('e..');
@@ -114,10 +113,6 @@ describe('GraphSearch - SQL Alias Handling', () => {
       expect(graphSearch._relationshipVisibilitySql('r.')).toContain('r.epoch_written');
       expect(graphSearch._relationshipVisibilitySql('r.')).not.toContain('r..');
       expect(graphSearch._relationshipVisibilitySql('r')).toBe(graphSearch._relationshipVisibilitySql('r.'));
-      expect(graphSearch._summaryJoinSql('entities.')).toContain('hm.entity_id = entities.id');
-      expect(graphSearch._summaryJoinSql('entities.')).not.toContain('entities..');
-      expect(graphSearch._summarySelectSql('entities.')).toContain('entities.summary');
-      expect(graphSearch._summarySelectSql('entities.')).not.toContain('entities..');
     } finally {
       graphSearch.close();
     }
@@ -438,119 +433,6 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
 
     const related = await graphSearch.getRelated('20');
     expect(related.map((r) => r.name)).not.toContain('CollisionService');
-  });
-
-  it('does not return summaries retired at the pinned manifest epoch', async () => {
-    const db = new Database(dbPath);
-    db.exec(`
-      CREATE TABLE hcgs_summary_metadata (
-        entity_id TEXT PRIMARY KEY,
-        source_entity_ids TEXT NOT NULL,
-        source_chunk_struct_ids TEXT NOT NULL,
-        source_hashes TEXT NOT NULL,
-        epoch_written INTEGER NOT NULL DEFAULT 0,
-        epoch_retired INTEGER
-      ) WITHOUT ROWID
-    `);
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('stale old summary', '10');
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('stale caller summary', '20');
-    db.prepare(`
-      INSERT INTO hcgs_summary_metadata (
-        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run('10', '[]', '[]', '{}', 1, 2);
-    db.prepare(`
-      INSERT INTO hcgs_summary_metadata (
-        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run('20', '[]', '[]', '{}', 1, 2);
-    db.close();
-
-    graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
-    await graphSearch.init();
-
-    const { byName } = await graphSearch.findEntitiesBatch([{ name: 'PaymentService' }]);
-    expect(byName.get('PaymentService')?.file_path).toBe('src/old/payment.js');
-    expect(byName.get('PaymentService')?.summary).toBeNull();
-
-    const entity = await graphSearch.getEntity('10');
-    expect(entity?.summary).toBeNull();
-
-    const related = await graphSearch.getRelated('20');
-    expect(related.find((row) => row.id === '10')?.summary).toBeNull();
-
-    expect((await graphSearch.searchByName('PaymentService')).find((row) => row.id === '10')?.summary).toBeNull();
-    expect((await graphSearch.searchByFile('old/payment.js')).find((row) => row.id === '10')?.summary).toBeNull();
-
-    const callers = await graphSearch.findCallers('PaymentService');
-    expect(callers.results.find((row) => row.name === 'Caller')?.summary).toBeNull();
-
-    const impact = await graphSearch.findImpact('PaymentService', { maxDepth: 1 });
-    expect(impact.results.find((row) => row.name === 'Caller')?.summary).toBeNull();
-
-    const expanded = await graphSearch.expandGraph(['10'], 1);
-    expect(expanded.find((row) => row.id === '10')?.summary).toBeNull();
-  });
-
-  it('does not cache live HCGS summary visibility after sidecar retirement', async () => {
-    const db = new Database(dbPath);
-    db.exec(`
-      CREATE TABLE hcgs_summary_metadata (
-        entity_id TEXT PRIMARY KEY,
-        source_entity_ids TEXT NOT NULL,
-        source_chunk_struct_ids TEXT NOT NULL,
-        source_hashes TEXT NOT NULL,
-        epoch_written INTEGER NOT NULL DEFAULT 0,
-        epoch_retired INTEGER
-      ) WITHOUT ROWID
-    `);
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('live summary', '11');
-    db.prepare(`
-      INSERT INTO hcgs_summary_metadata (
-        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run('11', '[]', '[]', '{}', 3, null);
-    db.close();
-
-    graphSearch = new GraphSearch(dbPath);
-    await graphSearch.init();
-    expect((await graphSearch.getEntity('11'))?.summary).toBe('live summary');
-
-    const writer = new Database(dbPath);
-    writer.prepare('UPDATE hcgs_summary_metadata SET epoch_retired = ? WHERE entity_id = ?').run('4', '11');
-    writer.close();
-
-    expect((await graphSearch.getEntity('11'))?.summary).toBeNull();
-  });
-
-  it('detects HCGS sidecar creation after a live reader has opened', async () => {
-    const db = new Database(dbPath);
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('pre-sidecar summary', '11');
-    db.close();
-
-    graphSearch = new GraphSearch(dbPath);
-    await graphSearch.init();
-    expect((await graphSearch.getEntity('11'))?.summary).toBe('pre-sidecar summary');
-
-    const writer = new Database(dbPath);
-    writer.exec(`
-      CREATE TABLE hcgs_summary_metadata (
-        entity_id TEXT PRIMARY KEY,
-        source_entity_ids TEXT NOT NULL,
-        source_chunk_struct_ids TEXT NOT NULL,
-        source_hashes TEXT NOT NULL,
-        epoch_written INTEGER NOT NULL DEFAULT 0,
-        epoch_retired INTEGER
-      ) WITHOUT ROWID
-    `);
-    writer.prepare(`
-      INSERT INTO hcgs_summary_metadata (
-        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run('11', '[]', '[]', '{}', 3, 4);
-    writer.close();
-
-    expect((await graphSearch.getEntity('11'))?.summary).toBeNull();
   });
 });
 

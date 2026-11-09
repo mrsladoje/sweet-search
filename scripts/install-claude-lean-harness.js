@@ -57,7 +57,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, realpathSync, rmdirSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
@@ -65,6 +65,7 @@ import { CLAUDE_SYSTEM_OVERRIDE } from './install-claude-system-prompt.js';
 import { applyExactEdits } from './harness-prompts/index.js';
 import { getPolicyBody } from './inject-agent-instructions.js';
 import { CLAUDE_RULES_POINTER } from './write-claude-rules.js';
+import { fileState, writeAtomic } from './install-fs.js';
 
 // The pointer text lives with the rules-file writer; re-exported here because the benchmark
 // runners import it from this module.
@@ -457,21 +458,7 @@ function readJson(path, label) {
 }
 
 function writeJson(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.sweet-search.tmp`;
-  writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n', 'utf8');
-  renameSync(tmp, path);
-}
-
-/**
- * A file is ours when the manifest recorded the hash of what we wrote and the file still
- * has that content. A file that exists with any other content is the user's.
- */
-function fileState(projectRoot, rel, manifest) {
-  const path = join(projectRoot, rel);
-  if (!existsSync(path)) return 'absent';
-  const recorded = manifest?.files?.[rel];
-  return recorded && sha(readFileSync(path, 'utf8')) === recorded ? 'ours' : 'user';
+  writeAtomic(path, JSON.stringify(value, null, 2) + '\n');
 }
 
 function removeOwnedFile(projectRoot, rel) {

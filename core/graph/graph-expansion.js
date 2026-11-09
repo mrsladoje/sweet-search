@@ -9,12 +9,22 @@
  * multiple related entities.
  */
 
+import {
+  entityVisibilityParams,
+  entityVisibilitySql,
+  relationshipVisibilityParams,
+  relationshipVisibilitySql,
+  sqlAliasPrefix,
+} from '../infrastructure/code-graph-visibility.js';
+import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
+import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
+
 // Default edge types to follow during expansion
 const DEFAULT_EDGE_TYPES = new Set(['imports', 'extends', 'implements', 'uses', 'calls']);
 
 // SQLite-variable-limit guard. Mirrors SAFE_IN_CLAUSE_BATCH in
-// core/infrastructure/db-utils.js; inlined here so this module stays
-// import-free (callers inject all dependencies). 2-hop expansion can in
+// core/infrastructure/db-utils.js; inlined here so this module does not load
+// the SQLite binding (callers inject the database). 2-hop expansion can in
 // principle balloon to thousands of IDs when a seed entity has many
 // outgoing edges; without this guard, an `IN(?,?,...)` over a >32k array
 // crashes with "too many SQL variables". Fail fast at 999 with a clear
@@ -30,51 +40,23 @@ function _assertInClauseSize(n, label) {
   }
 }
 
-function _sqlAliasPrefix(alias = '') {
-  if (!alias) return '';
-  const normalized = String(alias).endsWith('.') ? String(alias).slice(0, -1) : String(alias);
-  return normalized ? `${normalized}.` : '';
-}
-
 function _entityVisibility(db, manifestEpoch, alias = '', options = {}) {
-  const prefix = _sqlAliasPrefix(alias);
-  let sql;
-  if (Number.isInteger(manifestEpoch)) {
-    sql = `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
-      AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
-      AND (${prefix}stale_since IS NULL OR (${prefix}epoch_retired IS NOT NULL AND ${prefix}epoch_retired > ?))`;
-  } else {
-    sql = `${prefix}stale_since IS NULL AND ${prefix}epoch_retired IS NULL`;
-  }
+  const sql = entityVisibilitySql({ manifestEpoch }, alias);
   return {
-    sql: options.allowNullJoined ? `(${sql} OR ${prefix}id IS NULL)` : sql,
-    params: Number.isInteger(manifestEpoch)
-      ? [manifestEpoch, manifestEpoch, manifestEpoch]
-      : [],
+    sql: options.allowNullJoined ? `(${sql} OR ${sqlAliasPrefix(alias)}id IS NULL)` : sql,
+    params: entityVisibilityParams({ manifestEpoch }),
   };
 }
 
 // Trace-only relationship types (overrides, instantiates, typeRef,
-// extensionOf) never feed expansion ranking. Mirrors TRACE_ONLY_TYPES_SQL in
-// relationship-types.js; inlined so this module stays import-free (tests
-// assert the two agree).
-const _TRACE_ONLY_TYPES_SQL = "('overrides','instantiates','typeRef','extensionOf')";
-
+// extensionOf) never feed expansion ranking.
 function _relationshipVisibility(db, manifestEpoch, alias = '') {
-  const prefix = _sqlAliasPrefix(alias);
-  const traceOnly = `${prefix}type NOT IN ${_TRACE_ONLY_TYPES_SQL}`;
-  if (Number.isInteger(manifestEpoch)) {
-    return {
-      sql: `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
-        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
-        AND ${traceOnly}`,
-      params: [manifestEpoch, manifestEpoch],
-    };
-  }
-  return { sql: `${prefix}epoch_retired IS NULL AND ${traceOnly}`, params: [] };
+  const visibility = { manifestEpoch };
+  return {
+    sql: `${relationshipVisibilitySql(visibility, alias)} AND ${sqlAliasPrefix(alias)}type NOT IN ${TRACE_ONLY_TYPES_SQL}`,
+    params: relationshipVisibilityParams(visibility),
+  };
 }
-
-export { _TRACE_ONLY_TYPES_SQL as GRAPH_EXPANSION_TRACE_ONLY_TYPES_SQL };
 
 // Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
 // by scripts/profile-search-stages.mjs (same convention as search-hybrid.js
@@ -157,7 +139,7 @@ export function loadChunkTexts(codebaseDbOrRepo, ids) {
 /**
  * Compute accurate token estimates for a mixed set of results.
  * Original results (from HNSW) use codebaseDb text; expanded results
- * use readFileLines (injected to keep this module import-free).
+ * use readFileLines (injected: this module does no file I/O of its own).
  *
  * @param {Array} results
  * @param {Object} options
@@ -315,8 +297,7 @@ export function expandResults(db, results, options = {}) {
     }
     return options.maxEnvelopeLines ?? 500;
   })();
-  const isAgentFormat = format === 'agent' || format === 'agent_full'
-    || format === 'agent_full_xl' || format === 'agent_preview'
+  const isAgentFormat = AGENT_FORMATS.has(format)
     || process.env.SWEET_SEARCH_FORCE_BM25F_BOOSTS === '1';
   const envelopeCapEnabled = isAgentFormat && Number.isFinite(maxEnvelopeLines);
   const clampedSemanticWeight = clampSemanticWeight(semanticWeight);

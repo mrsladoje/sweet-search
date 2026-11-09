@@ -70,7 +70,7 @@ const _cache = new Map(); // key -> { text|null, lineOffsets, size, mtimeMs }
 //
 // ONE MEASUREMENT TRAP, recorded because it cost a wrong set of constants:
 // `ss-read <file> <start>` is a SINGLE LINE in the bench wrapper, not
-// start-to-EOF (_ss-helpers.mjs:523). A replay that reads it as start-to-EOF
+// start-to-EOF (run-agent-tool.mjs:523). A replay that reads it as start-to-EOF
 // inflates the covered fraction on 176 of 1000 recorded calls and moved the
 // codex figure from -1.60% to a spurious -3.30%. Parse the wrapper, not the
 // library default.

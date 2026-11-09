@@ -11,7 +11,7 @@ import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
-import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
+import { runAgentTool } from '../../core/agent-tools/run-agent-tool.mjs';
 
 const FILES = ['GRDB/Utils/Pool.swift', 'GRDB/Core/Database.swift', 'a/Shared.swift', 'b/Shared.swift'];
 let base;

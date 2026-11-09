@@ -20,8 +20,8 @@
  *     "stampedAt": "2026-05-16T00:00:00.000Z"
  *   }
  *
- * The stamp is informational and additive — the lockfile (`lockfile.mjs`)
- * is what enforces single-writer semantics; the stamp catches the
+ * The stamp is informational and additive — the maintainer lock
+ * (`acquireStateLock` in core/indexing/index-maintainer.mjs) is what enforces single-writer semantics; the stamp catches the
  * "two worktrees writing to the same state dir" footgun before it
  * corrupts the index.
  */

@@ -14,9 +14,9 @@ import { takeDistinctSpans } from './span-dedupe.js';
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent, detectFileKind } from '../ranking/file-kind-ranking.js';
 import { injectAnchorCandidates } from './search-anchor.js';
 import { runRRFFallback } from './search-rrf.js';
+import { isAgentFormat } from '../infrastructure/agent-format.js';
+import { hasAblation } from './ablations.js';
 import { bodyLexicalSettings, composeSeeds, fuseBodyRRF, retrieveBodyLexical } from './body-lexical.js';
-
-const AGENT_FORMATS_FOR_SEED = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 
 const QUERY_SCAFFOLD_RE = /^(?:where|when|how)\s+(?:does|do|did|is|are|was|were|can|could|should)?\s*/i;
 const IMPLEMENTATION_VERB_RE = /^(?:abort|bind|build|call|compute|create|decode|decide|detect|encode|handle|load|parse|parsed|redirect|register|run|search|skip|transform|validate|write)s?\b/i;
@@ -25,12 +25,6 @@ const QUERY_STOPWORDS = new Set([
   'how', 'in', 'into', 'is', 'of', 'on', 'should', 'the', 'to', 'was',
   'were', 'when', 'where', 'with',
 ]);
-
-function hasAblation(ablations, name) {
-  return ablations instanceof Set
-    ? ablations.has(name)
-    : Array.isArray(ablations) && ablations.includes(name);
-}
 
 // Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
 // by scripts/profile-search-stages.mjs. See search-postprocess.js for the
@@ -193,7 +187,7 @@ export async function hybridSearchV2(query, options = {}) {
   // Step 3.5: Apply source-vs-doc/test/config preference before the top-k cut.
   // The post-retrieval pass has the same guard, but hybrid used to slice first,
   // so docs/tests/tiny YAML could occupy top-1 and hide implementation chunks.
-  const agentFormat = ['agent', 'agent_full', 'agent_full_xl', 'agent_preview'].includes(options.format);
+  const agentFormat = isAgentFormat(options.format);
   const fileKindIntent = classifyFileKindIntent(query, { agentFormat });
   const __t_fk = __ptStart();
   const rankedByFileKind = applyFileKindRanking(boosted, {
@@ -263,7 +257,7 @@ export async function hybridSearchV2(query, options = {}) {
   // (0.3361 -> 0.3372). Probes dev top-1 31 = 31 either way. The final span
   // dedupe alone already removes every duplicate slot at k=5.
   const seedCollapse = process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE === '1'
-    && AGENT_FORMATS_FOR_SEED.has(options.format);
+    && isAgentFormat(options.format);
   const bodyPins = body.pins;
   const bodyPool = bodySettings?.pool ? body.hits.slice(0, bodySettings.poolN) : [];
   const withBody = (list) => (bodyPins.length > 0 || bodyPool.length > 0
@@ -389,108 +383,4 @@ export async function hybridSearchV2(query, options = {}) {
       bodyLexical: body.stats,
     },
   };
-}
-
-// =============================================================================
-// Legacy Hybrid Search
-// =============================================================================
-
-/**
- * @deprecated Use hybridSearchV2() instead - this method has architectural issues:
- * - Applies boosts during lexical retrieval (unfair to semantic path)
- * - Uses naive min-max normalization (vulnerable to outliers)
- * - No RRF fallback for edge cases
- * - lexicalSearch() calls graphExpandedSearch internally, mixing graph-expanded
- *   entities with BM25 hits before fusion (pre-fusion expansion is wrong)
- *
- * Uses `this` extensively.
- */
-export async function hybridSearch(query, options = {}) {
-  const { k = 10, expand = true, rrf_k = 60, fusion = 'cc', useLateInteraction = this.useLateInteraction, routing: passedRouting } = options;
-
-  // P9 FIX: Use passed routing or compute if not provided (avoids redundant call)
-  const routing = passedRouting || routeQuery(query);
-  const routeType = routing.mode === 'hybrid' ? 'mixed' : routing.mode;
-
-  // Run both paths in parallel
-  const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
-    this.lexicalSearch(query, { k: Math.ceil(k * 1.5), expand, format: options.format }),
-    this.semanticSearch(query, { k: Math.ceil(k * 1.5), rerank: false, useLateInteraction }),
-  ]);
-  const lexicalResults = lexicalSearchResult.results;
-
-  // P0 FIX: Extract semantic results and stats
-  const semanticResults = semanticSearchResult.results;
-  const semanticStats = semanticSearchResult.stats;
-
-  let results;
-
-  if (fusion === 'cc') {
-    // Convex Combination fusion (default, +7-18% MRR)
-    const ccResults = this.convexCombination(lexicalResults, semanticResults, routeType);
-    results = ccResults.slice(0, k).map(r => ({
-      ...r,
-      searchPath: 'hybrid',
-      hybridScore: r.ccScore,
-      fusionMethod: 'cc',
-    }));
-
-    this.log(`CC fusion (alpha=${results[0]?.alpha?.toFixed(2) || 0.55}): ${lexicalResults.length} lexical + ${semanticResults.length} semantic -> ${results.length} merged`);
-  } else {
-    // RRF fallback
-    const rrfScores = new Map();
-
-    // Add lexical ranks (1-indexed for RRF formula)
-    for (let rank = 0; rank < lexicalResults.length; rank++) {
-      const result = lexicalResults[rank];
-      const key = this.getResultKey(result);
-      const rrfContrib = 1 / (rrf_k + rank + 1);
-
-      rrfScores.set(key, {
-        ...result,
-        rrfScore: rrfContrib,
-        sources: ['lexical'],
-        lexicalRank: rank + 1,
-        lexicalScore: result.score,
-      });
-    }
-
-    // Add semantic ranks (merge with existing or create new)
-    for (let rank = 0; rank < semanticResults.length; rank++) {
-      const result = semanticResults[rank];
-      const key = this.getResultKey(result);
-      const rrfContrib = 1 / (rrf_k + rank + 1);
-
-      const existing = rrfScores.get(key);
-      if (existing) {
-        existing.rrfScore += rrfContrib;
-        existing.sources.push('semantic');
-        existing.semanticRank = rank + 1;
-        existing.semanticScore = result.score;
-      } else {
-        rrfScores.set(key, {
-          ...result,
-          rrfScore: rrfContrib,
-          sources: ['semantic'],
-          semanticRank: rank + 1,
-          semanticScore: result.score,
-        });
-      }
-    }
-
-    results = Array.from(rrfScores.values())
-      .sort((a, b) => b.rrfScore - a.rrfScore)
-      .slice(0, k)
-      .map(r => ({
-        ...r,
-        searchPath: 'hybrid',
-        hybridScore: r.rrfScore,
-        fusionMethod: 'rrf',
-      }));
-
-    this.log(`RRF fusion: ${lexicalResults.length} lexical + ${semanticResults.length} semantic -> ${results.length} merged`);
-  }
-
-  // P0 FIX: Return both results and semanticStats for CostTracker
-  return { results, semanticStats };
 }

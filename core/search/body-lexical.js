@@ -25,8 +25,8 @@
 
 import { buildChunkTextQueries, CHUNK_TEXT_FTS_WEIGHTS } from '../indexing/chunk-text-fts.js';
 import { detectFileKind } from '../ranking/file-kind-ranking.js';
-
-const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+import { isAgentFormat } from '../infrastructure/agent-format.js';
+import { hasAblation } from './ablations.js';
 
 export const DEFAULT_BODY_LEXICAL_MODE = 'pin';
 export const PIN_MIN_WORDS = 3;
@@ -35,12 +35,6 @@ export const PIN_MIN_COVERAGE = 0.8;
 export const PIN_CANDIDATES = 30;
 export const POOL_N = 10;
 export const RRF_K = 60;
-
-function hasAblation(ablations, name) {
-  return ablations instanceof Set
-    ? ablations.has(name)
-    : Array.isArray(ablations) && ablations.includes(name);
-}
 
 function envInt(env, name, fallback, min, max) {
   const raw = env[name];
@@ -61,7 +55,7 @@ function envFloat(env, name, fallback, min, max) {
  * for it (non-agent format, ablation 'no-body-lexical', or mode 'off').
  */
 export function bodyLexicalSettings(options = {}, env = process.env) {
-  if (!AGENT_FORMATS.has(options.format)) return null;
+  if (!isAgentFormat(options.format)) return null;
   if (hasAblation(options.ablations, 'no-body-lexical')) return null;
   const raw = String(options.bodyLexical ?? env.SWEET_SEARCH_BODY_LEXICAL ?? DEFAULT_BODY_LEXICAL_MODE).toLowerCase();
   const modes = new Set(raw.split(/[,+\s]+/).filter((m) => m === 'pin' || m === 'pool' || m === 'rrf'));

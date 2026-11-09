@@ -27,7 +27,7 @@ import {
   renderSufficiencyFragment,
   selectEntries,
 } from '../../core/search/agent-output-fixes.js';
-import { renderSufficiency } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
+import { renderSufficiency } from '../../core/agent-tools/argparse.mjs';
 import { renderAgentSearchResponse } from '../../core/search/search-server.js';
 import { renderRegexDialectHint } from '../../core/search/regex-dialect.js';
 import { lineGutterEnabled, numberCodeLines } from '../../core/search/search-read.js';

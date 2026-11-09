@@ -1,6 +1,6 @@
 //! What decides whether the lane may answer a call at all, before any search: the call's
 //! environment (every switch that changes ss-grep's output or receipts means a decline), its
-//! roots (eval/agent-read-workflows/bin/_ss-helpers.mjs top of runAgentTool,
+//! roots (core/agent-tools/run-agent-tool.mjs top of runAgentTool,
 //! core/search/worktree-roots.js resolveRoots), and its session key
 //! (core/search/agent-span-ledger.js resolveAgentSessionId).
 
@@ -60,7 +60,7 @@ const OUTPUT_SWITCHES: [&str; 6] = [
 // worktree-roots.js GIT_LOCATION_VARS: with any of them set only git knows the roots.
 const GIT_LOCATION_VARS: [&str; 5] = ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM"];
 
-/// The SS_* switches the grep path reads (agent-output-fixes.js readFixFlags, _ss-helpers.mjs
+/// The SS_* switches the grep path reads (agent-output-fixes.js readFixFlags, run-agent-tool.mjs
 /// SS_SIBLING_LINE / SS_GREP_OUTSIDE_SCOPE / SS_VARIANT_*). Other SS_* variables (bench
 /// drivers, other tools' switches) do not change an ss-grep answer.
 fn is_grep_switch(k: &str) -> bool {

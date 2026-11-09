@@ -204,3 +204,49 @@ Each fix lists the main problems it solves. The per-area files hold the rest.
 - Kept after a second look: `indexing/legacy-artifact-sweep.js` (added on purpose on 2026-10-22), `mcp/config-gen.js`
   (documented in `docs/search/MCP_INTEGRATION.md`, changed 2026-10-14), `query/query-router-catboost.js` (the
   equivalence scripts in `crates/wasm-router/` use it as the reference for the WASM router).
+- Wave 1 (5 packages; reports in `docs/untangle/reports/`):
+  - **F1 move**: the six tools are product code in `core/agent-tools/run-agent-tool.mjs` (was
+    `eval/agent-read-workflows/bin/_ss-helpers.mjs`) with their parsers in `core/agent-tools/argparse.mjs`. The two
+    `eval/` paths stay as bench entries that re-export the product modules (replay scripts and the MaxSim bench import
+    them; `node _ss-helpers.mjs <sub>` keeps the bench pins). The cycle `_ss-helpers` <-> `agent-tools/cli.js` and the
+    `runTool` parameter that patched it are gone. `// Mirrors:` markers in `crates/` and `fixtures-gen/` point at the new paths.
+  - **F2**: `core/infrastructure/agent-format.js` owns `AGENT_FORMATS` / `isAgentFormat`; 14 spelled-out copies use it
+    (search, ranking, graph). Sites that test a different set are unchanged (see "Questions for the owner").
+  - **F9 (part)**: `core/search/ablations.js` owns `hasAblation` (6 copies removed).
+  - **F11**: removed legacy `hybridSearch`, `SmartSearch`, `warmSearch`, `codebaseDb`, the `SMART_SEARCH_*` env aliases,
+    `SEARCH_SERVER_PORT` export; `incremental-indexing/infrastructure/lockfile.mjs`, `schema-migrations.mjs`,
+    `domain/encoder-deps.mjs` and their tests; the dead HCGS sidecar reader in `graph-search.js`; `export` on 25 names in
+    `core/graph` that nothing imports.
+  - **F5 (part)**: `liveEntitySql` / `liveRelationshipSql` in `code-graph-visibility.js` replace 11 identical copies of the
+    live-row SQL. `logicalEntityId` in `file-nodes.js` owns the id recipe; `fileNodeId` and `GraphExtractor.makeId` call it.
+  - **F6 (part)**: `scripts/install-fs.js` owns `fileState`, `writeAtomic`, `writeViaTmp`, `detectProjectRoot`,
+    `OWNERSHIP_SENTINEL`. `core/infrastructure/postinstall-check.js` owns `detectSkippedPostinstall` and
+    `INSTALL_NODE_FILE`, so `core/search/setup-status.js` no longer imports `scripts/init.js`.
+- Not dead after proof: `formatGrepResults` (called in `search-format.js`), `hcgs-invalidation.mjs` (live code reads its
+  table), `tombstone-injector.mjs` (a research script imports it), `sectionItemLimit` / `impactPathLimit` / `itemCodeCap`
+  (an eval script imports them).
+
+## Constraints found while fixing
+
+- `eval/maxsim-bench/rerun/pipeline-hook.mjs:52` wraps `SweetSearch.prototype` methods by name (`hybridSearchV2`,
+  `semanticSearch`, `semanticSearch3Stage`, `lexicalSearch`, `_applyPostRetrieval`, ...) and
+  `LateInteractionIndex.prototype.scoreWithLateInteraction`. F9 "replace the prototype mixin" must keep these as prototype
+  methods with these names until the MaxSim paper is out.
+- `crates/ss-grep-core/fixtures-gen/args.mjs` cuts functions out of the SOURCE TEXT of `run-agent-tool.mjs`. A split of
+  that file per tool must update the fixture generator in the same commit.
+
+## Questions for the owner (behavior; not changed)
+
+- `mcp/tool-handlers.js:140` sets `_isAgentFormat` only when `format === 'agent'`. The daemon sets it for all four agent
+  formats (`search-server.js:1211`). MCP calls with `agent_full` / `agent_preview` therefore skip the gates in
+  `search-format.js:44` and `context-expander.js` that read the flag.
+- Single-format gates: `search-hybrid.js:~170` (anchor injection, `allowPlainTitlecase`), `search-semantic.js`
+  `fullVectorStageWanted` (`format !== 'agent'`), `sweet-search.js:~845`.
+- `init` writes a `.gitignore` line and (with `--codex-enable-global-hooks`) a flag in `~/.codex/config.toml`;
+  `uninstall` removes neither. The uninstall dry-run plan does not list the pruning of empty directories.
+- The HCGS summary sidecar (`hcgs_summary_metadata`) is created only by a module that tests import. `graph-gc.mjs`
+  (`pruneRetiredGraphSummaries`), `maintenance-state-reader.mjs` and `CodeGraphReaderVisibility.hasSummarySidecar` read it.
+  Remove the sidecar completely, or wire it up?
+- Env overrides that nothing sets (table in `docs/untangle/reports/incremental-dead.md`).
+- v1 harness constants and migrations in `scripts/install-claude-lean-harness.js`, the CoreML build path in `init.js:2477`,
+  the `codex_hooks` migration (users listed in `docs/untangle/reports/installers.md`).

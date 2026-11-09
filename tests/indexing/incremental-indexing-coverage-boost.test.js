@@ -4,7 +4,6 @@
  *
  * Targets (per `vitest run --coverage` snapshot before this file):
  *   - hashing.mjs            (60% branch)
- *   - encoder-deps.mjs       (70% branch)
  *   - encoder-input.mjs      (72% branch)
  *   - tombstone-injector.mjs (75% branch)
  *   - sparse-gram-delta.mjs  (76% branch)
@@ -35,9 +34,6 @@ import {
   normalizePathSlug, dedupFingerprint, metadataFingerprint,
   DEDUP_INPUT_POLICY_VERSION, EMBED_TEXT_POLICY_VERSION, LI_INPUT_POLICY_VERSION,
 } from '../../core/incremental-indexing/domain/encoder-input.mjs';
-import {
-  collectChunkDependencies, persistDependencies, dependentsOf, forgetFile,
-} from '../../core/incremental-indexing/domain/encoder-deps.mjs';
 import { DirtySet, canonicaliseInsideRoot } from '../../core/incremental-indexing/infrastructure/dirty-set.mjs';
 import {
   fts5SegmentCount, fts5Merge, fts5StructureDescribe, __testing as fts5Testing,
@@ -359,87 +355,6 @@ describe('encoder-input.mjs — language routing branches', () => {
     const a = await metadataFingerprint({ a: 1, b: 2 });
     const b = await metadataFingerprint({ b: 2, a: 1 });
     expect(a).toBe(b);
-  });
-});
-
-// ---------- encoder-deps.mjs ----------
-
-describe('encoder-deps.mjs — dependency tracking branches', () => {
-  let db;
-  beforeEach(() => {
-    db = new Database(':memory:');
-    db.exec(`
-      CREATE TABLE encoder_input_dependencies (
-        dependency_key TEXT NOT NULL,
-        file_path TEXT NOT NULL,
-        chunk_struct_id TEXT NOT NULL,
-        consumer TEXT NOT NULL CHECK (consumer IN ('dense', 'li', 'dedup')),
-        PRIMARY KEY (dependency_key, file_path, chunk_struct_id, consumer)
-      ) WITHOUT ROWID;
-    `);
-  });
-  afterEach(() => { try { db.close(); } catch {} });
-
-  it('collectChunkDependencies returns [] for falsy chunk', () => {
-    expect(collectChunkDependencies(null)).toEqual([]);
-    expect(collectChunkDependencies(undefined)).toEqual([]);
-  });
-
-  it('collectChunkDependencies emits same-file path + lang + symbols + imports keys', () => {
-    const c = { metadata: { relative_path: 'a.js', language: 'javascript' } };
-    const deps = collectChunkDependencies(c);
-    const keys = deps.map((d) => d.dependency_key);
-    expect(keys).toEqual(expect.arrayContaining([
-      'path:a.js', 'lang:a.js', 'chunk-type:a.js', 'symbol:a.js',
-      'signature:a.js', 'additional-symbols:a.js',
-      'same-file-symbols:a.js', 'same-file-imports:a.js', 'same-file-scope:a.js',
-      `policy:embed:${EMBED_TEXT_POLICY_VERSION}`,
-      `policy:li:${LI_INPUT_POLICY_VERSION}`,
-      `policy:dedup:${DEDUP_INPUT_POLICY_VERSION}`,
-    ]));
-  });
-
-  it('collectChunkDependencies adds parent:<file>:<symbol> when parent set', () => {
-    const c = { metadata: { relative_path: 'a.js', parent_symbol: 'cls' } };
-    const deps = collectChunkDependencies(c);
-    expect(deps.find((d) => d.dependency_key === 'parent:a.js:cls')).toBeDefined();
-  });
-
-  it('persistDependencies removes old rows before inserting new', () => {
-    const deps1 = [{ dependency_key: 'old', consumer: 'dense' }];
-    const deps2 = [{ dependency_key: 'new', consumer: 'dense' }];
-    persistDependencies(db, 'a.js', 'sid1', deps1);
-    persistDependencies(db, 'a.js', 'sid1', deps2);
-    const rows = db.prepare('SELECT dependency_key FROM encoder_input_dependencies WHERE chunk_struct_id = ?').all('sid1');
-    expect(rows.map((r) => r.dependency_key)).toEqual(['new']);
-  });
-
-  it('persistDependencies is a no-op when chunkStructId is empty', () => {
-    persistDependencies(db, 'a.js', '', [{ dependency_key: 'k', consumer: 'dense' }]);
-    expect(db.prepare('SELECT COUNT(*) c FROM encoder_input_dependencies').get().c).toBe(0);
-  });
-
-  it('dependentsOf returns rows whose key matches', () => {
-    persistDependencies(db, 'a.js', 'sid', [
-      { dependency_key: 'kA', consumer: 'dense' },
-      { dependency_key: 'kB', consumer: 'li' },
-    ]);
-    const r = dependentsOf(db, ['kA']);
-    expect(r.length).toBe(1);
-    expect(r[0].consumer).toBe('dense');
-  });
-
-  it('dependentsOf returns [] for empty / invalid input', () => {
-    expect(dependentsOf(db, [])).toEqual([]);
-    expect(dependentsOf(db, null)).toEqual([]);
-  });
-
-  it('forgetFile removes all rows for a path', () => {
-    persistDependencies(db, 'a.js', 'sidA', [{ dependency_key: 'k', consumer: 'dense' }]);
-    persistDependencies(db, 'b.js', 'sidB', [{ dependency_key: 'k', consumer: 'dense' }]);
-    forgetFile(db, 'a.js');
-    const rows = db.prepare('SELECT file_path FROM encoder_input_dependencies').all();
-    expect(rows.map((r) => r.file_path)).toEqual(['b.js']);
   });
 });
 

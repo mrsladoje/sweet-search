@@ -46,9 +46,9 @@ import * as postprocess from './search-postprocess.js';
 import * as pattern from './search-pattern.js';
 import { packageForAgent } from './context-expander.js';
 import { seedPoolSize } from './final-k.js';
+import { isAgentFormat } from '../infrastructure/agent-format.js';
+import { hasAblation } from './ablations.js';
 
-const AGENT_SEARCH_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
-const isAgentSearchFormat = (format) => AGENT_SEARCH_FORMATS.has(format);
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
@@ -241,12 +241,6 @@ export class SweetSearch {
 
   _clearCodebaseChunkTypeCache() {
     this._codebaseChunkTypeMap = null;
-  }
-
-  /** @deprecated Use codebaseRepo methods instead. Bridge for legacy callers. */
-  get codebaseDb() {
-    // TODO: Remove once all callers migrate to codebaseRepo
-    return this.codebaseRepo;
   }
 
   /** Initialize all search components */
@@ -888,7 +882,7 @@ export class SweetSearch {
           // Seed pool (== k by default; see final-k.js for why a wider pool is
           // opt-in). Graph expansion + cascade rerank run on this pool and
           // applyPostRetrieval cuts the final list back to k.
-          k: seedPoolSize(k, { agentFormat: isAgentSearchFormat(options.format) }),
+          k: seedPoolSize(k, { agentFormat: isAgentFormat(options.format) }),
           useLateInteraction,
           format: options.format,
           routing,
@@ -957,11 +951,7 @@ export class SweetSearch {
     // no rerank, no graph, no fusion — this guarantees we always return
     // something for any NL query the encoder can embed. Disable via
     // `ablations: ['no-empty-rescue']`.
-    const emptyRescueAllowed = !(options.ablations && (
-      options.ablations instanceof Set
-        ? options.ablations.has('no-empty-rescue')
-        : Array.isArray(options.ablations) && options.ablations.includes('no-empty-rescue')
-    ));
+    const emptyRescueAllowed = !hasAblation(options.ablations, 'no-empty-rescue');
     if (emptyRescueAllowed
         && Array.isArray(results)
         && results.length === 0
@@ -1002,8 +992,7 @@ export class SweetSearch {
     // and short-circuits earlier in this method. For non-pattern modes, apply the
     // shared packager when the caller explicitly asked for an agent format.
     // Default behavior (no agent format) is unchanged.
-    const agentFormats = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
-    if (agentFormats.has(options.format)) {
+    if (isAgentFormat(options.format)) {
       const finalResults = postRetrievalResult.results || [];
       const finalStats = postRetrievalResult.stats || {};
       const __t_pkg = __ptStart();
@@ -1209,7 +1198,6 @@ Object.assign(SweetSearch.prototype, {
   semanticSearchStandard: semantic.semanticSearchStandard,
   shouldSkipRerank: semantic.shouldSkipRerank,
   hybridSearchV2: hybrid.hybridSearchV2,
-  hybridSearch: hybrid.hybridSearch,
   patternSearch: pattern.patternSearch,
   bareGrep: pattern.bareGrep,
   getChunkLocationMap: pattern.getChunkLocationMap,
@@ -1232,12 +1220,6 @@ export async function getWarmSearcher(options = {}) {
   return _warmSearcher;
 }
 
-/** Quick search using warm cache (for programmatic use) */
-export async function warmSearch(query, options = {}) {
-  const searcher = await getWarmSearcher();
-  return searcher.search(query, options);
-}
-
 // CLI guard
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
@@ -1246,5 +1228,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export default SweetSearch;
-/** @deprecated Use SweetSearch instead. SmartSearch is a legacy alias. */
-export { SweetSearch as SmartSearch };

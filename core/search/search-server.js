@@ -21,6 +21,7 @@ import { startGrepLane, stopGrepLane, grepLaneHandledCount, drainGrepLaneReceipt
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 import { recordDaemonStart } from './daemon-starts.js';
 import { startWslKeepAlive } from './wsl-keepalive.js';
+import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
 import {
   AgentSpanLedger,
   applyReadOmissionDecisions,
@@ -54,11 +55,8 @@ import { lineGutterEnabled, numberCodeLines, resolveGutterForm } from './search-
 // Server constants
 // =============================================================================
 
-// Default TCP port — only bound when the operator opts in via
-// SWEET_SEARCH_TCP_PORT (C3: a single global TCP port collides across projects
-// and leaks queries between them; the per-project Unix socket is the default
-// transport). Exported for back-compat references.
-export const SEARCH_SERVER_PORT = 9876;
+// Base for parsing request paths with `new URL`; never connected to.
+const REQUEST_URL_PARSE_BASE = 'http://localhost:9876';
 // Time a client gets to send a whole request (requestTimeout; headers get 5 s more). There is
 // no server-side cap on the ANSWER: a socket idle timeout used to destroy any query that ran
 // past 30 s, and the caller saw a bare "socket hang up" (r3-grdb, a first query on a loaded
@@ -71,8 +69,6 @@ export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 export const SEARCH_SERVER_MAX_READ_PATH_LENGTH = 8_192;
 const AGENT_SPAN_BODY_MAX_BYTES = 64 * 1024;
-
-const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 
 export function resolveAgentSearchRequest(rawFormat, agentRequested = false) {
   const explicit = AGENT_FORMATS.has(rawFormat) ? rawFormat : undefined;
@@ -271,7 +267,7 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
 
   let url;
   try {
-    url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
+    url = new URL(reqUrl, REQUEST_URL_PARSE_BASE);
   } catch {
     return readSemanticError(400, 'Invalid request URL');
   }
@@ -382,7 +378,7 @@ export async function buildTraceDaemonResponse(reqUrl, {
   }
   let url;
   try {
-    url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
+    url = new URL(reqUrl, REQUEST_URL_PARSE_BASE);
   } catch {
     return readSemanticError(400, 'Invalid request URL');
   }
@@ -476,7 +472,7 @@ export async function buildReadDaemonResponse(reqUrl, {
   }
   let url;
   try {
-    url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
+    url = new URL(reqUrl, REQUEST_URL_PARSE_BASE);
   } catch {
     return readSemanticError(400, 'Invalid request URL');
   }
@@ -1050,7 +1046,7 @@ export async function startServer() {
         res.end(JSON.stringify({ error: `Request URL too long (max ${SEARCH_SERVER_MAX_URL_LENGTH} chars)` }));
         return;
       }
-      const url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
+      const url = new URL(reqUrl, REQUEST_URL_PARSE_BASE);
       const isUnixSocket = !req.socket.remoteAddress;
       if (isUnixSocket
           && (AGENT_FORMATS.has(url.searchParams.get('format'))

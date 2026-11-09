@@ -60,7 +60,7 @@ export const STYLE = (() => {
   const bg256 = (c) => `\x1b[48;5;${rgbToAnsi256(c.r, c.g, c.b)}m`;
 
   const detectColorMode = () => {
-    const forced = (process.env.SWEET_SEARCH_COLOR_MODE || process.env.SMART_SEARCH_COLOR_MODE || '').trim().toLowerCase();
+    const forced = (process.env.SWEET_SEARCH_COLOR_MODE || '').trim().toLowerCase();
     if (forced === 'none' || forced === '0' || forced === 'off') return 'none';
     if (forced === '256' || forced === 'ansi256' || forced === 'xterm256') return 'ansi256';
     if (forced === 'truecolor' || forced === '24bit' || forced === 'rgb') return 'truecolor';
@@ -83,7 +83,7 @@ export const STYLE = (() => {
   const fg = colorMode === 'truecolor' ? fg24 : colorMode === 'ansi256' ? fg256 : () => '';
   const bg = colorMode === 'truecolor' ? bg24 : colorMode === 'ansi256' ? bg256 : () => '';
 
-  const headerStyleEnv = (process.env.SWEET_SEARCH_HEADER_STYLE || process.env.SMART_SEARCH_HEADER_STYLE || '').trim().toLowerCase();
+  const headerStyleEnv = (process.env.SWEET_SEARCH_HEADER_STYLE || '').trim().toLowerCase();
   const headerStyle =
     headerStyleEnv === 'zones' || headerStyleEnv === 'gradient'
       ? headerStyleEnv

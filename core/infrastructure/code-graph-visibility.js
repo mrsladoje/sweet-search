@@ -66,6 +66,15 @@ export function relationshipVisibilityParams(visibility) {
   return [visibility.manifestEpoch, visibility.manifestEpoch];
 }
 
+/** Live-now predicate (no pinned epoch) for readers that take no visibility state. */
+export function liveEntitySql(alias = '') {
+  return entityVisibilitySql(null, alias);
+}
+
+export function liveRelationshipSql(alias = '') {
+  return relationshipVisibilitySql(null, alias);
+}
+
 export class CodeGraphReaderVisibility {
   constructor(baseDbPath, opts = {}) {
     this.baseDbPath = baseDbPath;

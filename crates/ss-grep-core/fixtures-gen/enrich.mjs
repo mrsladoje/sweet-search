@@ -122,7 +122,7 @@ function implReads(root, log) {
   return reads;
 }
 
-// The JS reference for writeGrepInterfaceHint (eval/agent-read-workflows/bin/_ss-helpers.mjs,
+// The JS reference for writeGrepInterfaceHint (core/agent-tools/run-agent-tool.mjs,
 // copied verbatim but returning the bytes instead of writing them; that file is a CLI entry).
 const GREP_IMPL_HINT_MAX_MATCHES = 8;
 const GREP_IMPL_HINT_LINES_AFTER = 3;
@@ -382,7 +382,7 @@ for (const repoName of REPO_NAMES) {
     const printed = hits.map(([, l]) => l);
     cases.push({ kind: 'sibling', hits, regex, graph: log, reads, expect: res,
       grep: { rows: printed, before, after, expect: null } });
-    // grepSiblingLine reference (_ss-helpers.mjs, copied).
+    // grepSiblingLine reference (run-agent-tool.mjs, copied).
     const gsl = (siblingLine, rows, { before: bf = 0, after: af = 0 } = {}) => {
       if (!siblingLine?.rendered) return null;
       if (!Array.isArray(siblingLine.sites)) return siblingLine.rendered;

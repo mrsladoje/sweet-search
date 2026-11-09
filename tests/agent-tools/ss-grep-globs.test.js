@@ -27,7 +27,7 @@ vi.mock('../../core/search/search-pattern-ripgrep.js', async (importOriginal) =>
 import { bareGrep } from '../../core/search/index.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { grepFiles, grepHitCount } from './grep-listing-helpers.js';
-import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
+import { runAgentTool } from '../../core/agent-tools/run-agent-tool.mjs';
 
 const MATCHES = [
   ...[1, 2, 3, 4, 5].map(line => ({ file: 'lib/tests/a_test.go', line, matchText: 'Head', content: `Head ${line}` })),

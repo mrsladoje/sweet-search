@@ -576,7 +576,7 @@ describe('also candidates are pointers, not shown spans', () => {
   });
 
   it('cmdSemantic prints the line after the spans and never feeds it to the ledger calls', () => {
-    const src = readFileSync(path.join(import.meta.dirname, '../../eval/agent-read-workflows/bin/_ss-helpers.mjs'), 'utf8');
+    const src = readFileSync(path.join(import.meta.dirname, '../../core/agent-tools/run-agent-tool.mjs'), 'utf8');
     const body = src.slice(src.indexOf('async function cmdSemantic'), src.indexOf('const TRACE_USAGE'));
     expect(body).toContain('formatAlsoLine(r.alsoCandidates, named)');
     expect(body).toContain('formatSpanHeading(span, named)');

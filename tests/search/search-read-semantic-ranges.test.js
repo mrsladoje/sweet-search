@@ -33,7 +33,7 @@ vi.mock('../../core/infrastructure/config/index.js', async importOriginal => {
 const { readSemantic, __resetReadSemanticCachesForTests } = await import('../../core/search/search-read-semantic.js');
 const { __resetReadCachesForTests } = await import('../../core/search/search-read.js');
 const { runInVirtualProcess } = await import('../../core/agent-tools/virtual-process.js');
-const { runAgentTool } = await import('../../eval/agent-read-workflows/bin/_ss-helpers.mjs');
+const { runAgentTool } = await import('../../core/agent-tools/run-agent-tool.mjs');
 
 const FILE = 'src/big.js';
 // alpha (1-10) mentions beta once; beta (11-20) is the query's symbol. 24 characters per line.

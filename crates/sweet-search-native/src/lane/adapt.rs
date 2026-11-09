@@ -30,7 +30,7 @@ impl ss_grep_core::paths::PathProbe for Fs {
     }
 }
 
-/// _ss-argparse.mjs + the start of cmdGrep.
+/// argparse.mjs + the start of cmdGrep.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Args {
     pub fixed: bool,
@@ -292,7 +292,7 @@ pub(crate) fn enrich(rows: &mut [GrepRow], regex: &str, o: &EnrichOpts, graph: &
     })
 }
 
-/// _ss-helpers.mjs grepSiblingLine.
+/// run-agent-tool.mjs grepSiblingLine.
 pub(crate) fn grep_sibling_line(sibling: Option<&SiblingLine>, rows: &[BodyRow], before: usize, after: usize) -> Option<String> {
     let lines: Vec<i64> = rows.iter().map(|r| r.line as i64).collect();
     enrich::grep_sibling_line(sibling, &lines, before as i64, after as i64)

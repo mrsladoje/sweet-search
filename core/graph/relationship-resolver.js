@@ -15,6 +15,7 @@
  */
 
 import path from 'path';
+import { liveRelationshipSql } from '../infrastructure/code-graph-visibility.js';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
 import { parseReceiverType, RECEIVER_TYPE_PREFIX, signatureParamTypes } from '../infrastructure/receiver-type-annotation.js';
@@ -605,7 +606,7 @@ export function buildTypeHierarchy(db, { liveOnly = false } = {}) {
   const subs = new Map();
   let rows = [];
   try {
-    const live = liveOnly ? ' AND r.epoch_retired IS NULL' : '';
+    const live = liveOnly ? ` AND ${liveRelationshipSql('r')}` : '';
     const entityLive = liveOnly ? ' AND e.epoch_retired IS NULL' : '';
     rows = db.prepare(`
       SELECT e.name AS sub, r.target_name AS base
@@ -651,7 +652,7 @@ export function buildReceiverSpread(db, { liveOnly = false } = {}) {
     counts = new Map();
     let rows;
     try {
-      const live = liveOnly ? ' AND epoch_retired IS NULL' : '';
+      const live = liveOnly ? ` AND ${liveRelationshipSql()}` : '';
       rows = db.prepare(`SELECT DISTINCT target_name FROM relationships WHERE type = 'calls'${live}`).raw().iterate();
     } catch {
       return;
@@ -1295,7 +1296,7 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
   if (subtypeTokensMemo.size > 50_000) subtypeTokensMemo.clear();
   if (supertypeTokensMemo.size > 50_000) supertypeTokensMemo.clear();
   const entityLive = liveOnly ? ' AND epoch_retired IS NULL' : '';
-  const relLive = liveOnly ? ' AND r.epoch_retired IS NULL' : '';
+  const relLive = liveOnly ? ` AND ${liveRelationshipSql('r')}` : '';
 
   const keys = new Set();
   const sourceIds = new Set();
@@ -2029,5 +2030,5 @@ function firstByPosition(list) {
   return best;
 }
 
-export { detectProject, isSameProject };
+export { isSameProject };
 export default { resolveRelationshipTargets, detectProject, isSameProject };

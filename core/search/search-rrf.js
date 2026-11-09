@@ -39,6 +39,7 @@
  */
 
 import { detectFileKind } from '../ranking/file-kind-ranking.js';
+import { hasAblation } from './ablations.js';
 
 // Question-scaffolding stopwords ONLY. Generic English nouns (time, data,
 // state, mode, value, etc.) intentionally NOT in this list — they may be
@@ -181,7 +182,7 @@ export function fuseRRF(perKeywordResults) {
  */
 export async function runRRFFallback(fused, query, opts = {}) {
   const ablations = opts.ablations;
-  if (ablations && (ablations instanceof Set ? ablations.has('no-rrf-fallback') : Array.isArray(ablations) && ablations.includes('no-rrf-fallback'))) {
+  if (hasAblation(ablations, 'no-rrf-fallback')) {
     return { results: fused, stats: { reason: null, keywords: [], injected: 0, boosted: 0, fusedCount: 0 } };
   }
 

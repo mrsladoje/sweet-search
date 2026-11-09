@@ -25,6 +25,7 @@ import {
 } from '../embedding/embedding-service.js';
 import { EMBEDDING_CONFIG, BINARY_HNSW_CONFIG } from '../infrastructure/config/index.js';
 import { float512StoreEnabled } from '../vector-store/float-vector-store.js';
+import { hasAblation } from './ablations.js';
 
 const CASCADE_DEFERRED_STATS = { skipped: true, reason: 'cascade_deferred', provider: null, documents: 0, tokens: 0 };
 const FULL_VECTOR_STAGE_LIMIT = 200;
@@ -134,10 +135,7 @@ function applyFullVectorStageRescore(candidates, queryFloat, opts = {}) {
  * postprocess blend does that job) and not under the ablation.
  */
 function fullVectorStageWanted(options) {
-  const skip = options.ablations instanceof Set
-    ? options.ablations.has('no-full-vector-stage-rescore')
-    : Array.isArray(options.ablations) && options.ablations.includes('no-full-vector-stage-rescore');
-  return options.format !== 'agent' && !skip;
+  return options.format !== 'agent' && !hasAblation(options.ablations, 'no-full-vector-stage-rescore');
 }
 
 // =============================================================================

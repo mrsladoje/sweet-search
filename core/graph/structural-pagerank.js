@@ -13,6 +13,7 @@
  * passed in by the index builder; no path or filesystem concerns leak in.
  */
 import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
+import { liveEntitySql, liveRelationshipSql } from '../infrastructure/code-graph-visibility.js';
 
 const DEFAULT_DAMPING = 0.85;
 const DEFAULT_MAX_ITERATIONS = 50;
@@ -126,10 +127,8 @@ export function pageRankWeighted(weightedOutEdges, allNodes, opts = {}) {
  */
 export function buildWeightedAdjacency(db) {
   // Live rows only: a maintained graph keeps retired rows until GC.
-  const liveEntity = 'AND epoch_retired IS NULL';
-  const liveEdge = 'AND epoch_retired IS NULL';
   const allNodes = new Set();
-  for (const row of db.prepare(`SELECT id FROM entities WHERE stale_since IS NULL ${liveEntity}`).iterate()) {
+  for (const row of db.prepare(`SELECT id FROM entities WHERE ${liveEntitySql()}`).iterate()) {
     allNodes.add(row.id);
   }
   const outEdges = new Map();
@@ -137,7 +136,7 @@ export function buildWeightedAdjacency(db) {
     SELECT source_id, target_id, type, COALESCE(weight, 1.0) AS weight
     FROM relationships
     WHERE source_id IS NOT NULL AND target_id IS NOT NULL
-      AND type NOT IN ${TRACE_ONLY_TYPES_SQL} ${liveEdge}
+      AND type NOT IN ${TRACE_ONLY_TYPES_SQL} AND ${liveRelationshipSql()}
   `);
   for (const row of stmt.iterate()) {
     if (!allNodes.has(row.source_id) || !allNodes.has(row.target_id)) continue;

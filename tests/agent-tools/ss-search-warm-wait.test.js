@@ -20,7 +20,7 @@ vi.mock('../../core/search/search-server.js', async (importOriginal) => ({
 }));
 
 const { runInVirtualProcess } = await import('../../core/agent-tools/virtual-process.js');
-const { runAgentTool } = await import('../../eval/agent-read-workflows/bin/_ss-helpers.mjs');
+const { runAgentTool } = await import('../../core/agent-tools/run-agent-tool.mjs');
 
 let base;
 let root;

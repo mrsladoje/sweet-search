@@ -12,10 +12,10 @@ import os from 'os';
 import path from 'path';
 import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 import { buildWeightedAdjacency, pageRankWeighted } from '../../core/graph/structural-pagerank.js';
-import { expandOneHop, getExpansionStats, GRAPH_EXPANSION_TRACE_ONLY_TYPES_SQL } from '../../core/graph/graph-expansion.js';
+import { expandOneHop, getExpansionStats } from '../../core/graph/graph-expansion.js';
 import { computeGraphHash } from '../../core/graph/community-detector.js';
 import {
-  SITE_LINE_RELATIONSHIP_TYPES, TRACE_ONLY_RELATIONSHIP_TYPES, TRACE_ONLY_TYPES_SQL, rankingRelationshipTypes, isTraceOnlyRelationship,
+  SITE_LINE_RELATIONSHIP_TYPES, TRACE_ONLY_RELATIONSHIP_TYPES, rankingRelationshipTypes, isTraceOnlyRelationship,
 } from '../../core/infrastructure/index.js';
 
 const tmpFiles = [];
@@ -48,9 +48,8 @@ function makeDb(file, { withTraceOnly }) {
 }
 
 describe('trace-only relationship types', () => {
-  it('one list, and graph-expansion mirrors it exactly', () => {
+  it('one trace-only list', () => {
     expect(TRACE_ONLY_RELATIONSHIP_TYPES).toEqual(['overrides', 'instantiates', 'typeRef', 'extensionOf']);
-    expect(GRAPH_EXPANSION_TRACE_ONLY_TYPES_SQL).toBe(TRACE_ONLY_TYPES_SQL);
     expect(rankingRelationshipTypes(['calls', 'overrides', 'uses'])).toEqual(['calls', 'uses']);
     expect(isTraceOnlyRelationship('instantiates')).toBe(true);
     expect(isTraceOnlyRelationship('calls')).toBe(false);

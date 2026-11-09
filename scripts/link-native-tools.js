@@ -29,10 +29,10 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { nativeBinarySupportsAgentTools, resolveNativeBinary } from '../core/infrastructure/native-resolver.js';
 import { NATIVE_COMMANDS } from '../core/agent-tools/tools.js';
+import { INSTALL_NODE_FILE } from '../core/infrastructure/postinstall-check.js';
 import { refreshUserShims } from './user-shims.js';
 
-/** Mirrors crates/sweet-search-cli/src/main.rs INSTALL_NODE_FILE. */
-export const INSTALL_NODE_FILE = '.install-node';
+export { INSTALL_NODE_FILE };
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

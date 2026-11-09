@@ -1,4 +1,5 @@
 import path from 'path';
+import { liveRelationshipSql } from './code-graph-visibility.js';
 import { asTopLevelCaller, fileNodeId, fileNodeSourceSql } from './file-nodes.js';
 
 const ACTIVE = 'stale_since IS NULL';
@@ -94,7 +95,7 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
     return null;
   }
   if (!hasEdges) return null;
-  const live = ' AND epoch_retired IS NULL';
+  const live = ` AND ${liveRelationshipSql()}`;
   const sources = db.prepare(`SELECT DISTINCT source_id FROM relationships WHERE type = 'importsFile' AND target_name = ?${live}`).all(targetFile)
     .map(r => r.source_id);
   if (sources.length === 0) return [];

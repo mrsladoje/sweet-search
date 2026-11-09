@@ -6,7 +6,7 @@ import path from 'node:path';
 import { CRATE, mulberry32, writeFixture } from './_common.mjs';
 
 const ROOT = path.resolve(CRATE, '../..');
-const argparse = await import(path.join(ROOT, 'eval/agent-read-workflows/bin/_ss-argparse.mjs'));
+const argparse = await import(path.join(ROOT, 'core/agent-tools/argparse.mjs'));
 const shaping = await import(path.join(ROOT, 'core/search/grep-output-shaping.js'));
 
 // --- translateBreAlternation: hand cases, then fuzzed strings over the characters it reads

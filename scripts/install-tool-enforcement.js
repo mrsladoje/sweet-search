@@ -20,8 +20,9 @@
  * hook entry by its command (same pattern as prewarm SessionStart hook).
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeViaTmp } from './install-fs.js';
 
 export const READ_HINT_HOOK_COMMAND = 'sweet-search-hook --read-hint';
 const GREP_DENY_VALUE = 'Grep';
@@ -153,9 +154,7 @@ function upsertSettings({
 
   try {
     mkdirSync(settingsDir, { recursive: true });
-    const tmp = settingsPath + '.tmp';
-    writeFileSync(tmp, JSON.stringify(settings, null, 2) + '\n', 'utf8');
-    renameSync(tmp, settingsPath);
+    writeViaTmp(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   } catch (err) {
     return { status: 'error', detail: err.message };
   }

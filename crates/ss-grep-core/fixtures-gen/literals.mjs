@@ -34,7 +34,7 @@ wrapper.extractRegexLiterals = (regex) => {
 require.cache[key].exports = wrapper;
 
 const pf = await import(jsPath('core/search/search-pattern-prefilter.js'));
-const argparse = await import(jsPath('eval/agent-read-workflows/bin/_ss-argparse.mjs'));
+const argparse = await import(jsPath('core/agent-tools/argparse.mjs'));
 pf.extractLiteralClauses('probe|x');   // the wrapper must be what the JS calls
 if (!NATIVE.has('probe')) throw new Error('native extractor not intercepted');
 NATIVE.clear();

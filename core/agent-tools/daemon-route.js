@@ -50,7 +50,7 @@ function daemonRootOf(root) {
 // The tool code, loaded once (an `await import()` per call cost ~10 µs).
 let toolModule = null;
 function loadToolModule() {
-  toolModule ||= import('../../eval/agent-read-workflows/bin/_ss-helpers.mjs')
+  toolModule ||= import('./run-agent-tool.mjs')
     .catch((err) => { toolModule = null; throw err; });
   return toolModule;
 }

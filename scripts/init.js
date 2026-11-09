@@ -10,7 +10,7 @@
  *   sweet-search init [--skip-models] [--verify-deep] [--force] [--verbose]
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -60,7 +60,9 @@ import { installOpencodeHarness, opencodeCacheKeyOffByEnv } from './install-open
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 import { registerRepo } from './repo-registry.js';
-import { linkNativeAgentTools, INSTALL_NODE_FILE } from './link-native-tools.js';
+import { detectProjectRoot, writeViaTmp } from './install-fs.js';
+import { linkNativeAgentTools } from './link-native-tools.js';
+import { detectSkippedPostinstall } from '../core/infrastructure/postinstall-check.js';
 import { agentPathDirs, installUserShims, whichOnPath } from './user-shims.js';
 import { NATIVE_COMMANDS } from '../core/agent-tools/tools.js';
 
@@ -345,17 +347,7 @@ export function checkNodeVersion() {
 // Project root detection
 // ---------------------------------------------------------------------------
 
-export function detectProjectRoot(cwd = process.cwd()) {
-  let dir = cwd;
-  while (true) {
-    if (existsSync(join(dir, '.git'))) return dir;
-    if (existsSync(join(dir, 'package.json'))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break; // reached filesystem root
-    dir = parent;
-  }
-  return cwd;
-}
+export { detectProjectRoot };
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -439,9 +431,7 @@ export function loadInitConfig(dataDir) {
 
 export function writeInitConfig(dataDir, config) {
   const configPath = join(dataDir, 'config.json');
-  const tmpPath = configPath + '.tmp';
-  writeFileSync(tmpPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
-  renameSync(tmpPath, configPath);
+  writeViaTmp(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -712,21 +702,7 @@ export function pendingModelBytes(modelKeys, force = false) {
   return total;
 }
 
-/**
- * npm 11+ can skip install scripts. The postinstall step writes <package>/.install-node,
- * so an installed package without it did not run postinstall. Null when the check does
- * not apply (development checkout, unsupported platform).
- */
-export function detectSkippedPostinstall(packageRoot, platform = process.platform, exists = existsSync) {
-  if (platform !== 'darwin' && platform !== 'linux') return null;
-  if (!packageRoot.split(/[\\/]/).includes('node_modules')) return null;
-  if (exists(join(packageRoot, INSTALL_NODE_FILE))) return null;
-  const global = /[\\/]lib[\\/]node_modules[\\/]sweet-search$/.test(packageRoot);
-  return {
-    global,
-    fix: `npm install ${global ? '-g ' : ''}sweet-search --allow-scripts=sweet-search,onnxruntime-node`,
-  };
-}
+export { detectSkippedPostinstall };
 
 // ---------------------------------------------------------------------------
 // Runtime asset verification (WASM/router/JS assets in the package)
@@ -1272,9 +1248,7 @@ export function registerPrewarmSessionStartHook({
 
   try {
     mkdirSync(settingsDir, { recursive: true });
-    const tmpPath = settingsPath + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
-    renameSync(tmpPath, settingsPath);
+    writeViaTmp(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   } catch (err) {
     return { status: 'error', detail: err.message };
   }
@@ -1365,9 +1339,7 @@ export function registerCodexSessionStartHook({ projectRoot, skipped = false } =
 
   try {
     mkdirSync(codexDir, { recursive: true });
-    const tmpPath = hooksPath + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(doc, null, 2) + '\n', 'utf-8');
-    renameSync(tmpPath, hooksPath);
+    writeViaTmp(hooksPath, JSON.stringify(doc, null, 2) + '\n');
   } catch (err) {
     return { status: 'error', detail: err.message };
   }

@@ -646,9 +646,6 @@ Environment:
   }
 }
 
-// Exported for stub CLI forwarding during DDD migration
-export { main as _cliMain };
-
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(err => {
     console.error('Error:', err.message);
@@ -657,7 +654,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export {
-  generateEntitySummary,
   generateAllSummaries,
   generateSummariesForEntities,
   generateSummariesForFiles,

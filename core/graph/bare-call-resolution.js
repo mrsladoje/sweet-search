@@ -80,7 +80,7 @@ const OUTER_LOOKUP_LANGUAGES = new Set(['java', 'csharp', 'kotlin', 'scala', 'cp
 const C_FAMILY = new Set(['c', 'cpp', 'objc']);
 const FILE_PRIVATE_SIGNATURE = /^\s*(?:local|static)\b/;
 
-export const BARE_CALLABLE_TYPES = new Set([
+const BARE_CALLABLE_TYPES = new Set([
   'function', 'method', 'rpc', 'arrowFunction', 'objectArrow', 'objectMethod', 'procedure', 'subroutine', 'macro_function',
   // Registry entity types: Lua `local f = function`, Julia `f(x) = …`, Elixir `defp`.
   'assignedFunc', 'shortFunction', 'private',
@@ -88,7 +88,7 @@ export const BARE_CALLABLE_TYPES = new Set([
   'def', 'func', 'proc', 'procedure',
 ]);
 
-export function languageOfPath(filePath) {
+function languageOfPath(filePath) {
   // A view's code is C# (view-templates.js projects it to C# for the graph).
   if (viewTemplateKind(filePath)) return 'csharp';
   const ext = path.extname(String(filePath || '')).toLowerCase();

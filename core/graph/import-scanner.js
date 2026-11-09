@@ -27,7 +27,7 @@ const STYLE_LANGS = new Set(['scss', 'sass', 'less', 'css']);
  * registry maps them to `html`; their `<script>` blocks (and Astro
  * frontmatter) hold ordinary JS/TS imports.
  */
-export const SFC_LANGUAGE = 'sfc';
+const SFC_LANGUAGE = 'sfc';
 const SFC_EXT_RE = /\.(?:vue|svelte|astro)$/i;
 
 export const SCANNED_IMPORT_LANGUAGES = new Set([
@@ -174,7 +174,7 @@ function scanJs(content) {
 }
 
 /** Local binding names of `{ a, b: c, d = 1, ...rest }` (mirrors GraphExtractor). */
-export function destructuredNames(raw) {
+function destructuredNames(raw) {
   const names = [];
   for (let part of raw.split(',')) {
     part = part.trim();

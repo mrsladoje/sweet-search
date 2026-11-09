@@ -11,7 +11,14 @@
 import Database from 'better-sqlite3';
 import { existsSync, statSync } from 'fs';
 import { applyReadPragmas, prepareCached } from './db-utils.js';
-import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from './code-graph-visibility.js';
+import {
+  entityVisibilityParams,
+  entityVisibilitySql,
+  readAdjacentManifest,
+  relationshipVisibilityParams,
+  relationshipVisibilitySql,
+  resolveManifestCodeGraphPath,
+} from './code-graph-visibility.js';
 import { assertGraphSchema } from './index-schema.js';
 import { callMemo } from '../agent-tools/virtual-process.js';
 
@@ -90,32 +97,19 @@ export class CodeGraphRepository {
   }
 
   _entityVisibilitySql(db, alias = '') {
-    const prefix = sqlAliasPrefix(alias);
-    if (this._manifestEpoch !== null) {
-      return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
-        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
-        AND (${prefix}stale_since IS NULL OR (${prefix}epoch_retired IS NOT NULL AND ${prefix}epoch_retired > ?))`;
-    }
-    return `${prefix}stale_since IS NULL AND ${prefix}epoch_retired IS NULL`;
+    return entityVisibilitySql({ manifestEpoch: this._manifestEpoch }, alias);
   }
 
   _entityVisibilityParams(db) {
-    if (this._manifestEpoch === null) return [];
-    return [this._manifestEpoch, this._manifestEpoch, this._manifestEpoch];
+    return entityVisibilityParams({ manifestEpoch: this._manifestEpoch });
   }
 
   _relationshipVisibilitySql(db, alias = 'r') {
-    const prefix = sqlAliasPrefix(alias);
-    if (this._manifestEpoch !== null) {
-      return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
-        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)`;
-    }
-    return `${prefix}epoch_retired IS NULL`;
+    return relationshipVisibilitySql({ manifestEpoch: this._manifestEpoch }, alias);
   }
 
   _relationshipVisibilityParams(db) {
-    if (this._manifestEpoch === null) return [];
-    return [this._manifestEpoch, this._manifestEpoch];
+    return relationshipVisibilityParams({ manifestEpoch: this._manifestEpoch });
   }
 
   /**

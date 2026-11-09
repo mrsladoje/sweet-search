@@ -15,7 +15,6 @@ import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 import { SCHEMA_VERSION } from '../../core/indexing/index-format-versions.js';
 import { buildConfigFingerprint, diffConfigFingerprint } from '../../core/indexing/config-fingerprint.js';
-import { ensureEncoderDepsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
 import { IndexSchemaError, assertIndexSchemas } from '../../core/infrastructure/index-schema.js';
 import { CodeGraphRepository } from '../../core/infrastructure/code-graph-repository.js';
 import { CodebaseRepository } from '../../core/infrastructure/codebase-repository.js';
@@ -147,20 +146,5 @@ describe('an index of another schema version', () => {
     delete stored.schemaVersion;
     expect(diffConfigFingerprint(stored).map((c) => c.reason)).toContain('schema_version_changed');
     expect(diffConfigFingerprint({ ...stored, schemaVersion: SCHEMA_VERSION })).toEqual([]);
-  });
-});
-
-describe('schema-migrations / encoder dependencies', () => {
-  it('creates the encoder_input_dependencies table with the consumer check', () => {
-    const db = new Database(':memory:');
-    ensureEncoderDepsSchema(db);
-    db.prepare(`
-      INSERT INTO encoder_input_dependencies (dependency_key, file_path, chunk_struct_id, consumer)
-      VALUES (?, ?, ?, ?)
-    `).run('entity:abc', 'src/a.js', 'chunk-1', 'dense');
-    expect(() => db.prepare(`
-      INSERT INTO encoder_input_dependencies (dependency_key, file_path, chunk_struct_id, consumer)
-      VALUES (?, ?, ?, ?)
-    `).run('entity:abc', 'src/a.js', 'chunk-2', 'invalid')).toThrow(/CHECK/);
   });
 });

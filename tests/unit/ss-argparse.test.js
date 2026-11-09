@@ -1,6 +1,6 @@
 /**
  * Unit tests for the ss-* CLI argument parser
- * (eval/agent-read-workflows/bin/_ss-argparse.mjs).
+ * (core/agent-tools/argparse.mjs).
  *
  * Pure, deterministic string/array checks — no index, no network, no LLM.
  *
@@ -31,7 +31,7 @@ import {
   parseLineRange,
   parseContextFlags,
   parseGlobFlags,
-} from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
+} from '../../core/agent-tools/argparse.mjs';
 
 describe('buildGrepPattern', () => {
   it('passes a plain pattern through unchanged', () => {

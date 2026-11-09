@@ -14,8 +14,8 @@
  * miss until the next probe pass.
  *
  * We exercise the actual production code paths (annotateChunksForDelta,
- * snapshotFileRows, diffChunks, applyDiff, manifest publish, encoder-deps
- * persistence) against a real SQLite database. No mocks of the diff layer —
+ * snapshotFileRows, diffChunks, applyDiff, manifest publish)
+ * against a real SQLite database. No mocks of the diff layer —
  * the only mocked piece is the chunker (we supply pre-built chunks) and the
  * encoder (we supply pre-built embeddings so we can verify exact-byte reuse).
  */
@@ -32,15 +32,8 @@ import {
   diffChunks,
   applyDiff,
 } from '../../core/incremental-indexing/infrastructure/vector-delta-writer.mjs';
-import { ensureEncoderDepsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
 import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 import { createGraphSchema } from '../../core/graph/graph-extractor.js';
-import {
-  collectChunkDependencies,
-  persistDependencies,
-  dependentsOf,
-  forgetFile,
-} from '../../core/incremental-indexing/domain/encoder-deps.mjs';
 import { Reconciler } from '../../core/incremental-indexing/application/reconciler.mjs';
 import { readManifest, epochVisibilityPredicate } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 
@@ -55,7 +48,6 @@ function makeVectorsDb() {
 function makeCodeGraphDb() {
   const db = new Database(':memory:');
   createGraphSchema(db);
-  ensureEncoderDepsSchema(db);
   return db;
 }
 
@@ -111,8 +103,8 @@ function makeAnonymousChunk(filePath, parent, body) {
 }
 
 /**
- * Cold-index a fixture corpus. Writes vectors + graph rows + encoder
- * dependencies, returning a per-file snapshot the test can compare to
+ * Cold-index a fixture corpus. Writes vectors + graph rows,
+ * returning a per-file snapshot the test can compare to
  * after the reconcile.
  */
 function coldIndex(vectorsDb, graphDb, corpus, epoch = 1) {
@@ -138,8 +130,6 @@ function coldIndex(vectorsDb, graphDb, corpus, epoch = 1) {
         a.hashes.li_input_hash, a.hashes.metadata_fingerprint, a.chunkStructId,
         epoch, null,
       );
-      const deps = collectChunkDependencies(chunks[i]);
-      persistDependencies(graphDb, filePath, a.chunkStructId, deps);
       chunkSnap.push({
         id, chunkStructId: a.chunkStructId,
         chunkTextHash: a.hashes.chunk_text_hash,
@@ -184,15 +174,6 @@ function graphRowsForFile(graphDb, filePath) {
   `).all(filePath);
 }
 
-function dependencyRowsForFile(graphDb, filePath) {
-  return graphDb.prepare(`
-    SELECT dependency_key, file_path, chunk_struct_id, consumer
-    FROM encoder_input_dependencies
-    WHERE file_path = ?
-    ORDER BY dependency_key, chunk_struct_id, consumer
-  `).all(filePath);
-}
-
 /**
  * Reconcile one file against the existing DB state. Mirrors what the
  * Phase 3 vector adapter will do: diff, encode missing, write rows.
@@ -231,10 +212,6 @@ function reconcileOneFile(vectorsDb, graphDb, filePath, newChunks, epoch) {
       er.item.ann.hashes.metadata_fingerprint, er.item.ann.chunkStructId,
       epoch, null,
     );
-    persistDependencies(
-      graphDb, filePath, er.item.ann.chunkStructId,
-      collectChunkDependencies(er.item.chunk),
-    );
   }
   return { diff, encoded: diff.toEncode.length, reused: diff.toReuse.length, retired: diff.toRetire.length };
 }
@@ -255,7 +232,7 @@ describe('Structural invariance (plan § 12.3)', () => {
     try { graphDb.close(); } catch {}
   });
 
-  it('editing ONE file leaves every other file byte-identical at the vectors, graph, and dependency layers', () => {
+  it('editing ONE file leaves every other file byte-identical at the vectors, and graph layers', () => {
     // Fixture corpus: 4 files, each with 3 chunks (mix of symbol + anon).
     const corpus = {
       'src/a.js': [
@@ -281,10 +258,8 @@ describe('Structural invariance (plan § 12.3)', () => {
     };
     const snap = coldIndex(vectorsDb, graphDb, corpus, /* epoch */ 1);
     const graphSnap = new Map();
-    const depSnap = new Map();
     for (const filePath of Object.keys(corpus)) {
       graphSnap.set(filePath, graphRowsForFile(graphDb, filePath));
-      depSnap.set(filePath, dependencyRowsForFile(graphDb, filePath));
     }
     const coldEncodes = getEncodeCount();
     expect(coldEncodes).toBe(12); // 4 files × 3 chunks
@@ -330,7 +305,6 @@ describe('Structural invariance (plan § 12.3)', () => {
       }
 
       expect(graphRowsForFile(graphDb, otherFile)).toEqual(graphSnap.get(otherFile));
-      expect(dependencyRowsForFile(graphDb, otherFile)).toEqual(depSnap.get(otherFile));
     }
   });
 
@@ -430,10 +404,6 @@ describe('Structural invariance (plan § 12.3)', () => {
       `SELECT id FROM vectors WHERE file_path = 'gone.js' AND ${epochVisibilityPredicate()}`,
     ).all({ manifestEpoch: 1 });
     expect(visibleAtE1.length).toBe(2);
-
-    forgetFile(graphDb, 'gone.js');
-    const deps = dependentsOf(graphDb, ['path:gone.js']);
-    expect(deps.length).toBe(0);
   });
 
   it('signature-equivalent reformat (trailing brace strip + run collapse) reuses 100%', () => {

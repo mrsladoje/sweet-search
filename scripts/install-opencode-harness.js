@@ -42,13 +42,14 @@
 
 import { createHash } from 'node:crypto';
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, unlinkSync, writeFileSync,
+  existsSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { applyEdits, modify, parse as parseJsonc, printParseErrorCode } from 'jsonc-parser';
 import {
   OPENCODE_CACHE_KEY_PLUGIN_SOURCE, OPENCODE_TRIM_PLUGIN_SOURCE, opencodePrompt, OPENCODE_TOOL_EDITS,
 } from './harness-prompts/index.js';
+import { fileState, writeAtomic } from './install-fs.js';
 
 export const OPENCODE_DIR_REL = '.opencode';
 export const OPENCODE_CONFIG_REL = '.opencode/opencode.json';
@@ -174,20 +175,6 @@ function editConfigText(text, target) {
     edit(path, want);
   }
   return text;
-}
-
-function writeAtomic(path, text) {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.sweet-search.tmp`;
-  writeFileSync(tmp, text, 'utf8');
-  renameSync(tmp, path);
-}
-
-function fileState(projectRoot, rel, manifest) {
-  const path = join(projectRoot, rel);
-  if (!existsSync(path)) return 'absent';
-  const recorded = manifest?.files?.[rel];
-  return recorded && sha(readFileSync(path, 'utf8')) === recorded ? 'ours' : 'user';
 }
 
 // The list-valued settings: `has` detects our entry, `add` / `remove` change `cfg` in place,

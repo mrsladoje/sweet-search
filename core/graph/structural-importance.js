@@ -23,8 +23,8 @@
  * beat fixtures.
  */
 
-export const REL_WEIGHT = { calls: 1.0, uses: 0.72, implements: 0.88, extends: 0.84, overrides: 0.78 };
-export const TYPE_WEIGHT = {
+const REL_WEIGHT = { calls: 1.0, uses: 0.72, implements: 0.88, extends: 0.84, overrides: 0.78 };
+const TYPE_WEIGHT = {
   class: 0.92, struct: 0.9, trait: 0.88, interface: 0.86, enum: 0.84,
   function: 0.84, method: 0.82, component: 0.78, type: 0.7, typeAlias: 0.68, external: 0.2,
 };
@@ -41,7 +41,7 @@ export function isExported(entity) {
   return /\b(export|public|pub)\b/.test(sig) || /^[A-Z_][A-Z0-9_]+$/.test(name);
 }
 
-export function logNorm(value, maxValue) {
+function logNorm(value, maxValue) {
   if (!value || !maxValue) return 0;
   return Math.log1p(value) / Math.log1p(maxValue);
 }
@@ -58,11 +58,11 @@ export function tokenize(text) {
 const NO_PPR = process.env.SWEET_SEARCH_TRACE_NO_PPR === '1';
 const NO_PR = process.env.SWEET_SEARCH_TRACE_NO_PR === '1';
 
-export function getAblationFlags() {
+function getAblationFlags() {
   return { noPpr: NO_PPR, noPr: NO_PR };
 }
 
-export function hintScore(entity, hintTokens) {
+function hintScore(entity, hintTokens) {
   if (!hintTokens.length) return 0;
   const hay = `${entity.name} ${entity.type} ${entity.signature} ${entity.summary}`.toLowerCase();
   let hits = 0;

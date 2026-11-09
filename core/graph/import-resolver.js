@@ -30,6 +30,7 @@ import {
   elixirReferences, lineOfIndex,
 } from './import-symbol-index.js';
 
+import { liveRelationshipSql } from '../infrastructure/code-graph-visibility.js';
 import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
 
 // Defined in infrastructure (the structural repository reads them too).
@@ -2148,7 +2149,7 @@ export function buildFileImportMap(db, fileIdOf) {
   // A maintained graph keeps retired rows until GC (epoch_retired set) and
   // writes rows under the physical id of the file's entity row (`<id>@e<N>`);
   // a full build writes them under the logical id with no entity row.
-  const liveRel = ' AND epoch_retired IS NULL';
+  const liveRel = ` AND ${liveRelationshipSql()}`;
   const liveEnt = ' AND epoch_retired IS NULL';
   const rows = db.prepare(`SELECT source_id, target_name FROM relationships WHERE type = 'importsFile'${liveRel}`).all();
   const idToFile = new Map();

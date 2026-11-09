@@ -21,7 +21,7 @@ import { goImportName, scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor 
 import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { annotateReceiverTypes } from './receiver-types.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
-import { ensureFilesSchema, insertFileNodes } from '../infrastructure/file-nodes.js';
+import { ensureFilesSchema, insertFileNodes, logicalEntityId } from '../infrastructure/file-nodes.js';
 import { ensureGraphNameIndexes } from '../infrastructure/graph-name-indexes.js';
 import { assertGraphSchema } from '../infrastructure/index-schema.js';
 import { projectToCSharp, viewTemplateKind, VIEW_RENDER_METHOD_PREFIX, VIEW_SECTION_CALL } from '../infrastructure/view-templates.js';
@@ -100,7 +100,7 @@ const DATA_KEY_LANGUAGES = new Set(['json', 'yaml', 'toml', 'xml']);
  * `//.*$` cut left `string Url = "http:` and the field ran on to the next
  * block's `}`). Trailing whitespace is trimmed.
  */
-export function codeBeforeComment(line) {
+function codeBeforeComment(line) {
   let out = '';
   let quote = null;
   for (let i = 0; i < line.length; i++) {
@@ -125,7 +125,7 @@ export function codeBeforeComment(line) {
 }
 
 /** 0-based indexes of the lines strictly inside Elixir heredocs (`\"\"\"` / `\'\'\'`). */
-export function elixirHeredocLines(lines) {
+function elixirHeredocLines(lines) {
   const inside = new Set();
   let fence = null;
   for (let i = 0; i < lines.length; i++) {
@@ -426,7 +426,7 @@ function elixirClauseArity(signature) {
  * them all; rows of the later clauses move to it. Different arities (`f/1`,
  * `f/2`) stay separate functions.
  */
-export function mergeElixirClauses(entities, relationships, callSites, lines) {
+function mergeElixirClauses(entities, relationships, callSites, lines) {
   if (!Array.isArray(entities) || entities.length < 2) return entities;
   const sorted = entities.slice().sort((a, b) => a.start_line - b.start_line);
   const into = new Map();
@@ -456,7 +456,7 @@ export function mergeElixirClauses(entities, relationships, callSites, lines) {
   return entities.filter((e) => !into.has(e.id));
 }
 
-export function clampSentinelEndLines(entities, fileLineCount, language) {
+function clampSentinelEndLines(entities, fileLineCount, language) {
   if (!Array.isArray(entities) || entities.length < 2) return entities;
   if (fileLineCount == null || fileLineCount <= 0) return entities;
   if (!LUA_CLAMP_ALLOWED_LANGUAGES.has(language)) return entities;
@@ -530,7 +530,7 @@ export function normalizeIdentifier(name) {
  * @param {import('better-sqlite3').Database} db
  * @param {number} [version=SCHEMA_VERSION]
  */
-export function setSchemaVersion(db, version = SCHEMA_VERSION) {
+function setSchemaVersion(db, version = SCHEMA_VERSION) {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)`);
   db.prepare('INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)').run('version', String(version));
 }
@@ -731,7 +731,7 @@ const EMBED_SCOPE_TYPES = new Set(['struct', 'interface', 'class', 'type']);
  * the rest of the file). Python triple quotes are tracked by parity, so a
  * `SQL = """` assignment is skipped through its closing `"""`.
  */
-export function createCommentLineTracker(comment) {
+function createCommentLineTracker(comment) {
   if (!comment) return () => false;
   const lineToken = comment.line || null;
   const [open, close] = comment.block || [];
@@ -3121,11 +3121,7 @@ export class GraphExtractor {
       disambiguator = String(options.startLine);
     }
 
-    const key = disambiguator
-      ? `${relativePath}:${type}:${name}:${disambiguator}`
-      : `${relativePath}:${type}:${name}`;
-
-    return createHash('sha256').update(key).digest('hex').slice(0, 16);
+    return logicalEntityId(relativePath, type, disambiguator ? `${name}:${disambiguator}` : name);
   }
 
   /**

@@ -10,7 +10,7 @@
  * is not part of the product. The functions in
  * this file are pure (no I/O, no process state) or take their I/O as an argument
  * (`decideAlreadyShown` gets the socket sender), so they can be unit-tested; the
- * wrapper (eval/agent-read-workflows/bin/_ss-helpers.mjs) wires them to the printers.
+ * wrapper (core/agent-tools/run-agent-tool.mjs) wires them to the printers.
  *
  * Switches (read from the environment; on = 1/true/on/yes, off = 0/false/off/no):
  *   SS_FIX_A=1|0               bundle A umbrella (no information loss; default: ON unless
@@ -370,7 +370,7 @@ export function renderAlreadyShownLine(file, startLine, endLine) {
 
 /**
  * The original ` sufficient=<verdict>[ (<reason>)]` fragment of the confidence line (the ss-*
- * wrappers' renderSufficiency; _ss-argparse.mjs re-exports this one).
+ * wrappers' renderSufficiency; argparse.mjs re-exports this one).
  */
 export function renderSufficiencyFragment(response) {
   const verdict = response.sufficiencyVerdict

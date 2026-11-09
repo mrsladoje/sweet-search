@@ -31,13 +31,14 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, unlinkSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import {
   codexInstructions, codexCapturedStock, readCodexStock, resolveCodexModel,
 } from './harness-prompts/index.js';
+import { fileState, writeAtomic, writeViaTmp } from './install-fs.js';
 
 export const CODEX_DIR_REL = '.codex';
 export const CODEX_CONFIG_REL = '.codex/config.toml';
@@ -88,20 +89,6 @@ function readJson(path) {
   } catch (err) {
     return { error: `${path} is not valid JSON: ${err.message}` };
   }
-}
-
-function writeAtomic(path, text) {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.sweet-search.tmp`;
-  writeFileSync(tmp, text, 'utf8');
-  renameSync(tmp, path);
-}
-
-function fileState(projectRoot, rel, manifest) {
-  const path = join(projectRoot, rel);
-  if (!existsSync(path)) return 'absent';
-  const recorded = manifest?.files?.[rel];
-  return recorded && sha(readFileSync(path, 'utf8')) === recorded ? 'ours' : 'user';
 }
 
 /** Top-level keys the user set outside our block (the region before the first table header). */
@@ -267,9 +254,7 @@ export function ensureCodexHooksFeatureFlag(configPath, { create = false } = {})
   const write = (next, status) => {
     try {
       mkdirSync(dirname(configPath), { recursive: true });
-      const tmp = configPath + '.tmp';
-      writeFileSync(tmp, next, 'utf-8');
-      renameSync(tmp, configPath);
+      writeViaTmp(configPath, next);
     } catch (err) {
       return { status: 'error', path: configPath, detail: `write failed: ${err.message}` };
     }

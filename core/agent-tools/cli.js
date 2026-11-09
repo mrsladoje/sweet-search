@@ -22,11 +22,9 @@ function writeAll(write, stream, buf) {
 /**
  * @param {string} subcommand
  * @param {string[]} args
- * @param {{stderr?: 'on-failure'|'always', runTool?: Function}} [opts]  `runTool`: the tool
- *   module's runAgentTool when the caller IS that module (importing it again from inside
- *   its own top-level await would never settle).
+ * @param {{stderr?: 'on-failure'|'always'}} [opts]
  */
-export async function runAgentToolInProcess(subcommand, args, { stderr = 'on-failure', runTool = null } = {}) {
+export async function runAgentToolInProcess(subcommand, args, { stderr = 'on-failure' } = {}) {
   const { real } = installVirtualProcess();
   // Before the tool runs: a later call of a chained command prints a boundary line.
   resolveChainPosition(real.env);
@@ -35,8 +33,8 @@ export async function runAgentToolInProcess(subcommand, args, { stderr = 'on-fai
     // reach anything it spawns, as they did when the tool owned the process.
     { env: real.env, cwd: real.cwd.call(process), pid: process.pid },
     async () => {
-      const run = runTool || (await import('../../eval/agent-read-workflows/bin/_ss-helpers.mjs')).runAgentTool;
-      await run(subcommand, args);
+      const { runAgentTool } = await import('./run-agent-tool.mjs');
+      await runAgentTool(subcommand, args);
     },
   );
   await writeAll(real.stdoutWrite, process.stdout, result.stdout);

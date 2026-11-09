@@ -53,7 +53,7 @@ const MAX_SCAN_LINES = 400;
 const TYPE_FIRST_NOT_TYPES = new Set(['return', 'new', 'throw', 'case', 'else', 'yield', 'await', 'goto']);
 
 /** True when the language of `filePath` writes declared types the scanner reads. */
-export function receiverTypesSupported(filePath) {
+function receiverTypesSupported(filePath) {
   const f = String(filePath || '');
   return GO.test(f) || TYPE_FIRST.test(f) || COLON_TYPED_FILE.test(f) || PHP_FILE.test(f) || CPP_FILE.test(f);
 }

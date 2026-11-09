@@ -29,6 +29,7 @@ import { retryBreDialectAfterZero } from './regex-dialect.js';
 import { applyUnindexedFallback } from './grep-unindexed-fallback.js';
 import { buildIndexedGrepFamilyManifest, buildSingletonSiblingLine } from './agent-pack-completion.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
+import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
 
 // findEntitiesInFile's own maximum (code-graph-repository.js).
 const GREP_LINE_CLASS_ENTITY_CAP = 2048;
@@ -143,8 +144,6 @@ async function ensureGrepEngineAvailable(searcher, options, label) {
     'Re-index to build the native sparse-gram index, or install ripgrep (brew install ripgrep).'
   );
 }
-
-const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 
 function isAgentFormat(options) {
   return options?._isAgentFormat === true || AGENT_FORMATS.has(options?.format);
@@ -647,7 +646,7 @@ export async function patternSearch(query, routing, options = {}) {
     };
 
     // Agent mode: return proper agent schema even for zero results
-    if (format === 'agent' || format === 'agent_preview' || format === 'agent_full' || format === 'agent_full_xl') {
+    if (AGENT_FORMATS.has(format)) {
       const agentResponse = packageForAgent([], emptyStats, {
         query, regex, mode: 'pattern', format, tokenBudget, ablations,
         projectRoot: this.projectRoot || PROJECT_ROOT, _isAgentFormat: true,
@@ -761,10 +760,7 @@ export async function patternSearch(query, routing, options = {}) {
   //   - TSL-004/008: packages/docs/content/packages/core.mdx outranks schemas.ts
   // The .d.ts (types kind) and .mdx (docs kind) factors mirror hybrid's
   // tuned defaults (typeFactor 0.70, docFactor 0.35).
-  const ssFindIsAgentFormat = options?.format === 'agent'
-    || options?.format === 'agent_full'
-    || options?.format === 'agent_full_xl'
-    || options?.format === 'agent_preview';
+  const ssFindIsAgentFormat = AGENT_FORMATS.has(options?.format);
   const skipPatternFileKind = Array.isArray(ablations)
     ? ablations.includes('no-pattern-file-kind-ranking')
     : (ablations instanceof Set ? ablations.has('no-pattern-file-kind-ranking') : false);
@@ -872,7 +868,7 @@ export async function patternSearch(query, routing, options = {}) {
 
   // Agent mode: post-ranking context packaging (Phases 1-5)
   // Ranking is frozen — agent mode only transforms presentation.
-  if (format === 'agent' || format === 'agent_preview' || format === 'agent_full' || format === 'agent_full_xl') {
+  if (AGENT_FORMATS.has(format)) {
     const searchDir = this.projectRoot || PROJECT_ROOT;
     // The entry's label and code start at the definition that holds its first regex hit.
     const focused = focusResultsOnRegexHits(results, grepMatches, this.codeGraphRepo || null);

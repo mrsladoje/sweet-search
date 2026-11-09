@@ -22,6 +22,8 @@ import { capToFinalK, pinNarrowTop1 } from './final-k.js';
 import { dedupeIdenticalSpans } from './span-dedupe.js';
 import { applyFinalListMMR, SPAN_MMR_WEIGHTS, CONTENT_MMR_WEIGHTS } from '../ranking/mmr.js';
 import { refrontPins } from './body-lexical.js';
+import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
+import { hasAblation } from './ablations.js';
 
 /**
  * Min-max normalize an array of scores to [0, 1].
@@ -61,12 +63,6 @@ const QUERY_TEXT_STOPWORDS = new Set([
   'it', 'of', 'on', 'or', 'should', 'the', 'to', 'was', 'were', 'what',
   'when', 'where', 'with', 'you', 'your',
 ]);
-
-function hasAblation(ablations, name) {
-  return ablations instanceof Set
-    ? ablations.has(name)
-    : Array.isArray(ablations) && ablations.includes(name);
-}
 
 // Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
 // by the profiler (scripts/profile-search-stages.mjs). Used to attribute the
@@ -390,8 +386,6 @@ function promoteFileDiversity(results, opts = {}) {
 // Candidates after the final cut handed to the agent packager for refill.
 const FINAL_RESERVE_SIZE = 10;
 
-const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
-
 export const FINAL_MMR_WEIGHT_PRESETS = Object.freeze({
   'span-only': SPAN_MMR_WEIGHTS,
   content: CONTENT_MMR_WEIGHTS,
@@ -679,9 +673,8 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     // =========================================================================
     // Late Interaction Reranking (legacy, flag OFF — post-expansion, Phase 6)
     // =========================================================================
-    const agentFormats = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
     const allowLegacyLateInteraction = process.env.SWEET_SEARCH_LEGACY_LI_RERANK === '1'
-      || agentFormats.has(options.format)
+      || AGENT_FORMATS.has(options.format)
       || searchContext?.fromSearch !== true
       || shouldRunAdaptiveLegacyLi(results);
     const shouldRunLateInteraction = this.hasLateInteractionIndex &&

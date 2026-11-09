@@ -1,5 +1,5 @@
-//! ss-grep argument parsing: eval/agent-read-workflows/bin/_ss-argparse.mjs and the start of
-//! `cmdGrep` in eval/agent-read-workflows/bin/_ss-helpers.mjs (up to buildGrepPattern).
+//! ss-grep argument parsing: core/agent-tools/argparse.mjs and the start of
+//! `cmdGrep` in core/agent-tools/run-agent-tool.mjs (up to buildGrepPattern).
 //!
 //! Every place the JS fails with a usage error (failUsage / process.exit) returns
 //! `Err(Decline)`: the JS answers those calls itself.
@@ -36,7 +36,7 @@ fn index_of(args: &[String], name: &str) -> Option<usize> {
 }
 
 /// Boolean (value-less) flag: remove every occurrence, return whether any was present.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:parseBoolFlag
+// Mirrors: core/agent-tools/argparse.mjs:parseBoolFlag
 pub fn parse_bool_flag(args: &mut Vec<String>, names: &[&str]) -> bool {
     let mut present = false;
     for n in names {
@@ -48,7 +48,7 @@ pub fn parse_bool_flag(args: &mut Vec<String>, names: &[&str]) -> bool {
     present
 }
 
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:escapeRegex
+// Mirrors: core/agent-tools/argparse.mjs:escapeRegex
 pub fn escape_regex(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for c in s.chars() {
@@ -98,7 +98,7 @@ pub fn has_case_insensitive_regex_flag(regex: &str) -> bool {
 
 /// `-F` escapes, `-w` wraps in word boundaries, `-i` prepends `(?i)`. None for a missing
 /// pattern (JS `undefined`); Some("") stays "" (JS returns the falsy pattern as is).
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:buildGrepPattern
+// Mirrors: core/agent-tools/argparse.mjs:buildGrepPattern
 pub fn build_grep_pattern(pattern: Option<&str>, ignore_case: bool, word_bound: bool, fixed_string: bool) -> Option<String> {
     let pattern = pattern?;
     if pattern.is_empty() {
@@ -118,7 +118,7 @@ pub fn build_grep_pattern(pattern: Option<&str>, ignore_case: bool, word_bound: 
 /// BRE operator (`\|` `\(` `\)` `\{` `\}` `\+` `\?`) loses its backslash, each bare
 /// `( ) { } + ?` gains one, a `*` that opens a branch is escaped, bracket expressions are
 /// copied. None = not BRE-shaped (no `\|`, a bare `|`, an unclosed `[`, a trailing `\`).
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:translateBreAlternation
+// Mirrors: core/agent-tools/argparse.mjs:translateBreAlternation
 pub fn translate_bre_alternation(pattern: &str) -> Option<String> {
     if !pattern.contains("\\|") {
         return None;
@@ -207,7 +207,7 @@ const INERT_FLAGS: [&str; 10] = [
     "-n", "--line-number", "-H", "--with-filename", "--no-filename", "-r", "-R", "--recursive", "--color", "--colour",
 ];
 
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:stripInertFlags
+// Mirrors: core/agent-tools/argparse.mjs:stripInertFlags
 pub fn strip_inert_flags(args: &mut Vec<String>) {
     let mut i = args.len();
     while i > 0 {
@@ -251,13 +251,13 @@ fn split_long_eq(tok: &str) -> Option<(&str, &str)> {
 
 /// Make agent-typed forms canonical: `--name=value` for known value flags, `-k5`, `-A3`,
 /// bundles `-iw`, `-iwk5`.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:normalizeArgs
+// Mirrors: core/agent-tools/argparse.mjs:normalizeArgs
 pub fn normalize_args(args: &[String]) -> Vec<String> {
     normalize_args_with(args, &BOOL_SHORTS)
 }
 
 /// normalizeArgs(args, { boolShorts }).
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:normalizeArgs
+// Mirrors: core/agent-tools/argparse.mjs:normalizeArgs
 pub fn normalize_args_with(args: &[String], bool_shorts: &[char]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut positional_only = false;
@@ -331,7 +331,7 @@ pub fn normalize_args_with(args: &[String], bool_shorts: &[char]) -> Vec<String>
 
 /// A token that looks like a real CLI option (single short letter, letter bundle, GNU long
 /// flag), as opposed to a pattern that merely begins with '-'.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:looksLikeOption
+// Mirrors: core/agent-tools/argparse.mjs:looksLikeOption
 pub fn looks_like_option(tok: &str) -> bool {
     if tok == "-" || tok == "--" {
         return false;
@@ -357,7 +357,7 @@ pub fn looks_like_option(tok: &str) -> bool {
 
 /// The value of the first of `names` present (names order), consumed with its flag.
 /// Err = the JS usage error "<flag> requires a value".
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:parseValueFlag
+// Mirrors: core/agent-tools/argparse.mjs:parseValueFlag
 pub fn parse_value_flag(args: &mut Vec<String>, names: &[&str], allow_option_value: bool) -> Result<Option<(String, String)>, Decline> {
     for n in names {
         let i = match index_of(args, n) {
@@ -470,7 +470,7 @@ fn positive_int(v: &str, min: f64) -> Result<u64, Decline> {
 }
 
 /// `readPositiveIntFlag`: the value, `fallback` when the flag is absent, Err on a usage error.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:parsePositiveIntFlag
+// Mirrors: core/agent-tools/argparse.mjs:parsePositiveIntFlag
 pub fn parse_positive_int_flag(args: &mut Vec<String>, names: &[&str], fallback: u64) -> Result<u64, Decline> {
     match parse_value_flag(args, names, false)? {
         None => Ok(fallback),
@@ -480,7 +480,7 @@ pub fn parse_positive_int_flag(args: &mut Vec<String>, names: &[&str], fallback:
 
 /// Repeatable value flag (options end at `--`): every occurrence consumed, in order,
 /// de-duplicated. Err = "<flag> requires a value".
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:parseRepeatedValueFlag
+// Mirrors: core/agent-tools/argparse.mjs:parseRepeatedValueFlag
 pub fn parse_repeated_value_flag(args: &mut Vec<String>, names: &[&str]) -> Result<Vec<String>, Decline> {
     let mut values: Vec<String> = Vec::new();
     loop {
@@ -532,7 +532,7 @@ fn is_empty_glob(g: &str) -> bool {
 
 /// `-g G`, `--glob G`, `--include G`, `--exclude G` (`!G`), `--exclude-dir D` (`!D/`), and
 /// the attached `-gG`, in order, de-duplicated; options end at `--`. Err = usage error.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:parseGlobFlags
+// Mirrors: core/agent-tools/argparse.mjs:parseGlobFlags
 pub fn parse_glob_flags(args: &mut Vec<String>) -> Result<Vec<String>, Decline> {
     let mut globs: Vec<String> = Vec::new();
     let add = |globs: &mut Vec<String>, g: String| {
@@ -589,7 +589,7 @@ pub fn parse_glob_flags(args: &mut Vec<String>) -> Result<Vec<String>, Decline> 
 }
 
 /// Bare positionals beyond the first, once every known flag has been consumed.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:extraPositionals
+// Mirrors: core/agent-tools/argparse.mjs:extraPositionals
 pub fn extra_positionals(args: &[String]) -> Vec<String> {
     let scan: &[String] = match index_of(args, "--") {
         None => args,
@@ -600,7 +600,7 @@ pub fn extra_positionals(args: &[String]) -> Vec<String> {
 
 /// grep's -A/-B/-C (and long forms): last of each kind wins, -A/-B win over -C. Returns
 /// (before, after). Err = usage error (or a count above 2^53-1, not ported).
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:parseContextFlags
+// Mirrors: core/agent-tools/argparse.mjs:parseContextFlags
 pub fn parse_context_flags(args: &mut Vec<String>) -> Result<(u64, u64), Decline> {
     let (mut after, mut before, mut both): (Option<u64>, Option<u64>, Option<u64>) = (None, None, None);
     let mut i = 0;
@@ -639,7 +639,7 @@ pub fn parse_context_flags(args: &mut Vec<String>) -> Result<(u64, u64), Decline
 
 /// The positional pattern after flags are consumed; Err = an unsupported option-shaped token
 /// (`unrecognised option`). Ok(None) = no positional at all.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:extractPositional
+// Mirrors: core/agent-tools/argparse.mjs:extractPositional
 pub fn extract_positional(args: &[String]) -> Result<Option<String>, Decline> {
     if let Some(sep) = index_of(args, "--") {
         if args[..sep].iter().any(|t| looks_like_option(t)) {
@@ -654,7 +654,7 @@ pub fn extract_positional(args: &[String]) -> Result<Option<String>, Decline> {
 }
 
 /// Bare positionals after the pattern that name a real path become `--in` scopes.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:absorbPositionalPaths
+// Mirrors: core/agent-tools/argparse.mjs:absorbPositionalPaths
 pub fn absorb_positional_paths(args: &mut Vec<String>, in_paths: &mut Vec<String>, is_path: &dyn Fn(&str) -> bool) {
     let mut seen_pattern = false;
     let mut i = 0;
@@ -684,7 +684,7 @@ const GREP_UNSUPPORTED: [&str; 14] = [
 ];
 
 /// The first grep option ss-grep does not implement, before `--`.
-// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:unsupportedGrepOption
+// Mirrors: core/agent-tools/argparse.mjs:unsupportedGrepOption
 pub fn unsupported_grep_option(args: &[String]) -> Option<&str> {
     let end = index_of(args, "--").unwrap_or(args.len());
     args[..end].iter().map(String::as_str).find(|a| GREP_UNSUPPORTED.contains(a))
@@ -725,7 +725,7 @@ fn dedupe(v: Vec<String>) -> Vec<String> {
 
 /// The start of `cmdGrep` (not the `fromFind` variant), in the JS order. `cwd` is the agent's
 /// shell cwd (process.cwd() of the call) and `file_root` FILE_ROOT; both must be absolute.
-// Mirrors: eval/agent-read-workflows/bin/_ss-helpers.mjs:cmdGrep (argument part)
+// Mirrors: core/agent-tools/run-agent-tool.mjs:cmdGrep (argument part)
 pub fn parse_grep_args(args: &[String], probe: &dyn PathProbe, cwd: &str, file_root: &str) -> Result<GrepArgs, Decline> {
     if !posix_is_absolute(cwd) || !posix_is_absolute(file_root) {
         return Err(Decline("cwd and file root must be absolute"));

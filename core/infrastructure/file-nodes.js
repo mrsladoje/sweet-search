@@ -34,13 +34,18 @@ import path from 'path';
 /** Display name of a file node when it appears as a caller. */
 export const TOP_LEVEL_NAME = '(top-level)';
 
+/** Logical id of a graph entity: 16 hex chars of sha256 over `relPath:type:name`. */
+export function logicalEntityId(relPath, type, name) {
+  return createHash('sha256').update(`${relPath}:${type}:${name}`).digest('hex').slice(0, 16);
+}
+
 /**
  * Graph id of a file node: GraphExtractor.makeId(relPath, 'file', basename).
  * The extractor uses this id as `source_id` for every file-level edge.
  */
 export function fileNodeId(relPath) {
   const p = String(relPath).replace(/\\/g, '/');
-  return createHash('sha256').update(`${p}:file:${path.basename(p)}`).digest('hex').slice(0, 16);
+  return logicalEntityId(p, 'file', path.basename(p));
 }
 
 /** The node row the extractor emits for one file. */

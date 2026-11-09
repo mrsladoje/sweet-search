@@ -1,4 +1,4 @@
-//! cmdGrep (eval/agent-read-workflows/bin/_ss-helpers.mjs) for the lane, with the product
+//! cmdGrep (core/agent-tools/run-agent-tool.mjs) for the lane, with the product
 //! defaults every declined switch leaves in place: Bundle A on (grep retry, weighted
 //! allocation, full hit lines, line classes and spread, the guarantee rule, sat2 weights),
 //! grepOrder off. Output lines are assembled exactly as the JS writes them to stdout.
@@ -195,7 +195,7 @@ const GREP_FILE_MODE_MAX_FILES: usize = 100_000;
 
 /// grep's output modes: -l (files, selector order), -c (path:count, path order), -o (every match
 /// on the first k hit lines, path order). No context, no enrichment.
-// Mirrors: eval/agent-read-workflows/bin/_ss-helpers.mjs:cmdGrep (the -l / -c / -o block)
+// Mirrors: core/agent-tools/run-agent-tool.mjs:cmdGrep (the -l / -c / -o block)
 fn output_mode(call: &Call, a: &adapt::Args, file_root: &str, ctx: &mut Ctx) -> R<String> {
     if missing_scopes(&a.in_paths, file_root) {
         return Err("missing scope");
