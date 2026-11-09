@@ -11,7 +11,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installVirtualProcess, runInVirtualProcess } from './virtual-process.js';
-import { subcommandFor } from './tools.js';
+import { AGENT_TOOLS, subcommandFor } from './tools.js';
 import { resolveChainPosition } from './chain.js';
 
 function writeAll(write, stream, buf) {
@@ -47,7 +47,7 @@ export async function runAgentToolInProcess(subcommand, args, { stderr = 'on-fai
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const sub = subcommandFor(process.argv[2] || '');
   if (!sub) {
-    process.stderr.write(`usage: cli.js <ss-search|ss-grep|ss-find|ss-read|ss-semantic|ss-trace> [args…]\n`);
+    process.stderr.write(`usage: cli.js <${Object.keys(AGENT_TOOLS).join('|')}> [args…]\n`);
     process.exit(2);
   }
   await runAgentToolInProcess(sub, process.argv.slice(3));

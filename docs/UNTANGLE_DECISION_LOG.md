@@ -295,3 +295,19 @@ Each fix lists the main problems it solves. The per-area files hold the rest.
 - `SWEET_SEARCH_READ_VIA_DAEMON` / `_SEMANTIC_VIA_DAEMON` / `_TRACE_VIA_DAEMON`: users listed in `reports/daemon-client.md`.
 - A full test run leaves a maintainer and an encoder that run on this repository itself (working directory = repo root).
   A test starts a real daemon for the repo root. Find it and make it use a temp project.
+
+## Done: wave 3
+
+- **Pure-move splits** (checked with a parser: every top-level declaration has the same source text in exactly one
+  new file; all export names stay at the old path):
+  - `core/search/context-expander.js` 3029 -> 683 lines (keeps `packageForAgent`); 8 modules in `core/search/packaging/`:
+    span-expansion, staleness, header-context, sufficiency, graph-neighbors, related-rows, budget, same-file-map.
+  - `core/ranking/file-kind-ranking.js` 2661 -> 669 lines (keeps `applyResultDemotions`, `applyFileKindRanking`);
+    7 modules in `core/ranking/file-kind/`: result-fields, env-tuning, query-analysis, file-kind-detect, entity-kind,
+    symbol-boosts, chunk-signals.
+- `AGENT_TOOL_SUBCOMMANDS` (tools.js) replaces the copy `CHAIN_BOUNDARY_TOOLS`; the usage line of `agent-tools/cli.js`
+  is built from `AGENT_TOOLS`.
+- **Test hermeticity**: `tests/integration/mcp-server.test.js` started MCP servers on the repository root (it left a
+  maintainer and an encoder that ran on this repository); `tests/init/harness-prompts.test.js` loaded the opencode
+  plugin with the system temp folder as worktree, which ran the real `sweet-search-hook` and left a daemon. Both now
+  use a temp fixture project. A full run leaves no process.

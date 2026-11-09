@@ -38,7 +38,7 @@ import {
 } from '../search/grep-output-shaping.js';
 import { loadNativeAddon } from '../infrastructure/native-resolver.js';
 import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../search/cwd-paths.js';
-import { SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from './tools.js';
+import { AGENT_TOOL_SUBCOMMANDS, SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from './tools.js';
 import { formatRouteMetadata } from '../search/search-format.js';
 import { createAdmissionPolicy } from '../indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../search/index-coverage.js';
@@ -135,12 +135,10 @@ function loadSearchServerModule() {
  *   host.getSearcher()          its warm SweetSearch (no second cold engine in the daemon)
  *   host.assertProjectRoot(r)   throws when this call belongs to another repository's daemon
  */
-// Tools whose output opens with the chained-call boundary (core/agent-tools/chain.js) when
-// they are a later call of one shell command.
-const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find', 'grep', 'read', 'semantic', 'trace']);
-
 export async function runAgentTool(subcommand, rest, host = {}) {
-if (CHAIN_BOUNDARY_TOOLS.has(subcommand)) process.stdout.write(chainBoundary(subcommand, rest, process.env));
+// Every tool's output opens with the chained-call boundary (chain.js) when it is a later
+// call of one shell command.
+if (AGENT_TOOL_SUBCOMMANDS.has(subcommand)) process.stdout.write(chainBoundary(subcommand, rest, process.env));
 // The agent's cwd is the target repo. SWEET_SEARCH_PROJECT_ROOT must point
 // at the repo so DB_PATHS resolves to the repo's own .sweet-search/.
 //

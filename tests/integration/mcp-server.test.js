@@ -7,11 +7,28 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = path.join(__dirname, '../..', 'mcp', 'server.js');
+
+// Every server these tests start serves a temp project with a private runtime
+// dir, never this repository: a server for the repo root would start a real
+// index maintainer and encoder for it.
+const FIXTURE_ROOT = realpathSync(mkdtempSync(path.join(tmpdir(), 'ss-mcp-fixture-')));
+const FIXTURE_RUNTIME = path.join(FIXTURE_ROOT, '.runtime');
+const fixtureEnv = () => ({
+  ...process.env,
+  SWEET_SEARCH_PROJECT_ROOT: FIXTURE_ROOT,
+  SWEET_SEARCH_RUNTIME_DIR: FIXTURE_RUNTIME,
+});
+
+afterAll(() => {
+  rmSync(FIXTURE_ROOT, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // JSON-RPC helpers
@@ -32,8 +49,8 @@ function jsonRpcNotification(method, params = {}) {
 async function mcpSession(messages, { timeoutMs = 10000 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn('node', [SERVER_PATH], {
-      cwd: path.join(__dirname, '..', '..'),
-      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: path.join(__dirname, '..', '..') },
+      cwd: FIXTURE_ROOT,
+      env: fixtureEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -336,8 +353,8 @@ describe('MCP Server stdout hygiene', () => {
     ];
 
     const child = spawn('node', [SERVER_PATH], {
-      cwd: path.join(__dirname, '..', '..'),
-      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: path.join(__dirname, '..', '..') },
+      cwd: FIXTURE_ROOT,
+      env: fixtureEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -390,7 +407,7 @@ describe('MCP server — project root without --project-root', () => {
     const sub = path.join(root, 'src', 'deep');
     mkdirSync(path.join(root, '.sweet-search'), { recursive: true });
     mkdirSync(sub, { recursive: true });
-    const env = { ...process.env, SWEET_SEARCH_RECONCILE_V2: '0' };
+    const env = { ...process.env, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_RUNTIME_DIR: FIXTURE_RUNTIME };
     delete env.SWEET_SEARCH_PROJECT_ROOT;
     try {
       const child = spawn(process.execPath, [SERVER_PATH], { cwd: sub, env, stdio: ['pipe', 'pipe', 'pipe'] });

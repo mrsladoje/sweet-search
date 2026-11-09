@@ -172,7 +172,15 @@ describe('opencode: shipped prompt and tool edits = bench conflict3+todo3eff3k',
 
   it('the plugin gives every bash call of one opencode session its own ss-* session key', async () => {
     const { default: plugin } = await import(OPENCODE_TRIM_PLUGIN_SOURCE);
-    const hooks = await plugin({ worktree: tmpdir() }, {});
+    // Loading the plugin runs `sweet-search-hook` from PATH; this test must not start a real daemon.
+    const savedPrewarm = process.env.SWEET_SEARCH_PREWARM;
+    process.env.SWEET_SEARCH_PREWARM = '0';
+    let hooks;
+    try {
+      hooks = await plugin({ worktree: dir }, {});
+    } finally {
+      if (savedPrewarm === undefined) delete process.env.SWEET_SEARCH_PREWARM; else process.env.SWEET_SEARCH_PREWARM = savedPrewarm;
+    }
     const envOf = async (input) => { const out = { env: {} }; await hooks['shell.env'](input, out); return out.env; };
     const saved = process.env.SWEET_SEARCH_SESSION_ID;
     delete process.env.SWEET_SEARCH_SESSION_ID;
