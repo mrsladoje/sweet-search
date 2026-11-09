@@ -15,7 +15,8 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import { ASTChunker, JAVA_FAMILY, normalizePathSlug } from '../../core/indexing/ast-chunker.js';
-import { pickLiInput, __TEST__ as indexerAnnTest } from '../../core/indexing/indexer-ann.js';
+import { __TEST__ as indexerAnnTest } from '../../core/indexing/indexer-ann.js';
+import { pickLiInput } from '../../core/indexing/chunk-embed-text.js';
 import { applyIndexingChunkPolicy, _internals as indexingPolicyInternals } from '../../core/indexing/indexing-file-policy.js';
 
 const PROJECT_ROOT = process.cwd();

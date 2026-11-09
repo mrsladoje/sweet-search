@@ -11,13 +11,13 @@
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { isOffValue } from '../infrastructure/env-flag.js';
 import { resolveNativeBinary } from '../infrastructure/native-resolver.js';
 import { AGENT_TOOLS, AGENT_TOOLS_PROTOCOL_MARKER } from './tools.js';
 import { CHAIN_PID_ENV } from './chain.js';
 
 function envFalsey(name) {
-  const v = String(process.env[name] || '').trim().toLowerCase();
-  return v === '0' || v === 'false' || v === 'off' || v === 'no';
+  return isOffValue(process.env[name]);
 }
 
 // Read, not run: a binary from before the native tools would take the arguments as a

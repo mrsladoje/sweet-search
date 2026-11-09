@@ -47,6 +47,21 @@ export { nextSegmentSeq, LI_SEGMENT_SIZE };
 
 /** Default quarantine grace before a consumed segment file is unlinked. */
 export const LI_MERGE_GRACE_MS = 60_000;
+
+/** The LateInteractionIndex constructor fields that make a writer serialize like `index`. */
+export function liWriterSettings(index) {
+  return {
+    tokenDim: index.tokenDim,
+    maxTokens: index.maxTokens,
+    useInt8: index.useInt8,
+    quantBits: index.quantBits,
+    modelId: index.modelId,
+    poolFactor: index.poolFactor,
+    whtSeed: index.whtSeed,
+    whtOrdering: index.whtOrdering,
+    matryoshkaDim: index.matryoshkaDim,
+  };
+}
 const QUARANTINE_FILE = 'pending-delete.jsonl';
 
 function readJson(filePath, fallback = null) {
@@ -270,15 +285,7 @@ export async function mergeLiSegments(stateDir, opts = {}) {
   const writer = new LateInteractionIndex({
     indexPath: stubPath,
     loadExisting: false,
-    tokenDim: index.tokenDim,
-    maxTokens: index.maxTokens,
-    useInt8: index.useInt8,
-    quantBits: index.quantBits,
-    modelId: index.modelId,
-    poolFactor: index.poolFactor,
-    whtSeed: index.whtSeed,
-    whtOrdering: index.whtOrdering,
-    matryoshkaDim: index.matryoshkaDim,
+    ...liWriterSettings(index),
   });
   await writer.init();
 

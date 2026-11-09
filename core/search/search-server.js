@@ -17,6 +17,8 @@ import { createSupervisionState, runSupervisionTick } from '../indexing/maintain
 import { projectSocketPath, projectPidFile, tcpPort, resolveProjectRoot } from './server-identity.js';
 import { currentCall } from '../infrastructure/call-context.js';
 import { callRealpathNative } from '../infrastructure/call-fs.js';
+import { daemonRequest } from './daemon-client.js';
+import { isOffValue } from '../infrastructure/env-flag.js';
 import { startGrepLane, stopGrepLane, grepLaneHandledCount, drainGrepLaneReceipts } from './grep-lane.js';
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 import { recordDaemonStart } from './daemon-starts.js';
@@ -1570,7 +1572,7 @@ export async function startServer() {
       recordDaemonStart(laneStateDirOf(), { startedAt: initStartedAt, loadMs: initTimeMs, ok: true, pid: process.pid });
       // Keeps the zero-hit grep fallback's changed-file listing current from file events
       // (changed-files-tracker.js). SWEET_SEARCH_CHANGED_FILES_WATCH=0: list in full per call.
-      if (!['0', 'false', 'off', 'no'].includes(String(process.env.SWEET_SEARCH_CHANGED_FILES_WATCH || '').toLowerCase())) {
+      if (!isOffValue(process.env.SWEET_SEARCH_CHANGED_FILES_WATCH, { trim: false })) {
         const { startChangedFilesTracking } = await import('../indexing/changed-files-tracker.js');
         startChangedFilesTracking(searcher.projectRoot || process.cwd()).catch(() => {});
       }
@@ -1925,23 +1927,23 @@ export async function queryReadSemanticServer({ path: file, query, projectRoot, 
  */
 export async function getServerHealth({ timeoutMs = 1000 } = {}) {
   try {
-    const http = await import('http');
-    return await new Promise((resolve) => {
-      const req = http.request({ socketPath: projectSocketPath(), path: '/health', method: 'GET' }, (res) => {
-        let payload = '';
-        res.on('data', chunk => { payload += chunk; });
-        res.on('end', () => {
-          if (res.statusCode !== 200) { resolve(null); return; }
-          try { resolve(JSON.parse(payload)); }
-          catch { resolve(null); }
-        });
-      });
-      req.on('error', () => resolve(null));
-      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(null); });
-      req.end();
-    });
+    const { status, body } = await daemonRequest(projectSocketPath(), '/health', { timeoutMs });
+    if (status !== 200) return null;
+    try { return JSON.parse(body); }
+    catch { return null; }
   } catch {
     return null;
+  }
+}
+
+/** True when a /stop request reached the daemon: it replied, or dropped the connection as it exited. */
+async function requestStop(socketPath, timeoutMs) {
+  try {
+    await daemonRequest(socketPath, '/stop', { timeoutMs });
+    return true;
+  } catch (err) {
+    const code = (err && err.code) || '';
+    return code === 'ECONNRESET' || code === 'EPIPE' || code === 'ENOENT';
   }
 }
 
@@ -1952,28 +1954,7 @@ export async function getServerHealth({ timeoutMs = 1000 } = {}) {
  * disappears or wait a short cool-down.
  */
 export async function stopServer({ timeoutMs = 5000 } = {}) {
-  try {
-    const http = await import('http');
-    return await new Promise((resolve) => {
-      const req = http.request({
-        socketPath: projectSocketPath(), path: '/stop', method: 'GET',
-      }, (res) => {
-        res.on('data', () => {});
-        res.on('end', () => resolve(true));
-      });
-      // The server may close the socket abruptly as it exits before sending an
-      // end-of-response. Treat that as success too.
-      req.on('error', (err) => {
-        const msg = (err && err.code) || '';
-        if (msg === 'ECONNRESET' || msg === 'EPIPE' || msg === 'ENOENT') resolve(true);
-        else resolve(false);
-      });
-      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
-      req.end();
-    });
-  } catch {
-    return false;
-  }
+  return requestStop(projectSocketPath(), timeoutMs);
 }
 
 /**
@@ -1984,24 +1965,7 @@ export async function stopServer({ timeoutMs = 5000 } = {}) {
  */
 export async function sendStopToSocket(socketPath, { timeoutMs = 5000 } = {}) {
   if (!socketPath) return false;
-  try {
-    const http = await import('http');
-    return await new Promise((resolve) => {
-      const req = http.request({ socketPath, path: '/stop', method: 'GET' }, (res) => {
-        res.on('data', () => {});
-        res.on('end', () => resolve(true));
-      });
-      req.on('error', (err) => {
-        const msg = (err && err.code) || '';
-        if (msg === 'ECONNRESET' || msg === 'EPIPE' || msg === 'ENOENT') resolve(true);
-        else resolve(false);
-      });
-      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
-      req.end();
-    });
-  } catch {
-    return false;
-  }
+  return requestStop(socketPath, timeoutMs);
 }
 
 /**
@@ -2096,28 +2060,16 @@ export async function isServerListening({ timeoutMs = 2000 } = {}) {
 
 export async function isServerRunning() {
   try {
-    const http = await import('http');
-    return new Promise((resolve) => {
-      const req = http.request({ socketPath: projectSocketPath(), path: '/health', method: 'GET' }, (res) => {
-        let payload = '';
-        res.on('data', chunk => { payload += chunk; });
-        res.on('end', () => {
-          if (res.statusCode !== 200) {
-            resolve(false);
-            return;
-          }
-          try {
-            const body = JSON.parse(payload);
-            resolve(body?.status === 'ready' || body?.warm === true);
-          } catch {
-            resolve(false);
-          }
-        });
-      });
-      req.on('error', () => resolve(false));
-      req.setTimeout(500, () => { req.destroy(); resolve(false); });
-      req.end();
-    });
+    let reply;
+    try { reply = await daemonRequest(projectSocketPath(), '/health', { timeoutMs: 500 }); }
+    catch { return false; }
+    if (reply.status !== 200) return false;
+    try {
+      const body = JSON.parse(reply.body);
+      return body?.status === 'ready' || body?.warm === true;
+    } catch {
+      return false;
+    }
   } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
     return false;

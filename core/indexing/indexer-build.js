@@ -20,6 +20,7 @@ import { chunkInputHashes } from '../incremental-indexing/domain/encoder-input.m
 import { SCHEMA_VERSION } from './index-format-versions.js';
 import { IndexSchemaError, vectorSchemaVersion } from '../infrastructure/index-schema.js';
 import { chunkTextFtsWriter, ensureChunkTextFts } from './chunk-text-fts.js';
+import { chunkFilePath, chunkIdOf, embedTextCap, embedTextOf } from './chunk-embed-text.js';
 
 // =============================================================================
 // CHUNK ENRICHMENT — scope chains + imports from code-graph.db
@@ -342,28 +343,6 @@ export function buildInsertItems(chunks, embeddings, modelInfo, annotations = nu
   return items;
 }
 
-function chunkFilePath(chunk) {
-  return firstSafeRelativePath(
-    chunk?.metadata?.relative_path,
-    chunk?.metadata?.path,
-    chunk?.metadata?.file_path,
-    chunk?.file,
-    chunk?.metadata?.file,
-  ) || '';
-}
-
-function firstSafeRelativePath(...candidates) {
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string') continue;
-    const normalized = candidate.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/');
-    if (!normalized || normalized === '.' || normalized.startsWith('/')) continue;
-    if (/^[A-Za-z]:\//.test(normalized)) continue;
-    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) continue;
-    return normalized;
-  }
-  return null;
-}
-
 function annotateChunksForVectorInsert(chunks) {
   const annotations = new Array(chunks.length);
   const byFile = new Map();
@@ -655,12 +634,10 @@ export async function chunkFiles(files) {
 
       let chunkIndex = 0;
       for (const chunk of chunks) {
-        const lineStart = chunk.metadata?.line_start || 0;
-        const lineEnd = chunk.metadata?.line_end || lineStart;
         allChunks.push({
           ...chunk,
           file,
-          id: `${file}:${lineStart}-${lineEnd}:${chunkIndex}`,
+          id: chunkIdOf(file, chunk, chunkIndex),
         });
         chunkIndex++;
       }
@@ -687,20 +664,8 @@ export async function chunkFiles(files) {
     }
   }
 
-  // Embedding-text cap: defaults to 2000 (byte-identical to shipped). The
-  // SWEET_SEARCH_EMBED_TEXT_CAP env var (see ast-chunker.js:getEmbedTextCap)
-  // is honored by the chunk builders themselves; this final re-slice mirrors
-  // the same cap so an ablation can raise the ceiling end-to-end.
-  const _embCap = (() => {
-    const v = parseInt(process.env.SWEET_SEARCH_EMBED_TEXT_CAP || '', 10);
-    return Number.isFinite(v) && v >= 500 ? v : 2000;
-  })();
-  const texts = allChunks.map(chunk => {
-    if (chunk.embedding_text) {
-      return chunk.embedding_text.slice(0, _embCap);
-    }
-    return `${chunkFilePath(chunk)} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
-  });
+  const embCap = embedTextCap();
+  const texts = allChunks.map((chunk) => embedTextOf(chunk, embCap));
 
   return { allChunks, texts };
 }

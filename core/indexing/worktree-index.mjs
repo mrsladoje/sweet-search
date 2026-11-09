@@ -54,7 +54,7 @@
 import { spawnSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import http from 'node:http';
+import { daemonRequest } from '../search/daemon-client.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -619,16 +619,13 @@ function launchFor(launchMaintainer, root, { daemonPid = 0 } = {}) {
 }
 
 /** GET `/stop` on a daemon's socket; resolves true when a daemon answered. */
-function stopDaemonAt(socketPath) {
-  return new Promise((resolve) => {
-    const req = http.request({ socketPath, path: '/stop', method: 'GET', timeout: 1_000 }, (res) => {
-      res.resume();
-      resolve(true);
-    });
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.end();
-  });
+async function stopDaemonAt(socketPath) {
+  try {
+    await daemonRequest(socketPath, '/stop', { timeoutMs: 1_000, resolveOnResponse: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

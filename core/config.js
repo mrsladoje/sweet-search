@@ -24,4 +24,3 @@
 // This repo is "type": "module" — use ESM syntax only.
 // Data directory: '.sweet-search' (default, configurable via SWEET_SEARCH_DATA_DIR)
 export * from './infrastructure/config/index.js';
-export { default } from './infrastructure/config/index.js';

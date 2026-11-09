@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
 import { Reconciler } from './reconciler.mjs';
@@ -25,9 +24,10 @@ import { deriveOverrideEdges } from '../../graph/override-edges.js';
 import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../../vector-store/float-vector-store.js';
 import { createGraphSchema, entityParentIds, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
 import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
-import { syncFileNode } from '../../infrastructure/file-nodes.js';
+import { logicalEntityId, syncFileNode } from '../../infrastructure/file-nodes.js';
 import { createVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
-import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
+import { chunkIdOf, pickLiInput } from '../../indexing/chunk-embed-text.js';
+import { ASTChunker } from '../../indexing/ast-chunker.js';
 import { getEmbeddings, getModelInfo } from '../../embedding/embedding-service.js';
 import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
 import { rollForwardHnswCompaction } from '../infrastructure/hnsw-compaction.mjs';
@@ -214,21 +214,9 @@ function sameEntityRow(row, e) {
     && v(row.parent_class) === v(e.parent_class);
 }
 
-function graphEntityLogicalId(filePath, type, name) {
-  return createHash('sha256').update(`${filePath}:${type}:${name}`).digest('hex').slice(0, 16);
-}
-
 function float32FromBuffer(buffer) {
   const view = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   return new Float32Array(view);
-}
-
-function pickLiInput(chunk) {
-  const lang = chunk?.metadata?.language;
-  if (lang === 'python' || JAVA_FAMILY.has(lang)) {
-    return chunk.li_text || chunk.embedding_text || chunk.text || chunk.content || '';
-  }
-  return chunk.li_greedy_text || chunk.embedding_text || chunk.li_text || chunk.text || chunk.content || '';
 }
 
 async function enrichChunksFromGraph(chunks, stateDir, tickCtx) {
@@ -248,7 +236,7 @@ async function enrichChunksFromGraph(chunks, stateDir, tickCtx) {
       const end = chunk.metadata?.line_end || start;
       const scope = entities.filter((e) => e.start_line <= start && e.end_line >= end).map((e) => e.name);
       const fileEntity = entities.find((e) => e.type === 'file')?.name || path.basename(file);
-      const fileLogicalId = graphEntityLogicalId(file, 'file', fileEntity);
+      const fileLogicalId = logicalEntityId(file, 'file', fileEntity);
       const filePhysicalId = fileEntityStmt.get(file, fileLogicalId)?.id || fileLogicalId;
       const imports = importStmt.all(filePhysicalId).map((r) => r.target_name);
       if (scope.length > 0 || imports.length > 0) ASTChunker.enrichEmbeddingText(chunk, scope, imports);
@@ -1064,7 +1052,7 @@ class ProductionReconcileAdapter {
     // table (file-nodes.js), never in `entities`: an entity row here made
     // maintained graphs differ from fresh builds (PageRank, scope chains,
     // symbol search) and gave file-level edges a per-epoch source id.
-    const fileLogicalId = graphEntityLogicalId(rel, 'file', path.basename(rel));
+    const fileLogicalId = logicalEntityId(rel, 'file', path.basename(rel));
     let upsert = 0;
     let tombstone = 0;
     let edgeResolution = null;
@@ -1222,7 +1210,7 @@ class ProductionReconcileAdapter {
     }
     const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
     this.progress('production:vector-parsed');
-    chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: `${rel}:${chunk.metadata?.line_start || 0}-${chunk.metadata?.line_end || chunk.metadata?.line_start || 0}:${i}` })), this.stateDir, ctx);
+    chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: chunkIdOf(rel, chunk, i) })), this.stateDir, ctx);
     this.progress('production:vector-enriched');
     // LI generated-content parity: decide ONCE, from the file's full chunk set
     // (exactly like full indexing's per-file applyIndexingChunkPolicy), whether

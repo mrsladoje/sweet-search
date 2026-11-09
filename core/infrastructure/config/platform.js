@@ -110,9 +110,6 @@ export const DB_PATHS = {
   // Query vocabulary cache
   vocabulary: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'query-vocabulary.json'),
 
-  // HCGS summaries cache (hierarchical code graph summaries)
-  summaries: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'code-summaries.json'),
-
 };
 
 // =============================================================================

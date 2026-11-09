@@ -15,10 +15,8 @@ import {
   dedupFingerprint,
   chunkInputHashes,
   pickLiInputText,
-  normalizePathSlug,
 } from '../../core/incremental-indexing/domain/encoder-input.mjs';
-import { pickLiInput as coldPickLiInput } from '../../core/indexing/indexer-ann.js';
-import { normalizePathSlug as coldNormalizePathSlug } from '../../core/indexing/ast-chunker.js';
+import { pickLiInput as coldPickLiInput } from '../../core/indexing/chunk-embed-text.js';
 
 function chunk({ language, embedding_text, li_text, li_greedy_text, relative_path, ...meta }) {
   return {
@@ -228,13 +226,5 @@ describe('encoder-input / chunkInputHashes aggregate', () => {
     const after = chunk({ language: 'javascript', relative_path: 's.js', embedding_text: 'x', parent_symbol: 'B' });
     expect(chunkInputHashes(before).embedding_input_hash)
       .toBe(chunkInputHashes(after).embedding_input_hash);
-  });
-});
-
-describe('encoder-input / normalizePathSlug', () => {
-  it('matches the cold chunker slug policy', () => {
-    for (const input of ['repo/Table_366c13.js', 'src/main/Foo.java', 'a/b/c.tsx', './Foo.kt']) {
-      expect(normalizePathSlug(input)).toBe(coldNormalizePathSlug(input));
-    }
   });
 });

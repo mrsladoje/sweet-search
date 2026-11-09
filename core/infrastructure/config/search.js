@@ -1,48 +1,10 @@
 /**
- * Search Configuration — file patterns, routing, performance targets.
+ * Search Configuration — file patterns, performance targets.
  * Split from core/config.js during DDD migration.
  */
 
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
-
-// =============================================================================
-// QUERY ROUTING CONFIGURATION
-// =============================================================================
-
-export const ROUTING_CONFIG = {
-  lexicalPatterns: [
-    /^[A-Z][a-zA-Z0-9]*$/,           // CamelCase (starts with capital)
-    /^[a-z]+[A-Z][a-zA-Z0-9]*$/,     // camelCase (has capital in middle) - Fix #3
-    /^[a-z][a-z0-9_]*_[a-z0-9_]+$/,  // snake_case (must have underscore) - Fix #3
-    /^[A-Z_][A-Z0-9_]*$/,            // SCREAMING_SNAKE
-    /\.(java|js|jsx|ts|tsx|proto)$/, // File extensions
-    /\/|\\/,                          // Paths
-    /"[^"]*"/,                        // Quoted strings
-    /\bclass\s+\w+/,
-    /\bfunction\s+\w+/,
-    /\binterface\s+\w+/,
-    // Fix #5: Code Structural Keywords
-    /\b(method|constructor|field|property|annotation|decorator|enum|abstract|static|final|private|public|protected)\b/i,
-    /^@\w+/,  // Annotations: @Override, @Test
-    /\b(extends|implements)\s+\w+/i,
-  ],
-  semanticPatterns: [
-    /how\s+(does|do|to|can)/i,
-    /what\s+(is|are|does)/i,
-    /why\s+(does|is|are)/i,
-    /where\s+(is|are|does)/i,
-    /find\s+.*\s+(that|which)/i,
-    /\s+(related|similar)\s+to/i,
-    /implement/i,
-    /handle|handling/i,
-    /work(s|ing)?/i,
-    // Fix #4: Imperative Command Detection
-    /^(list|show|find|get|fetch|retrieve|search|locate)\s+(all|any)/i,
-    /^(list|show|display)\s+/i,
-  ],
-  defaultMode: 'hybrid',
-};
 
 // =============================================================================
 // FILE PATTERNS

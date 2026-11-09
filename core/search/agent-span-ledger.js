@@ -11,6 +11,7 @@ import path from 'node:path';
 import { extractQueryEvidence } from './query-sufficiency.js';
 import { CHAIN_PID_ENV, harnessKey, readProcInfo } from '../agent-tools/chain.js';
 import { currentCall } from '../infrastructure/call-context.js';
+import { isOffValue, isOnValue } from '../infrastructure/env-flag.js';
 
 export const SHOWN_SPAN_TRAILER_ENV = 'SWEET_SEARCH_SHOWN_SPAN_TRAILER';
 export const EXACT_REREAD_OMISSION_ENV = 'SWEET_SEARCH_EXACT_REREAD_OMISSION';
@@ -31,11 +32,11 @@ const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_QUERY_CONTEXT_CHARS = 2000;
 
 export function flagEnabled(value) {
-  return ['1', 'true', 'on', 'yes'].includes(String(value ?? '').trim().toLowerCase());
+  return isOnValue(value);
 }
 
 function flagEnabledByDefault(value) {
-  return !['0', 'false', 'off', 'no'].includes(String(value ?? '').trim().toLowerCase());
+  return !isOffValue(value);
 }
 
 export function shownSpanTrailerEnabled(env = process.env) {

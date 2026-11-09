@@ -1,12 +1,9 @@
-#!/usr/bin/env node
 /**
- * Sweet Search v2.3 - Unified Search Pipeline with Auto-Warm Server
- * Server: /tmp/sweet-search.sock (Unix), port 9876 (TCP)
- * See search-server.js for server implementation.
+ * SweetSearch: the search pipeline as a library class (route, retrieve, post-process, package).
  *
- * SOLID refactor: Functions extracted into search-fusion, search-boost,
- * search-format, search-semantic, search-hybrid, search-postprocess,
- * search-server, search-cli modules and wired back via prototype.
+ * The retrieval and post-processing steps live in search-fusion, search-boost, search-format,
+ * search-semantic, search-hybrid and search-postprocess and are attached to the prototype at
+ * the end of this file. The CLI is core/cli.js; the daemon is search-server.js.
  */
 
 import fs from 'fs/promises';
@@ -1218,13 +1215,6 @@ export async function getWarmSearcher(options = {}) {
   _warmInitPromise = _warmSearcher.init();
   await _warmInitPromise;
   return _warmSearcher;
-}
-
-// CLI guard
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const args = process.argv.slice(2);
-  const { runCli } = await import('./search-cli.js');
-  await runCli(args);
 }
 
 export default SweetSearch;

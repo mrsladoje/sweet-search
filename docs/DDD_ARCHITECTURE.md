@@ -1,7 +1,7 @@
 # Sweet Search Domain Architecture
 
 **Status**: Modular monolith with enforced bounded contexts
-**Last updated**: 2026-05-09
+**Last updated**: 2026-11-09
 
 > **HCGS Status (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); references below describe the original design. Flip the flag to re-enable.
 
@@ -9,10 +9,12 @@
 
 ## Overview
 
-Sweet Search organises its core into 9 runtime bounded contexts under `core/` plus a
-build-time `prompt-optimization/` context (10 total). Each context owns a public API
-barrel (`index.js`), all files that implement that capability, and enforced dependency
-direction. Cross-domain imports are checked by `scripts/check-boundaries.js`, ESLint
+Sweet Search organises its core into 11 runtime bounded contexts under `core/` plus a
+build-time `prompt-optimization/` context (12 total, the `DOMAINS` list of
+`scripts/check-boundaries.js`). Nine runtime contexts own a public API barrel
+(`index.js`); `agent-tools/` and `incremental-indexing/` have no barrel and take part in
+the direction rules and exception limits only. Each context owns all files that
+implement its capability and has enforced dependency direction. Cross-domain imports are checked by `scripts/check-boundaries.js`, ESLint
 rules, and CI.
 
 This is a well-enforced **modular monolith**. Domain boundaries are physical (separate
@@ -66,25 +68,30 @@ and the dependency matrix below.
 
 | From | May import | Must NOT import |
 |------|-----------|-----------------|
-| `search/` | all other domains, infrastructure | -- |
-| `ranking/` | embedding, vector-store, infrastructure | search, indexing, query, graph, vocabulary |
-| `indexing/` | embedding, vector-store, graph, vocabulary, ranking (1), infrastructure | search, query |
-| `query/` | infrastructure, training (2) | search, ranking, indexing, embedding, graph, vocabulary, vector-store |
-| `embedding/` | infrastructure | search, ranking, indexing, query, graph, vocabulary, vector-store |
-| `vocabulary/` | embedding, graph, infrastructure | search, ranking, indexing, query, vector-store |
-| `graph/` | query, ranking, infrastructure | search, indexing, vocabulary, vector-store, embedding (3) |
-| `vector-store/` | infrastructure | search, ranking, indexing, query, embedding, graph, vocabulary |
-| `infrastructure/` | external packages only | all domain directories |
+| `search/` | all other domains, infrastructure; `agent-tools/` (7) | prompt-optimization |
+| `ranking/` | embedding, vector-store, infrastructure | search, indexing, query, graph, vocabulary, agent-tools |
+| `indexing/` | embedding, vector-store, graph, vocabulary, ranking (1), incremental-indexing (8), infrastructure | search (6), query, agent-tools, prompt-optimization |
+| `query/` | infrastructure, training (2) | search, ranking, indexing, embedding, graph, vocabulary, vector-store, agent-tools |
+| `embedding/` | infrastructure | search, ranking, indexing, query, graph, vocabulary, vector-store, agent-tools |
+| `vocabulary/` | embedding, graph, infrastructure | search, ranking, indexing, query, vector-store, agent-tools |
+| `graph/` | query, ranking, infrastructure | search, indexing, vocabulary, vector-store, embedding (3), agent-tools |
+| `vector-store/` | infrastructure | search, ranking, indexing, query, embedding, graph, vocabulary, agent-tools |
+| `infrastructure/` | external packages only | all domain directories, including `agent-tools/` |
+| `agent-tools/` (ss-* tool host, top application layer) | search, indexing, infrastructure | prompt-optimization, training |
+| `incremental-indexing/` (incremental build) | indexing (8), infrastructure | search, query, prompt-optimization, agent-tools |
 | `prompt-optimization/` (build-time) | infrastructure; `search/` barrel only (4); `ranking/` barrel only (5) | indexing, query, graph, vocabulary, vector-store, embedding, and any non-barrel internal file of any other domain |
 
 No runtime domain may import from `prompt-optimization/`. The runtime engine has zero
 dependency on this context; only `scripts/init.js` consumes its output artifact.
 
+No domain below `agent-tools/` may import it. The one declared exception is `search/`
+(7): it hosts the tool daemon route.
+
 **Declared exceptions:**
 
 1. **indexing -> ranking**: `indexer-ann.js` builds late-interaction artifacts at index time
    using `late-interaction-index.js` and `late-interaction-model.js`. This is a build-time
-   dependency, not query-time coupling. Max 7 import sites; machine-checked (counts both
+   dependency, not query-time coupling. Max 8 import sites; machine-checked (counts both
    static `from` and dynamic `import()` forms). Current sites:
    - `indexer-ann.js:11` → `late-interaction-index.js` (static, `LateInteractionIndex`)
    - `indexer-phases.js:27` → `late-interaction-model.js` (static, runtime configuration)
@@ -93,10 +100,11 @@ dependency on this context; only `scripts/init.js` consumes its output artifact.
    - `indexer-pool.js:~686` → `late-interaction-model.js` (dynamic, `LateInteractionPool` inline fallback)
    - `indexer-worker.js:~98` → `late-interaction-model.js` (dynamic, worker entrypoint)
    - `model-pool.js:~35` → `late-interaction-model.js` (static, GPU↔CPU lifecycle: unload, pipeline, encodeDocumentsCpu for warmup)
+   - `encoder-host.mjs` → `late-interaction-model.js` (static, query encoder child)
 
    The cap was 2 before 2026-04-15, bumped to 6 when dynamic imports joined the count,
    and to 7 on 2026-04-17 when the `model-pool.js` lifecycle manager landed in
-   `core/indexing/`. All 7 sites are indexing → ranking in the build direction and
+   `core/indexing/`, and to 8 on 2026-10-23 for `encoder-host.mjs`. All 8 sites are indexing → ranking in the build direction and
    are legitimate — the limit tracks reality, not relaxation.
 
 2. **query -> training**: `query-router-catboost.js` loads a trained model artifact from
@@ -117,6 +125,21 @@ dependency on this context; only `scripts/init.js` consumes its output artifact.
    pre-injects gold snippets into agent context using the ranking barrel's
    `cascadedScore`/`applyMMR` helpers to produce a deterministic top-k. Max 2 import
    sites; barrel-only; machine-checked. See `docs/SYSTEM_PROMPT_OPT_PLAN.md` Part 12.
+
+6. **indexing -> search**: `rss-budget.mjs` reads the daemon registry and
+   `worktree-index.mjs` uses the daemon client and server identity. Max 3 import sites;
+   machine-checked. The cap stops this forbidden direction from growing.
+
+7. **search -> agent-tools**: `search-server.js` hosts the ss-* daemon route
+   (`daemon-route.js`, `tools.js`) and `agent-span-ledger.js` reads `chain.js`. Max 3
+   import sites; machine-checked.
+
+8. **indexing <-> incremental-indexing**: the two builds import each other. Max 30 import
+   sites from `indexing/` to `incremental-indexing/` and max 16 in the other direction;
+   machine-checked. The caps stop the cycle from growing.
+
+9. **prompt-optimization -> indexing**: `scripts/preprocess.mjs` chunks with `ASTChunker`.
+   Max 1 import site; machine-checked.
 
 ---
 
@@ -340,9 +363,10 @@ Exceptions are explicit in `check-boundaries.js` with bounded counts:
 
 ```javascript
 const EXCEPTIONS = [
-  { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 2 },
+  { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 8 },
   // query-router-catboost imports trained model from core/training/query-router/ — declared build-time artifact dependency
   { from: 'core/query/', to: 'training/query-router/', label: 'query → training (CatBoost model artifact)', max: 2 },
+  // ... plus exceptions 4-9 above; the script is the source of truth.
 ];
 ```
 
@@ -367,8 +391,9 @@ support layer whose utilities are imported directly for performance and simplici
 
 What is true:
 
-- Physical layout matches the 9-runtime-domain target plus the build-time
-  `prompt-optimization/` context (10 total).
+- Physical layout matches the 11-runtime-domain target (9 with a barrel, plus
+  `agent-tools/` and `incremental-indexing/`) and the build-time
+  `prompt-optimization/` context (12 total).
 - Dependency direction is enforced mechanically and violations block CI.
 - Each domain has a barrel public API that is the normal integration surface.
 - Config is split into domain-scoped sub-files with a backward-compatible facade.

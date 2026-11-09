@@ -12,6 +12,7 @@ import {
   nextSegmentSeq,
   segmentIdentityCache as defaultPositionsCache,
 } from '../infrastructure/li-segment-state.mjs';
+import { liWriterSettings } from '../infrastructure/li-segment-merge.mjs';
 
 // Test seam: drop all remembered segment identities.
 export { resetSegmentIdentityCache } from '../infrastructure/li-segment-state.mjs';
@@ -231,15 +232,7 @@ export async function applyLateInteractionDelta({
   const writer = deferredAppend?.writer ?? new LateInteractionIndex({
     indexPath,
     loadExisting: false,
-    tokenDim: index.tokenDim,
-    maxTokens: index.maxTokens,
-    useInt8: index.useInt8,
-    quantBits: index.quantBits,
-    modelId: index.modelId,
-    poolFactor: index.poolFactor,
-    whtSeed: index.whtSeed,
-    whtOrdering: index.whtOrdering,
-    matryoshkaDim: index.matryoshkaDim,
+    ...liWriterSettings(index),
     // No automatic flush: it would write segment-0000 of the live directory over an
     // existing segment, and appendGrowingSegment publishes only _currentSegment.
     segmentSize: Number.MAX_SAFE_INTEGER,

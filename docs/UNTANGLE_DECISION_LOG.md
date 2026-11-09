@@ -250,3 +250,48 @@ Each fix lists the main problems it solves. The per-area files hold the rest.
 - Env overrides that nothing sets (table in `docs/untangle/reports/incremental-dead.md`).
 - v1 harness constants and migrations in `scripts/install-claude-lean-harness.js`, the CoreML build path in `init.js:2477`,
   the `codex_hooks` migration (users listed in `docs/untangle/reports/installers.md`).
+
+## Done: wave 2 (reports in `docs/untangle/reports/`)
+
+- **No import cycle is left in product code.** Chunkers: `core/indexing/chunking/java-family.js` is the leaf for
+  `JAVA_FAMILY` / `normalizePathSlug`. Vocabulary: the two pass-through wrappers in `vocab-warmer.js` are gone.
+  Search: `sweet-search.js` no longer starts its own CLI (`npm run search` runs `core/cli.js`).
+- **F4 (in place)**: `core/indexing/chunk-embed-text.js` owns `chunkIdOf`, `chunkFilePath`, `embedTextCap`, `embedTextOf`
+  and `pickLiInput` for the full build, the streaming build and the incremental build (3 copies of `pickLiInput`,
+  4 parsers of `SWEET_SEARCH_EMBED_TEXT_CAP`, 3 copies of `chunkFilePath`). `pickLiInputText` (the LI input hash)
+  calls `pickLiInput`, so the hash and the encoder read the same text. `logicalEntityId` replaces
+  `graphEntityLogicalId`. `liWriterSettings` owns the 9 LI writer fields (3 pasted copies).
+- **F3 (part)**: `core/search/daemon-client.js` `daemonRequest` replaces 7 hand-written `/health` / `/stop` requests.
+- **F10 (part)**: `core/infrastructure/env-flag.js` (`isOffValue`, `isOnValue`) replaces 6 copies.
+  `core/infrastructure/agent-tools-protocol.js` owns the protocol marker (was a second literal in `native-resolver.js`).
+- **F11**: removed the config aggregate default export, `ROUTING_CONFIG`, `isMistralAvailable`, `isJinaAvailable`,
+  `getOptimalBatchSize`, `DB_PATHS.summaries`, `saveArtifacts`, `updateArtifacts`, the `deprecatedInt8Db` check.
+- **Boundary check**: `scripts/check-boundaries.js` runs in 0.5 s (was 201 s; its test timed out and never ran).
+  It knows `agent-tools` and `incremental-indexing` (12 domains). An old bug let one exception exempt every forbidden
+  import under its `from` folder; the precise match exposed 4 hidden violations, now declared with a max:
+  `indexing -> search` (3: `rss-budget.mjs:56`, `worktree-index.mjs:57,62`) and `prompt-optimization -> indexing` (1).
+  The mutual dependency `indexing <-> incremental-indexing` is capped at today's 30 / 16 import sites.
+- Tests removed because they asserted comment text: two in `tests/integration/brand-presence.test.js` (the header of
+  `sweet-search.js` had to say "Sweet Search v2.3" and name `/tmp/sweet-search.sock`, a path the daemon no longer uses).
+
+## Parity differences found (not changed: each one changes index content)
+
+- Incremental fallback embedding text (`production-reconciler.mjs`) has no symbol, no space separator and no
+  1500-character cut, and does not apply the embedding-text cap to `embedding_text`. The full build does.
+- `enrichChunksFromGraph` differs between `indexer-build.js` and `production-reconciler.mjs`: epoch filters, file-node id
+  mapping, file-path source, error handling, caching.
+- Graph INSERT sets differ (`graph-extractor.js insertGraph` vs `production-reconciler-helpers.mjs`): `OR REPLACE` vs plain
+  INSERT, extra epoch and logical-id columns, id remap, FTS rebuild vs per-row inserts. Shared columns match.
+- `denseInputHash` hashes `embedding_text || text || content`; the dense encoder reads `embedTextOf(chunk, cap)`.
+- Deny-dir lists differ on purpose (`path-filter.mjs` has `vendor` and `coverage`; `maintainer-watcher.mjs` omits them).
+- Entity "live" filters that skip `stale_since` (list in `reports/graph-predicates.md`).
+
+## More questions for the owner
+
+- `autoSpawnServer` (`search-server.js`) starts the daemon through `cli.js --serve` and is the only start path that
+  does not run `applyPersistedLiModel()` before the server module loads.
+- `core/infrastructure/manifest.json` and `scripts/generate-asset-manifest.js` name `v45_router_d4.js`; the JS CatBoost
+  router imports `v46_router_d4.js`. The `verify-runtime` deep check tests a file that nothing loads.
+- `SWEET_SEARCH_READ_VIA_DAEMON` / `_SEMANTIC_VIA_DAEMON` / `_TRACE_VIA_DAEMON`: users listed in `reports/daemon-client.md`.
+- A full test run leaves a maintainer and an encoder that run on this repository itself (working directory = repo root).
+  A test starts a real daemon for the repo root. Find it and make it use a temp project.

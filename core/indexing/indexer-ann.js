@@ -11,7 +11,7 @@ import { chunkedIn } from '../infrastructure/db-utils.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
 import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebuild, updateArtifactState, ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 import { log, logProgress } from './indexer-utils.js';
-import { JAVA_FAMILY } from './ast-chunker.js';
+import { chunkFilePath, pickLiInput } from './chunk-embed-text.js';
 import { isIndexAcceleratorAvailable } from './model-pool.js';
 import { recordEncode } from '../infrastructure/inference-provenance.js';
 
@@ -27,66 +27,6 @@ function counted(encode, label) {
 }
 
 
-/**
- * v6.2: language-family-conditioned LI input routing.
- *
- * Per-language ablation on GenCodeSearchNet (May 2026, see
- * docs/JS_CHUNK_BLEEDING_ANALYSIS.md) determined that different
- * languages benefit from different metadata richness in the late-
- * interaction MaxSim input. v6.2 picks empirically:
- *
- *   chunk.li_text  (simple, per-lang path policy in chunker):
- *     - python (no path; at 97% ceiling, path duplicated funcname)
- *     - JAVA_FAMILY: java, php, csharp/c#, kotlin, scala
- *       (slug-stripped path; framework signal preserved, hashed-slug
- *       noise removed)
- *
- *   chunk.embedding_text (greedy enriched; Scope + Defines + Uses):
- *     - javascript, typescript, jsx, tsx (closures + imports help)
- *     - ruby, go, c, cpp, c++, rust
- *     - any unknown language as the safe fallback
- *
- * The Java-family set is sourced from ast-chunker.js so that the
- * routing here and the path-policy logic inside the chunker can never
- * drift out of sync.
- */
-export function pickLiInput(chunk) {
-  const lang = chunk?.metadata?.language;
-  if (lang === 'python' || JAVA_FAMILY.has(lang)) {
-    return chunk.li_text || chunk.embedding_text || chunk.text || chunk.content || '';
-  }
-  // For JS family / Ruby / Go / C/C++/Rust / unknown, read from
-  // `li_greedy_text` first. In production (variant=current) this is
-  // identical to embedding_text — same shipped v6.2 behavior. The
-  // preference matters only when a research-only embedding variant
-  // (SWEET_SEARCH_EMBED_TEXT_VARIANT) is active: then li_greedy_text
-  // still carries the shipped form, so an R1 ablation cannot
-  // accidentally mutate the LI input. Older chunks without
-  // li_greedy_text fall through to embedding_text as before.
-  return chunk.li_greedy_text || chunk.embedding_text || chunk.li_text || chunk.text || chunk.content || '';
-}
-
-function chunkFilePath(chunk) {
-  return firstSafeRelativePath(
-    chunk?.metadata?.relative_path,
-    chunk?.metadata?.path,
-    chunk?.metadata?.file_path,
-    chunk?.file,
-    chunk?.metadata?.file,
-  ) || '';
-}
-
-function firstSafeRelativePath(...candidates) {
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string') continue;
-    const normalized = candidate.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/');
-    if (!normalized || normalized === '.' || normalized.startsWith('/')) continue;
-    if (/^[A-Za-z]:\//.test(normalized)) continue;
-    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) continue;
-    return normalized;
-  }
-  return null;
-}
 
 // =============================================================================
 // SQLITE VECTOR STREAMING (Phase B — eliminates O(n*d) in-memory arrays)

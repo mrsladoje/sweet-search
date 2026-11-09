@@ -66,6 +66,7 @@ import {
   insertAliasVectors,
 } from './indexer-build.js';
 import { buildLateInteractionIndex } from './indexer-ann.js';
+import { embedTextCap, embedTextOf } from './chunk-embed-text.js';
 import {
   configureJournalMode,
   checkpointWal,
@@ -92,39 +93,6 @@ const HYDRATE_CHUNK_WINDOW = Number(process.env.SWEET_SEARCH_STREAM_HYDRATE_CHUN
 // per-chunk embedding is batch-independent (identical even when windowed); the
 // single call only matters for GPU FP-reassociation across batch shapes.
 const EMBED_WINDOW = Number(process.env.SWEET_SEARCH_STREAM_EMBED_WINDOW) || 200_000;
-
-// ── small replicas of indexer-build internals (kept private here) ──
-
-/** Mirror of chunkFiles()'s embed-text cap (ast-chunker getEmbedTextCap). */
-function embedTextCap() {
-  const v = parseInt(process.env.SWEET_SEARCH_EMBED_TEXT_CAP || '', 10);
-  return Number.isFinite(v) && v >= 500 ? v : 2000;
-}
-
-/** Mirror of indexer-build.js chunkFilePath (not exported). */
-function chunkFilePath(chunk) {
-  for (const candidate of [
-    chunk?.metadata?.relative_path,
-    chunk?.metadata?.path,
-    chunk?.metadata?.file_path,
-    chunk?.file,
-    chunk?.metadata?.file,
-  ]) {
-    if (typeof candidate !== 'string') continue;
-    const n = candidate.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/');
-    if (!n || n === '.' || n.startsWith('/')) continue;
-    if (/^[A-Za-z]:\//.test(n)) continue;
-    if (n === '..' || n.startsWith('../') || n.includes('/../')) continue;
-    return n;
-  }
-  return '';
-}
-
-/** Mirror of chunkFiles()'s per-chunk embed-text derivation. */
-function embedTextOf(chunk, cap) {
-  if (chunk.embedding_text) return chunk.embedding_text.slice(0, cap);
-  return `${chunkFilePath(chunk)} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
-}
 
 // Dedup-annotation fields written by annotateDedupClusters onto a record's
 // metadata; merged back into the hydrated chunk so downstream sees the same

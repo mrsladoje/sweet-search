@@ -6,7 +6,7 @@
 // It reads files and probes the server socket; it never loads a model or an index.
 
 import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
-import http from 'node:http';
+import { daemonRequest } from './daemon-client.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,22 +59,15 @@ export function isWritableDir(dir, access = accessSync, exists = existsSync) {
   }
 }
 
-function probeServer(socketPath, timeoutMs = 1500) {
-  return new Promise((resolve) => {
-    const req = http.request({ socketPath, path: '/health', method: 'GET' }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => {
-        try { resolve({ state: 'running', health: JSON.parse(body) }); }
-        catch { resolve({ state: 'running', health: null }); }
-      });
-    });
-    req.on('error', (err) => {
-      resolve({ state: ['ENOENT', 'ECONNREFUSED'].includes(err?.code) ? 'not-running' : 'unknown', health: null });
-    });
-    req.setTimeout(timeoutMs, () => { req.destroy(); resolve({ state: 'busy', health: null }); });
-    req.end();
-  });
+async function probeServer(socketPath, timeoutMs = 1500) {
+  try {
+    const { body } = await daemonRequest(socketPath, '/health', { timeoutMs });
+    try { return { state: 'running', health: JSON.parse(body) }; }
+    catch { return { state: 'running', health: null }; }
+  } catch (err) {
+    if (err?.timedOut) return { state: 'busy', health: null };
+    return { state: ['ENOENT', 'ECONNREFUSED'].includes(err?.code) ? 'not-running' : 'unknown', health: null };
+  }
 }
 
 function readMerkleStats(file) {

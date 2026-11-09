@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ASTChunker } from '../../core/indexing/ast-chunker.js';
-import { pickLiInput } from '../../core/indexing/indexer-ann.js';
+import { pickLiInput } from '../../core/indexing/chunk-embed-text.js';
 
 const ROOT = '/Users/admin/Projects/sweet-search-private';
 const ENV_KEY = 'SWEET_SEARCH_EMBED_TEXT_VARIANT';

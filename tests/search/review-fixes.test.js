@@ -222,7 +222,6 @@ describe('vocab-warmer enriched text format (H2/S1)', () => {
     expect(mod.warmSemantic).toBeDefined();
     expect(mod.warmHybrid).toBeDefined();
     expect(mod.warmFromCache).toBeDefined();
-    expect(mod.runFullWarmup).toBeDefined();
   });
 });
 
@@ -234,7 +233,7 @@ describe('runFullWarmup provider restore on dryRun (C1)', () => {
   it('restores EMBEDDING_CONFIG.provider after dryRun with localWarmup', async () => {
     // Import the config to observe provider state
     const { EMBEDDING_CONFIG } = await import('../../core/config.js');
-    const { runFullWarmup } = await import('../../core/vocabulary/vocab-warmer.js');
+    const { runFullWarmup } = await import('../../core/vocabulary/vocab-warmup-orchestrator.js');
 
     const originalProvider = EMBEDDING_CONFIG.provider;
 
@@ -254,7 +253,7 @@ describe('runFullWarmup provider restore on dryRun (C1)', () => {
 
   it('restores EMBEDDING_CONFIG.provider after dryRun with explicit provider', async () => {
     const { EMBEDDING_CONFIG } = await import('../../core/config.js');
-    const { runFullWarmup } = await import('../../core/vocabulary/vocab-warmer.js');
+    const { runFullWarmup } = await import('../../core/vocabulary/vocab-warmup-orchestrator.js');
 
     const originalProvider = EMBEDDING_CONFIG.provider;
 
@@ -270,7 +269,7 @@ describe('runFullWarmup provider restore on dryRun (C1)', () => {
   });
 
   it('accepts localWarmup and provider options without error', async () => {
-    const { runFullWarmup } = await import('../../core/vocabulary/vocab-warmer.js');
+    const { runFullWarmup } = await import('../../core/vocabulary/vocab-warmup-orchestrator.js');
     const result = await runFullWarmup({
       depth: 'light',
       top: 10,

@@ -13,6 +13,7 @@
 
 import fs from 'node:fs';
 import { loadNativeAddon } from '../infrastructure/native-resolver.js';
+import { isOffValue } from '../infrastructure/env-flag.js';
 
 let lane = null; // { addon, socketPath, projectRoot, stateDir }
 let sqliteBridge = null;
@@ -43,7 +44,7 @@ async function registerSqlite(addonPath) {
 
 /** Start the lane; false (and the JS route answers every call) when it cannot run here. */
 export async function startGrepLane({ socketPath, projectRoot, stateDir }) {
-  if (['0', 'false', 'off', 'no'].includes(String(process.env.SWEET_SEARCH_GREP_LANE ?? '').trim().toLowerCase())) return false;
+  if (isOffValue(process.env.SWEET_SEARCH_GREP_LANE)) return false;
   // The lane sorts paths by the root collation of English for ASCII (ss-grep-core collate.rs).
   // Other locales may reorder ASCII (Danish "aa", Turkish i, Czech "ch"): the JS answers there.
   if (!/^en(-[A-Za-z]{2,4})*$/.test(new Intl.Collator().resolvedOptions().locale)) return false;

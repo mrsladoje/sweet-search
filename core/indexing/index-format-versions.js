@@ -19,7 +19,7 @@
  * embedding/LI routing in `ast-chunker.js`, the enrichment passes in
  * `indexer-build.js` and
  * `incremental-indexing/application/production-reconciler.mjs`, or
- * `pickLiInput` in `indexer-ann.js` / `production-reconciler.mjs`.
+ * `pickLiInput` in `chunk-embed-text.js`.
  *
  * Bumping either forces one full rebuild per existing index.
  */

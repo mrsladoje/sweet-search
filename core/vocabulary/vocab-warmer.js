@@ -10,7 +10,7 @@
  *   warmFromCache  - Light tier: load cached artifacts, no embedding gen
  *
  * The heavy-tier orchestrator (runFullWarmup, saveBinaryArtifact) lives in
- * ./vocab-warmup-orchestrator.js and is re-exported here for backward compat.
+ * ./vocab-warmup-orchestrator.js.
  *
  * All functions return timing/stats objects. Failures never crash the caller.
  */
@@ -33,21 +33,6 @@ import { DATA_DIR, ARTIFACT_PATHS } from './vocab-constants.js';
 export { DATA_DIR, ARTIFACT_PATHS };
 
 const DEFAULT_TIME_BUDGET_MS = 2000;
-
-// ---------------------------------------------------------------------------
-// Backward-compatible orchestrator wrappers.
-// Dynamic import avoids a static warmup-orchestrator <-> warmer cycle.
-// ---------------------------------------------------------------------------
-
-export async function runFullWarmup(options = {}) {
-  const mod = await import('./vocab-warmup-orchestrator.js');
-  return mod.runFullWarmup(options);
-}
-
-export async function saveBinaryArtifact(binPath, metaPath, embeddingMap) {
-  const mod = await import('./vocab-warmup-orchestrator.js');
-  return mod.saveBinaryArtifact(binPath, metaPath, embeddingMap);
-}
 
 // ---------------------------------------------------------------------------
 // 4a. Lexical Warmup
@@ -536,5 +521,4 @@ export default {
   warmSemantic,
   warmHybrid,
   warmFromCache,
-  runFullWarmup,
 };

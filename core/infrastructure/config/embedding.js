@@ -285,30 +285,12 @@ export function isVoyageAvailable() {
   return EMBEDDING_PROVIDERS.voyage.enabled;
 }
 
-export function isMistralAvailable() {
-  return EMBEDDING_PROVIDERS.mistral.enabled;
-}
-
-export function isJinaAvailable() {
-  return EMBEDDING_PROVIDERS.jina.enabled;
-}
-
 export function getVoyageApiKey() {
   return EMBEDDING_PROVIDERS.voyage.apiKey;
 }
 
 export function getJinaApiKey() {
   return EMBEDDING_PROVIDERS.jina.apiKey;
-}
-
-export function getOptimalBatchSize() {
-  const heapUsed = process.memoryUsage().heapUsed;
-  const heapTotal = process.memoryUsage().heapTotal;
-  const usageRatio = heapUsed / heapTotal;
-
-  if (usageRatio > 0.8) return Math.floor(EMBEDDING_CONFIG.batchSize / 4);
-  if (usageRatio > 0.6) return Math.floor(EMBEDDING_CONFIG.batchSize / 2);
-  return EMBEDDING_CONFIG.batchSize;
 }
 
 // Active configuration (silent by default, set SEARCH_DEBUG=1 to enable)

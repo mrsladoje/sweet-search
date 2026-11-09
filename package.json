@@ -113,7 +113,7 @@
     "build:bg-priority": "cd native/bg-priority && npx napi build --platform --release && echo 'bg-priority native addon build OK'",
     "build:mem-pressure": "cd native/mem-pressure && npx napi build --platform --release && echo 'mem-pressure native addon build OK'",
     "build:cli": "cd crates/sweet-search-cli && cargo build --release && echo 'CLI build OK'",
-    "search": "node core/search/sweet-search.js",
+    "search": "node core/cli.js",
     "index": "node core/indexing/index-codebase-v21.js",
     "index:full": "node core/indexing/index-codebase-v21.js --full",
     "hcgs": "node core/graph/hcgs-generator.js generate",

@@ -14,6 +14,8 @@ import fs from 'fs/promises';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { DocumentChunker } from './document-chunker.js';
+import { JAVA_FAMILY, normalizePathSlug } from './chunking/java-family.js';
+import { embedTextCap } from './chunk-embed-text.js';
 import { chunkViewTemplate } from './chunking/view-chunker.js';
 import { viewTemplateKind } from '../infrastructure/view-templates.js';
 
@@ -36,43 +38,8 @@ const YAML_BLOCK_SCALAR_RE = /:\s+[|>][-+1-9]*\s*(?:#.*)?$/;
 //
 // Production default: 2000, byte-identical to shipped v6.2.
 //
-// Set SWEET_SEARCH_EMBED_TEXT_CAP=N to raise/lower the slice ceiling on
-// `embedding_text`, `li_text`, `li_greedy_text`, and the enriched form.
-// The May-2026 chunk-overflow audit found 80.5% of overflowing chunks are
-// header-pushed (raw content ≤2000, headers push the embedding text over),
-// motivating an A/B vs slightly-larger caps. See eval/results/
-// chunk-overflow-audit.md for the audit and eval/run_overflow_ablation.sh
-// for the wiring. Does NOT alter the chunker max size — that lives behind
-// SWEET_SEARCH_CHUNK_HEADER_OVERHEAD in tree-sitter-provider.js.
-function getEmbedTextCap() {
-  const v = parseInt(process.env.SWEET_SEARCH_EMBED_TEXT_CAP || '', 10);
-  return Number.isFinite(v) && v >= 500 ? v : MAX_CHUNK_SIZE;
-}
 
-/**
- * Strip a trailing `_<hex>` slug from a path's final basename, before
- * its extension. Used by the Java family (Java/PHP/C#/Kotlin/Scala)
- * per the v6.2 language-conditioned policy.
- *
- *   javascript/Semantic-UI/Table_366c13.js -> javascript/Semantic-UI/Table.js
- *   src/Button.tsx (no slug) -> src/Button.tsx (unchanged)
- *
- * Exported for reuse in chunk-builder.js (document chunks) and tests.
- */
-export function normalizePathSlug(relativePath) {
-  if (!relativePath) return relativePath;
-  return relativePath.replace(/_[0-9a-f]{6,}(\.[a-zA-Z0-9]+)$/, '$1');
-}
-
-// Languages that share Java's slug-stripped-path li_text policy.
-// (At LI input routing time these will all be sent to chunk.li_text;
-// see LI_TEXT_LANGUAGES in core/indexing/indexer-ann.js, which imports
-// this set so the policy stays consistent in one place.)
-export const JAVA_FAMILY = new Set([
-  'java', 'php',
-  'csharp', 'c#',
-  'kotlin', 'scala',
-]);
+export { JAVA_FAMILY, normalizePathSlug };
 
 // =============================================================================
 // Embedding-text variant switch — RESEARCH / ABLATION INFRASTRUCTURE
@@ -252,7 +219,7 @@ function buildEmbeddingText({ variant: variantOverride, content, relativePath, l
   }
 
   parts.push(trimmed);
-  return parts.join('\n').slice(0, getEmbedTextCap());
+  return parts.join('\n').slice(0, embedTextCap());
 }
 
 /**
@@ -291,7 +258,7 @@ function pathLineForLi(relativePath, language) {
  * the full enriched embedding_text — is the empirical pareto front.
  *
  * The actual routing of `li_text` vs `embedding_text` lives in
- * core/indexing/indexer-ann.js (`pickLiInput`).
+ * core/indexing/chunk-embed-text.js (`pickLiInput`).
  */
 function buildLiText({ content, relativePath, language, chunkType, symbol, hierarchyInfo }) {
   const trimmed = content.trim();
@@ -319,7 +286,7 @@ function buildLiText({ content, relativePath, language, chunkType, symbol, hiera
   }
   lines.push(trimmed);
 
-  return lines.join('\n').slice(0, getEmbedTextCap());
+  return lines.join('\n').slice(0, embedTextCap());
 }
 
 /**
@@ -1128,7 +1095,7 @@ export class ASTChunker {
     }
 
     parts.push(chunk.content);
-    const enriched = parts.join('\n').slice(0, getEmbedTextCap());
+    const enriched = parts.join('\n').slice(0, embedTextCap());
 
     // Always update the byte-stable LI passthrough form.
     chunk.li_greedy_text = enriched;

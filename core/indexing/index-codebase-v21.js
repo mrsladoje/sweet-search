@@ -468,7 +468,7 @@ Output:
     // PHASE 7: Post-Indexing Vocabulary Warmup (non-fatal)
     // =========================================================================
     try {
-      const { runFullWarmup } = await import('../vocabulary/vocab-warmer.js');
+      const { runFullWarmup } = await import('../vocabulary/vocab-warmup-orchestrator.js');
       await runFullWarmup({ depth: 'medium', top: 1000 });
       if (!quiet) log('Vocabulary warmup complete', 'green');
     } catch (err) {

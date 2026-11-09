@@ -32,18 +32,8 @@ describe('Brand presence verification', () => {
     expect(server).toContain("name: 'sweet-search'");
   });
 
-  it('core module header says Sweet Search', () => {
-    const core = readFileSync(join(ROOT, 'core', 'search', 'sweet-search.js'), 'utf8');
-    expect(core).toContain('Sweet Search v2.3');
-  });
-
   it('data directory default is .sweet-search', () => {
     const config = readFileSync(join(ROOT, 'core', 'config.js'), 'utf8');
     expect(config).toContain("'.sweet-search'");
-  });
-
-  it('socket path is /tmp/sweet-search.sock', () => {
-    const core = readFileSync(join(ROOT, 'core', 'search', 'sweet-search.js'), 'utf8');
-    expect(core).toContain('/tmp/sweet-search.sock');
   });
 });

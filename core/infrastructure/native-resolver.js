@@ -24,11 +24,11 @@ import { spawnSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+import { AGENT_TOOLS_PROTOCOL_MARKER } from './agent-tools-protocol.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..', '..');
 const require = createRequire(import.meta.url);
-const AGENT_TOOLS_CAPABILITY_MARKER = 'sweet-search-agent-tools-protocol=2';  // tools.js AGENT_TOOLS_PROTOCOL_MARKER
 
 // Supported targets — only these get native resolution.
 const SUPPORTED_TARGETS = new Set([
@@ -224,7 +224,7 @@ export function nativeBinarySupportsAgentTools(binaryPath, options = {}) {
       maxBuffer: 64 * 1024,
     });
     const output = `${result.stdout || ''}\n${result.stderr || ''}`;
-    return result.status === 0 && !result.error && output.includes(AGENT_TOOLS_CAPABILITY_MARKER);
+    return result.status === 0 && !result.error && output.includes(AGENT_TOOLS_PROTOCOL_MARKER);
   } catch {
     return false;
   }

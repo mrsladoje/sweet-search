@@ -5,7 +5,6 @@
 
 // Configuration
 export * from './config/index.js';
-export { default as config } from './config/index.js';
 
 // Database utilities
 export {

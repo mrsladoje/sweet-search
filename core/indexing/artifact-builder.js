@@ -450,48 +450,8 @@ async function buildHnswIndexFromDb(db, options = {}) {
 }
 
 // =============================================================================
-// INT8 VECTORS (DEPRECATED - int8 rows live in the binary HNSW index file)
-// =============================================================================
-
-/**
- * @deprecated Use BinaryHNSWIndex.getInt8Vector instead.
- * Int8 vectors are stored in the binary HNSW index file.
- * This provides O(1) lookup during stage-2 rescoring vs O(log n) + I/O for SQLite.
- *
- * The SQLite functions below are kept for backward compatibility but are NOT used
- * by the search pipeline. sweet-search.js calls binaryHnswIndex.getInt8Vector()
- * which reads from the in-memory Map populated from .int8.json.
- */
-
-// NOTE: These SQLite functions have been removed as they were never used by search.
-// Int8 vectors are stored in and loaded from .int8.json sidecar by BinaryHNSWIndex.
-// See binary-hnsw-index.js lines 471-479 (save) and 524-530 (load).
-//
-// If you need to migrate from the old codebase-int8.db, the vectors are already
-// duplicated in the .int8.json file created during artifact building.
-
-// =============================================================================
 // ARTIFACT MANAGEMENT
 // =============================================================================
-
-/**
- * Save all artifacts (Binary HNSW with Int8 sidecar)
- *
- * Int8 vectors are saved as .int8.json sidecar by BinaryHNSWIndex.save().
- * No separate SQLite database is created.
- *
- * @param {BinaryHNSWIndex} hnswIndex - Built HNSW index (includes int8 vectors)
- * @returns {Promise<{hnsw: object}>}
- */
-export async function saveArtifacts(hnswIndex) {
-  // Save HNSW index (includes .int8.json sidecar)
-  await hnswIndex.save();
-  const hnswStats = hnswIndex.getStats();
-
-  return {
-    hnsw: hnswStats,
-  };
-}
 
 /**
  * Build all artifacts from embeddings stored in codebase.db
@@ -648,97 +608,6 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
 }
 
 /**
- * Incrementally update artifacts for changed files
- *
- * Int8 vectors are stored with each node and saved in the index file.
- *
- * @param {Array<{id: string, embedding: number[], metadata?: object}>} newItems - New/changed items
- * @param {string[]} removedIds - IDs to remove
- * @param {object} options - Update options
- */
-export async function updateArtifacts(newItems, removedIds = [], options = {}) {
-  const {
-    hnswIndexPath = DB_PATHS.binaryHnswIndex,
-    floatDimension = EMBEDDING_CONFIG.hnswDimension,
-  } = options;
-
-  // Load existing HNSW index (includes the int8 rows)
-  const hnswIndex = new BinaryHNSWIndex({ indexPath: hnswIndexPath });
-
-  try {
-    await hnswIndex.load(hnswIndexPath);
-  } catch (err) {
-    // Index doesn't exist, build from scratch
-    console.log('No existing HNSW index, building fresh...');
-    return buildFromCodebaseDb(DB_PATHS.codebase, options);
-  }
-
-  // Remove old entries
-  if (removedIds.length > 0) {
-    console.log(`Removing ${removedIds.length} entries...`);
-    for (const id of removedIds) {
-      if (hnswIndex.idToIndex.has(id)) {
-        // Note: BinaryHNSWIndex doesn't have a remove method yet
-        // For now, we'll rebuild if there are removals
-        console.log('Rebuilding index due to removals...');
-        return buildFromCodebaseDb(DB_PATHS.codebase, options);
-      }
-    }
-  }
-
-  // Add new entries
-  if (newItems.length > 0) {
-    console.log(`Adding ${newItems.length} new entries...`);
-
-    for (const item of newItems) {
-      const truncated = truncateForHNSW(item.embedding, floatDimension);
-
-      // Asymmetric encode if calibrated, else plain sign-bit
-      const binary = floatToBinary(truncated);
-      const int8 = quantizeToInt8(truncated);
-
-      // Add to HNSW index (int8 row stored with the node)
-      await hnswIndex.add(item.id, binary, item.metadata || {}, int8, item.embedding);
-    }
-
-    // Save updated HNSW (one index file)
-    await hnswIndex.save(hnswIndexPath);
-  }
-
-  // Rebuild float vector store from codebase.db (full rebuild, covers all
-  // entries) — only when Stage 2.5 is on.
-  const floatStorePath = getFloatStorePath(hnswIndexPath);
-  if (float512StoreEnabled()) try {
-    const Database = (await import('better-sqlite3')).default;
-    const { applyReadPragmas } = await import('../infrastructure/db-utils.js');
-    const db = new Database(DB_PATHS.codebase, { readonly: true });
-    applyReadPragmas(db);
-    try {
-      await buildAndSaveFloatStoreFromDb(db, floatDimension, floatStorePath);
-    } finally {
-      db.close();
-    }
-  } catch (err) {
-    console.warn(`Float vector store rebuild failed (non-fatal): ${err.message}`);
-    // Remove stale float store so SweetSearch doesn't load outdated vectors.
-    // Stage 2.5 will cleanly fall back to SQLite on next startup.
-    try {
-      const { unlink } = await import('fs/promises');
-      const idsPath = floatStorePath.replace(/\.bin$/, '.ids.json');
-      await unlink(floatStorePath).catch(() => {});
-      await unlink(idsPath).catch(() => {});
-      console.warn('Removed stale float vector store files.');
-    } catch { /* best effort */ }
-  }
-
-  return {
-    hnsw: hnswIndex.getStats(),
-    added: newItems.length,
-    removed: removedIds.length,
-  };
-}
-
-/**
  * Get artifact statistics
  *
  * Int8 vectors are now stored in .int8.json sidecar (canonical source),
@@ -768,15 +637,6 @@ export async function getArtifactStats() {
   } else {
     stats.binaryHnsw = { exists: false };
     stats.int8Sidecar = { exists: false };
-  }
-
-  // Check for deprecated SQLite int8 database (warn if still present)
-  if (existsSync(DB_PATHS.int8Vectors)) {
-    stats.deprecatedInt8Db = {
-      exists: true,
-      path: DB_PATHS.int8Vectors,
-      note: 'DEPRECATED: This file is no longer used. Delete it to save disk space.',
-    };
   }
 
   return stats;
@@ -978,13 +838,8 @@ export default {
   // HNSW building
   buildHnswIndex,
 
-  // NOTE: Int8 vectors are stored in .int8.json sidecar file (see file header comment)
-  // No separate save/get functions needed - they're bundled with HNSW index
-
   // Artifact management
-  saveArtifacts,
   buildFromCodebaseDb,
-  updateArtifacts,
   getArtifactStats,
   verifyArtifacts,
 

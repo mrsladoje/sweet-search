@@ -12,16 +12,13 @@ import { spawn as nodeSpawn } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isOffValue } from '../infrastructure/env-flag.js';
 
 export const KEEPALIVE_POLL_S = 15;
 const WSL_EXE_FALLBACK = '/mnt/c/Windows/System32/wsl.exe';
 
 export function isWsl(env = process.env, release = os.release()) {
   return Boolean(env.WSL_DISTRO_NAME) || /microsoft/i.test(release);
-}
-
-function isOff(value) {
-  return ['0', 'false', 'off', 'no'].includes(String(value ?? '').toLowerCase());
 }
 
 /** `wsl.exe` on PATH (interop appends the Windows PATH), else its usual location, else null. */
@@ -38,7 +35,7 @@ export function findWslExe(env = process.env, access = accessSync) {
 
 /** The command that holds a session open while `pid` lives, or null when it does not apply. */
 export function keepAliveCommand({ pid, env = process.env, release = os.release(), access = accessSync } = {}) {
-  if (!isWsl(env, release) || isOff(env.SWEET_SEARCH_WSL_KEEPALIVE)) return null;
+  if (!isWsl(env, release) || isOffValue(env.SWEET_SEARCH_WSL_KEEPALIVE, { trim: false })) return null;
   const distro = env.WSL_DISTRO_NAME;
   if (!distro || !Number.isInteger(pid) || pid <= 0) return null;
   const exe = findWslExe(env, access);

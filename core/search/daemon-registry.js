@@ -29,7 +29,7 @@
 
 import fs from 'node:fs/promises';
 import { readFileSync, lstatSync, mkdirSync, statSync } from 'node:fs';
-import http from 'node:http';
+import { daemonRequest } from './daemon-client.js';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -223,20 +223,13 @@ export async function removeSelf(pid, env = process.env) {
  * otherwise (unreachable, non-200, timeout). Mirrors getServerHealth's probe
  * but parameterised by socket so we can check peers, not just our own.
  */
-export function socketHealthy(socketPath, timeoutMs = 500) {
-  return new Promise((resolve) => {
-    try {
-      const req = http.request({ socketPath, path: '/health', method: 'GET' }, (res) => {
-        res.on('data', () => {});
-        res.on('end', () => resolve(res.statusCode === 200));
-      });
-      req.on('error', () => resolve(false));
-      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
-      req.end();
-    } catch {
-      resolve(false);
-    }
-  });
+export async function socketHealthy(socketPath, timeoutMs = 500) {
+  try {
+    const { status } = await daemonRequest(socketPath, '/health', { timeoutMs });
+    return status === 200;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -31,9 +31,10 @@ import {
 } from '../../core/incremental-indexing/domain/chunk-identity.mjs';
 import {
   chunkInputHashes, denseInputHash, liInputHash, pickLiInputText,
-  normalizePathSlug, dedupFingerprint, metadataFingerprint,
+  dedupFingerprint, metadataFingerprint,
   DEDUP_INPUT_POLICY_VERSION, EMBED_TEXT_POLICY_VERSION, LI_INPUT_POLICY_VERSION,
 } from '../../core/incremental-indexing/domain/encoder-input.mjs';
+import { normalizePathSlug } from '../../core/indexing/chunking/java-family.js';
 import { DirtySet, canonicaliseInsideRoot } from '../../core/incremental-indexing/infrastructure/dirty-set.mjs';
 import {
   fts5SegmentCount, fts5Merge, fts5StructureDescribe, __testing as fts5Testing,

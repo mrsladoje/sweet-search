@@ -33,6 +33,7 @@
  */
 
 import { contentHashSync, stableStringify, metadataFingerprint } from '../infrastructure/hashing.mjs';
+import { pickLiInput } from '../../indexing/chunk-embed-text.js';
 
 /**
  * Policy fingerprint constants. Bump these when the encoder-text recipe
@@ -50,53 +51,14 @@ export const LI_INPUT_POLICY_VERSION = 1;
 export const DEDUP_INPUT_POLICY_VERSION = 1;
 
 /**
- * Language taxonomy used by `pickLiInput`. The reconcile path mirrors the
- * production helper at `core/indexing/indexer-ann.js`; we keep a local
- * mirror so the incremental domain logic remains dependency-light. Any
- * change to the production taxonomy must update this table AND bump
- * LI_INPUT_POLICY_VERSION.
- */
-const LI_TEXT_LANGS = new Set(['python', 'java', 'php', 'csharp', 'c#', 'kotlin', 'scala']);
-// Everything else (JS/TS/JSX/TSX, Ruby, Go, C/C++/Rust, unknown) uses
-// li_greedy_text → embedding_text → li_text.
-
-/**
- * Normalise a path for the LI Java-family slug. This mirrors
- * `core/indexing/ast-chunker.js::normalizePathSlug`: strip only the
- * trailing generated `_<hex>` suffix before the extension.
+ * The LI input text of a chunk: the text the late-interaction encoder reads
+ * (`pickLiInput`), so the hash changes exactly when the encoder input does.
  *
- * @param {string} relativePath
- */
-export function normalizePathSlug(relativePath) {
-  if (!relativePath) return relativePath;
-  return String(relativePath).replace(/_[0-9a-f]{6,}(\.[a-zA-Z0-9]+)$/, '$1');
-}
-
-/**
- * Return the LI input text for a chunk per the language taxonomy. Mirrors
- * `pickLiInput()` in `core/indexing/indexer-ann.js`.
- *
- * @param {object} chunk     Enriched chunk with `metadata.language`,
- *                            `metadata.relative_path`, `li_text`,
- *                            `li_greedy_text`, `embedding_text`.
+ * @param {object} chunk
  * @returns {string}
  */
 export function pickLiInputText(chunk) {
-  if (!chunk) return '';
-  const meta = chunk.metadata || {};
-  const language = meta.language;
-  const liText = chunk.li_text || '';
-  const liGreedy = chunk.li_greedy_text || '';
-  const embedText = chunk.embedding_text || chunk.text || chunk.content || '';
-
-  if (LI_TEXT_LANGS.has(language)) {
-    // Python omits the path line and Java-family slug-stripping happens
-    // when the chunker builds `li_text`; the hasher must not reconstruct
-    // a second, different policy here.
-    return liText || embedText;
-  }
-  // Default route: li_greedy_text → embedding_text → li_text.
-  return liGreedy || embedText || liText;
+  return chunk ? pickLiInput(chunk) : '';
 }
 
 /**

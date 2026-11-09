@@ -12,15 +12,19 @@
  * CI: runs on every push/PR via .github/workflows/ci.yml
  */
 
-import { execSync } from 'child_process';
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
 
 const DOMAINS = [
   'embedding', 'graph', 'indexing', 'infrastructure',
   'query', 'ranking', 'search', 'vector-store', 'vocabulary',
-  'prompt-optimization',
+  'prompt-optimization', 'agent-tools', 'incremental-indexing',
 ];
+
+// These two folders have no index.js barrel. They take part in the direction
+// rules and the exception limits, not in the barrel-only checks.
+const NO_BARREL_DOMAINS = ['agent-tools', 'incremental-indexing'];
+const BARREL_DOMAINS = DOMAINS.filter(d => !NO_BARREL_DOMAINS.includes(d));
 
 // ── Section 1: Forbidden dependency direction ────────────────────────────────
 //
@@ -33,20 +37,27 @@ const DOMAINS = [
 // search barrel only via exception 4; ranking barrel only via exception 5).
 
 const FORBIDDEN = [
-  { from: 'core/infrastructure/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'vector-store/', 'query/', 'prompt-optimization/'], label: 'infrastructure → domain' },
-  { from: 'core/vector-store/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'query/', 'prompt-optimization/'], label: 'vector-store → domain' },
-  { from: 'core/embedding/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'prompt-optimization/'], label: 'embedding → higher' },
-  { from: 'core/query/', to: ['search/', 'ranking/', 'indexing/', 'embedding/', 'graph/', 'vocabulary/', 'vector-store/', 'prompt-optimization/'], label: 'query → forbidden' },
-  { from: 'core/ranking/', to: ['search/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'embedding/', 'prompt-optimization/'], label: 'ranking → higher' },
-  { from: 'core/indexing/', to: ['search/', 'query/', 'prompt-optimization/'], label: 'indexing → higher' },
-  { from: 'core/graph/', to: ['search/', 'indexing/', 'vocabulary/', 'vector-store/', 'embedding/', 'prompt-optimization/'], label: 'graph → forbidden' },
-  { from: 'core/vocabulary/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'vector-store/', 'prompt-optimization/'], label: 'vocabulary → forbidden' },
+  { from: 'core/infrastructure/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'vector-store/', 'query/', 'prompt-optimization/', 'agent-tools/'], label: 'infrastructure → domain' },
+  { from: 'core/vector-store/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'query/', 'prompt-optimization/', 'agent-tools/'], label: 'vector-store → domain' },
+  { from: 'core/embedding/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'prompt-optimization/', 'agent-tools/'], label: 'embedding → higher' },
+  { from: 'core/query/', to: ['search/', 'ranking/', 'indexing/', 'embedding/', 'graph/', 'vocabulary/', 'vector-store/', 'prompt-optimization/', 'agent-tools/'], label: 'query → forbidden' },
+  { from: 'core/ranking/', to: ['search/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'embedding/', 'prompt-optimization/', 'agent-tools/'], label: 'ranking → higher' },
+  { from: 'core/indexing/', to: ['search/', 'query/', 'prompt-optimization/', 'agent-tools/'], label: 'indexing → higher' },
+  { from: 'core/graph/', to: ['search/', 'indexing/', 'vocabulary/', 'vector-store/', 'embedding/', 'prompt-optimization/', 'agent-tools/'], label: 'graph → forbidden' },
+  { from: 'core/vocabulary/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'vector-store/', 'prompt-optimization/', 'agent-tools/'], label: 'vocabulary → forbidden' },
   { from: 'core/search/', to: ['prompt-optimization/'], label: 'search → prompt-optimization (forbidden — no runtime → build-time)' },
   // prompt-optimization is a build-time context. It MAY import infrastructure
   // (any depth, like other domains) and the search/ranking barrels via
   // declared exceptions 4/5 (max 2 sites each, barrel-only). Imports of any
   // other domain — or non-barrel internals of search/ranking — are forbidden.
   { from: 'core/prompt-optimization/', to: ['indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'embedding/'], label: 'prompt-optimization → forbidden runtime domain' },
+  // agent-tools/ (the ss-* tool host) is the top application layer: it may
+  // import search, indexing and infrastructure. It must not reach into the
+  // build-time contexts.
+  { from: 'core/agent-tools/', to: ['prompt-optimization/', 'training/'], label: 'agent-tools → build-time context' },
+  // incremental-indexing/ (the incremental build) sits beside indexing/ and
+  // below the query side. Imports of indexing/ are bounded by exception.
+  { from: 'core/incremental-indexing/', to: ['search/', 'query/', 'prompt-optimization/', 'agent-tools/'], label: 'incremental-indexing → higher' },
 ];
 
 const EXCEPTIONS = [
@@ -64,6 +75,19 @@ const EXCEPTIONS = [
   { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 8 },
   // query-router-catboost imports trained model from core/training/query-router/ — declared build-time artifact dependency
   { from: 'core/query/', to: 'training/query-router/', label: 'query → training (CatBoost model artifact)', max: 2 },
+  // indexing → search: the worktree-index and RSS-budget modules talk to the
+  // search daemon (registry, client, server identity). Declared so the
+  // forbidden direction cannot grow beyond these sites.
+  { from: 'core/indexing/', to: 'search/', label: 'indexing → search (daemon client / registry)', max: 3 },
+  // search → agent-tools: core/search hosts the ss-* tool daemon route and
+  // calls tools.js, chain.js and daemon-route.js of the tool host.
+  { from: 'core/search/', to: 'agent-tools/', label: 'search → agent-tools (daemon route host)', max: 3 },
+  // indexing <-> incremental-indexing: the two builds import each other. Both
+  // directions are capped at today's count so the cycle cannot grow.
+  { from: 'core/indexing/', to: 'incremental-indexing/', label: 'indexing → incremental-indexing', max: 30 },
+  { from: 'core/incremental-indexing/', to: '/indexing/', label: 'incremental-indexing → indexing', max: 16 },
+  // prompt-optimization → indexing: the preprocess script chunks with ASTChunker.
+  { from: 'core/prompt-optimization/', to: 'indexing/', label: 'prompt-optimization → indexing (preprocess script)', max: 1 },
   // prompt-optimization → search (barrel only): embedded-MCP cross-harness
   // mode invokes the search barrel directly to drive in-process agent runs.
   // See docs/SYSTEM_PROMPT_OPT_PLAN.md Part 9 (cross-harness validation).
@@ -153,9 +177,21 @@ const EXTERNAL_CONSUMER_DIRS = [
   '__tests__',
 ];
 
+// Third-party repository checkouts, benchmark corpora, run results and Python
+// virtualenvs under eval/ (several GB, hundreds of thousands of files, not
+// project code). They are never scanned.
+const VENDORED_DIRS = new Set([
+  'eval/repos',
+  'eval/corpus',
+  'eval/task-completion-bench/results',
+  'eval/maxsim-bench/venv',
+  'eval/maxsim-bench/venv-prep',
+  'eval/ast-tester-probes/_repos',
+]);
+
 /**
  * Recursively collect every *.js / *.mjs file under `root`. Skips
- * `node_modules`, dot-prefixed dirs, and symlinks. Returns relative paths
+ * `node_modules`, dot-prefixed dirs, VENDORED_DIRS, and symlinks. Returns relative paths
  * from the repo root (what the old grep output looked like).
  */
 function walkSourceFiles(root, out = [], repoRoot = process.cwd()) {
@@ -170,6 +206,7 @@ function walkSourceFiles(root, out = [], repoRoot = process.cwd()) {
     if (entry.name === 'node_modules') continue;
     const full = join(root, entry.name);
     if (entry.isSymbolicLink()) continue;
+    if (VENDORED_DIRS.has(relative(repoRoot, full))) continue;
     try {
       if (entry.isDirectory()) {
         walkSourceFiles(full, out, repoRoot);
@@ -205,48 +242,77 @@ let barrelViolations = 0;
 let internalBarrelViolations = 0;
 const showHints = process.argv.includes('--fix-hints');
 
+// ── In-process scan of core/ (checks 1-3) ────────────────────────────────────
+//
+// Every *.js / *.mjs under core/ is read once; checks 1-3 filter that list.
+// Symlinks are not followed. Dot-directories and node_modules are scanned
+// because the checks below never excluded them.
+
+const coreFiles = [];
+(function collectCoreFiles(dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  entries.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+  for (const entry of entries) {
+    const full = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      collectCoreFiles(full);
+    } else if (entry.isFile() && SOURCE_EXTS.some(ext => full.endsWith(ext))) {
+      let text;
+      try {
+        text = readFileSync(full, 'utf8');
+      } catch {
+        continue;
+      }
+      coreFiles.push({ path: full, lines: text.split('\n') });
+    }
+  }
+})('core');
+
+/**
+ * Yield `path:lineNumber:content` for every line under `prefix` that matches
+ * `regex`. With `skipData`, directories named `data` are ignored (run captures
+ * and sweep artifacts are data, not coupling).
+ */
+function* matchingLines(prefix, regex, { skipData = false } = {}) {
+  for (const file of coreFiles) {
+    if (!file.path.startsWith(prefix)) continue;
+    if (skipData && file.path.slice(prefix.length).split('/').slice(0, -1).includes('data')) continue;
+    for (let i = 0; i < file.lines.length; i++) {
+      if (regex.test(file.lines[i])) yield `${file.path}:${i + 1}:${file.lines[i]}`;
+    }
+  }
+}
+
 // ── Check 1: Forbidden dependency direction ──────────────────────────────────
+//
+// An exception exempts a line only when the line sits under the exception's
+// `from` folder AND the forbidden target is the exception's own `to`.
+
+function isExcepted(line, target) {
+  return EXCEPTIONS.some(exc => line.startsWith(exc.from) && exc.to === target);
+}
 
 for (const rule of FORBIDDEN) {
   for (const target of rule.to) {
-    try {
-      const result = execSync(
-        `grep -rn "from '.*${target}" ${rule.from} 2>/dev/null || true`,
-        { encoding: 'utf8' }
-      ).trim();
-
-      if (result) {
-        for (const line of result.split('\n')) {
-          if (!line) continue;
-          if (line.includes('await import(') && line.includes('// CLI')) continue;
-          // Check if it matches a documented exception
-          const isExcepted = EXCEPTIONS.some(exc =>
-            line.includes(exc.from.replace(/\/$/, '')) && line.includes(target)
-          );
-          if (isExcepted) continue;
-          console.error(`VIOLATION [${rule.label}]: ${line}`);
-          violations++;
-        }
-      }
-
-      const dynamicResult = execSync(
-        `grep -rn "import(.*${target}" ${rule.from} 2>/dev/null || true`,
-        { encoding: 'utf8' }
-      ).trim();
-
-      if (dynamicResult) {
-        for (const line of dynamicResult.split('\n')) {
-          if (!line) continue;
-          if (line.includes('await import(') && line.includes('// CLI')) continue;
-          const isExcepted = EXCEPTIONS.some(exc =>
-            line.includes(exc.from.replace(/\/$/, '')) && line.includes(target)
-          );
-          if (isExcepted) continue;
-          console.error(`VIOLATION [${rule.label}] (dynamic): ${line}`);
-          violations++;
-        }
-      }
-    } catch { /* grep returns non-zero when no matches */ }
+    const staticRe = new RegExp(`from '.*${target}`);
+    const dynamicRe = new RegExp(`import\\(.*${target}`);
+    for (const line of matchingLines(rule.from, staticRe)) {
+      if (line.includes('await import(') && line.includes('// CLI')) continue;
+      if (isExcepted(line, target)) continue;
+      console.error(`VIOLATION [${rule.label}]: ${line}`);
+      violations++;
+    }
+    for (const line of matchingLines(rule.from, dynamicRe)) {
+      if (line.includes('await import(') && line.includes('// CLI')) continue;
+      if (isExcepted(line, target)) continue;
+      console.error(`VIOLATION [${rule.label}] (dynamic): ${line}`);
+      violations++;
+    }
   }
 }
 
@@ -257,50 +323,47 @@ for (const rule of FORBIDDEN) {
 // counter, so the `indexing → ranking (late-interaction build)` allowlist
 // reported 2 sites while the real coupling surface was 6 (see
 // docs/reviews/ddd-compliance.md §3).
+//
+// Only *.js / *.mjs source files count toward the limit, and directories named
+// `data` are skipped.
 
-// Only *.js / *.mjs source files count toward the limit: run captures and
-// sweep artifacts under data/ embed code-shaped strings (e.g. JSON tool
-// outputs containing `from '../search/...'`) that are data, not coupling.
-const EXC_GREP_FILTER = "--include='*.js' --include='*.mjs' --exclude-dir=data";
 for (const exc of EXCEPTIONS) {
-  try {
-    const staticCount = execSync(
-      `grep -rn ${EXC_GREP_FILTER} "from '.*${exc.to}" ${exc.from} 2>/dev/null | wc -l`,
-      { encoding: 'utf8' }
-    ).trim();
-    const dynamicCount = execSync(
-      `grep -rn ${EXC_GREP_FILTER} "import(.*${exc.to}" ${exc.from} 2>/dev/null | wc -l`,
-      { encoding: 'utf8' }
-    ).trim();
-    const n = parseInt(staticCount, 10) + parseInt(dynamicCount, 10);
-    if (n > exc.max) {
-      console.error(`EXCEPTION EXCEEDED [${exc.label}]: found ${n} imports (max ${exc.max})`);
-      violations++;
-    } else if (n > 0) {
-      console.log(`OK [${exc.label}]: ${n} imports (within limit of ${exc.max})`);
+  const staticRe = new RegExp(`from '.*${exc.to}`);
+  const dynamicRe = new RegExp(`import\\(.*${exc.to}`);
+  let n = 0;
+  for (const file of coreFiles) {
+    if (!file.path.startsWith(exc.from)) continue;
+    if (file.path.slice(exc.from.length).split('/').slice(0, -1).includes('data')) continue;
+    for (const text of file.lines) {
+      if (staticRe.test(text)) n++;
+      if (dynamicRe.test(text)) n++;
     }
-  } catch { /* */ }
+  }
+  if (n > exc.max) {
+    console.error(`EXCEPTION EXCEEDED [${exc.label}]: found ${n} imports (max ${exc.max})`);
+    violations++;
+  } else if (n > 0) {
+    console.log(`OK [${exc.label}]: ${n} imports (within limit of ${exc.max})`);
+  }
 }
 
 // ── Check 3: Barrel-only cross-domain imports WITHIN core/ ───────────────────
 // For each domain, find imports of OTHER domains' internal files (not barrel).
-// Within-domain and infrastructure imports are allowed.
+// Within-domain and infrastructure imports are allowed. Domains without a
+// barrel are not part of this check.
 
-for (const sourceDomain of DOMAINS) {
-  for (const targetDomain of DOMAINS) {
+for (const sourceDomain of BARREL_DOMAINS) {
+  for (const targetDomain of BARREL_DOMAINS) {
     if (sourceDomain === targetDomain) continue;
     if (INTERNAL_BARREL_ALLOWLIST.includes(targetDomain)) continue;
 
-    try {
-      const result = execSync(
-        `grep -rn --include='*.js' --include='*.mjs' "from '../${targetDomain}/" core/${sourceDomain}/ 2>/dev/null || true`,
-        { encoding: 'utf8' }
-      ).trim();
-
-      if (!result) continue;
-
-      for (const line of result.split('\n')) {
-        if (!line) continue;
+    const needle = `from '../${targetDomain}/`;
+    for (const file of coreFiles) {
+      if (!file.path.startsWith(`core/${sourceDomain}/`)) continue;
+      for (let i = 0; i < file.lines.length; i++) {
+        const text = file.lines[i];
+        if (!text.includes(needle)) continue;
+        const line = `${file.path}:${i + 1}:${text}`;
         const match = line.match(/from\s+['"]([^'"]+)['"]/);
         if (!match) continue;
         const importPath = match[1];
@@ -317,7 +380,7 @@ for (const sourceDomain of DOMAINS) {
           console.error(`  → import from '../${targetDomain}/index.js' instead`);
         }
       }
-    } catch { /* */ }
+    }
   }
 }
 
@@ -345,7 +408,7 @@ function checkImportLine(filePath, lineNumber, line, regex, dynamic) {
   for (const match of line.matchAll(regex)) {
     const importPath = match[2];
     const domain = match[3];
-    if (!DOMAINS.includes(domain)) continue;
+    if (!BARREL_DOMAINS.includes(domain)) continue;
 
     // Barrel imports are fine: path ends in /domain/index.js or /domain/
     if (importPath.endsWith(`/${domain}/index.js`)) continue;

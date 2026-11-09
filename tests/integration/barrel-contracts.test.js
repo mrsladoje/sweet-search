@@ -103,7 +103,6 @@ describe('Domain Barrel Contracts', () => {
       expect(m.GRAPH_CONFIG).toBeDefined();
       expect(m.FILE_PATTERNS).toBeDefined();
       expect(m.PERFORMANCE_TARGETS).toBeDefined();
-      expect(m.ROUTING_CONFIG).toBeDefined();
       // Previously missing from default export
       expect(m.MODEL_DELIVERY_CONFIG).toBeDefined();
       expect(m.CASCADE_CONFIG).toBeDefined();
@@ -146,23 +145,6 @@ describe('Domain Barrel Contracts', () => {
       expect(m.DEFINITION_TYPES).toBeDefined();
       // LLM
       expect(m.generateWithRetry).toBeTypeOf('function');
-    });
-
-    it('config default export includes all properties', async () => {
-      const m = await import('../../core/infrastructure/index.js');
-      const cfg = m.config;
-      expect(cfg).toBeDefined();
-      const required = [
-        'PROJECT_ROOT', 'DB_PATHS', 'MODEL_DELIVERY_CONFIG',
-        'EMBEDDING_PROVIDERS', 'EMBEDDING_CONFIG', 'RERANK_CONFIG',
-        'CASCADE_CONFIG', 'LATE_INTERACTION_CONFIG', 'HNSW_CONFIG',
-        'GRAPH_CONFIG', 'ROUTING_CONFIG', 'FILE_PATTERNS',
-        'AGENTIC_GITIGNORE_ALLOWLIST', 'PERFORMANCE_TARGETS', 'LOGGING',
-        'loadProjectConfig', 'getVoyageApiKey', 'getJinaApiKey',
-      ];
-      for (const key of required) {
-        expect(cfg[key], `config.${key} should be defined`).toBeDefined();
-      }
     });
   });
 

@@ -5,6 +5,8 @@
  * keeps the same table (crates/sweet-search-cli/src/agent_tools.rs).
  */
 
+import { AGENT_TOOLS_PROTOCOL_MARKER } from '../infrastructure/agent-tools-protocol.js';
+
 export const AGENT_TOOLS = Object.freeze({
   'ss-search': 'agent-search',
   'ss-grep': 'grep',
@@ -60,11 +62,7 @@ export function searchNotReadyLine(seconds, failed = false) {
     : `sweet-search: index server still loading (${seconds}s); retry this command in a minute\n`;
 }
 
-// Printed by `sweet-search --agent-tools-protocol` and embedded in the native binary.
-// A binary without it (or with an older version) does not answer to every name in
-// NATIVE_COMMANDS and must never be linked as one: it would read the arguments as a search
-// query. Version 2 added NODE_ENTRY_COMMANDS.
-export const AGENT_TOOLS_PROTOCOL_MARKER = 'sweet-search-agent-tools-protocol=2';
+export { AGENT_TOOLS_PROTOCOL_MARKER };
 
 /** `ss-grep` → `grep`; a bare subcommand passes through; anything else → null. */
 export function subcommandFor(name) {

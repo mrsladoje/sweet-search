@@ -48,7 +48,7 @@ import { DEFAULT_WATERMARKS, loadWatermarkConfig } from '../domain/watermark-sch
 import { loadSparseGramIndex, getSparseGramAllFiles } from '../../infrastructure/native-sparse-gram.js';
 import { buildSparseGramFold, publishSparseGramFold } from '../infrastructure/sparse-gram-fold.mjs';
 import { startBackgroundBuild } from '../infrastructure/background-build.mjs';
-import { mergeLiSegments, collectLiveDocs, nextSegmentSeq, quarantineSegmentFiles, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
+import { mergeLiSegments, collectLiveDocs, liWriterSettings, nextSegmentSeq, quarantineSegmentFiles, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
 import { runVectorGc } from '../infrastructure/vector-gc.mjs';
 import { runGraphGc } from '../infrastructure/graph-gc.mjs';
 import { PAGERANK_STATE, VOCAB_RUNNING, VOCAB_STATE, graphChangeEpoch } from '../infrastructure/maintenance-state-reader.mjs';
@@ -339,15 +339,7 @@ export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
   const writer = new LateInteractionIndex({
     indexPath: stubPath,
     loadExisting: false,
-    tokenDim: index.tokenDim,
-    maxTokens: index.maxTokens,
-    useInt8: index.useInt8,
-    quantBits: index.quantBits,
-    modelId: index.modelId,
-    poolFactor: index.poolFactor,
-    whtSeed: index.whtSeed,
-    whtOrdering: index.whtOrdering,
-    matryoshkaDim: index.matryoshkaDim,
+    ...liWriterSettings(index),
   });
   await writer.init();
 

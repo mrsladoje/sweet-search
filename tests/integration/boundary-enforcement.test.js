@@ -16,12 +16,11 @@ import { join } from 'path';
 const TEMP_FILES = [
   join('core', 'infrastructure', '__boundary_test_violation__.js'),
   join('core', 'ranking', '__boundary_test_violation__.js'),
+  join('core', 'vocabulary', '__boundary_test_violation__.js'),
 ];
-// The checker walks every file in core/ three times across this file's tests.
-// On a quiet machine that is already ~365s; under full-suite load it exceeded
-// the old 240s budget and reported ETIMEDOUT, which reads as a boundary
-// violation when it is only a stopwatch running out. The check itself passes.
-const CHECK_BOUNDARIES_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_BOUNDARY_TIMEOUT_MS || 900000);
+// The checker reads every source file once in-process and finishes in about a
+// second; the budget leaves room for a loaded machine.
+const CHECK_BOUNDARIES_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_BOUNDARY_TIMEOUT_MS || 60000);
 afterAll(() => TEMP_FILES.forEach(f => rmSync(f, { force: true })));
 
 describe('DDD Boundary Enforcement', () => {
@@ -70,6 +69,23 @@ describe('DDD Boundary Enforcement', () => {
       }
       expect(output).toContain('VIOLATION');
       expect(output).toContain('ranking');
+    } finally {
+      rmSync(tmpFile, { force: true });
+    }
+  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
+
+  it('catches vocabulary → agent-tools violation', () => {
+    const tmpFile = TEMP_FILES[2];
+    try {
+      writeFileSync(tmpFile, "import { runTool } from '../agent-tools/tools.js';\n");
+      let output;
+      try {
+        output = execSync('node scripts/check-boundaries.js 2>&1', { encoding: 'utf8', timeout: CHECK_BOUNDARIES_TIMEOUT_MS });
+      } catch (err) {
+        output = err.stdout || err.message;
+      }
+      expect(output).toContain('VIOLATION');
+      expect(output).toContain('vocabulary');
     } finally {
       rmSync(tmpFile, { force: true });
     }

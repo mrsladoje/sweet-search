@@ -47,8 +47,6 @@ export {
   warmSemantic,
   warmHybrid,
   warmFromCache,
-  runFullWarmup,
-  saveBinaryArtifact,
   DATA_DIR,
   ARTIFACT_PATHS,
   _loadEntityMetadata,
@@ -56,8 +54,8 @@ export {
 
 // vocab-warmup-orchestrator.js
 export {
-  runFullWarmup as runFullWarmupOrchestrator,
-  saveBinaryArtifact as saveBinaryArtifactOrchestrator,
+  runFullWarmup,
+  saveBinaryArtifact,
 } from './vocab-warmup-orchestrator.js';
 
 

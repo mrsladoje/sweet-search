@@ -8,12 +8,12 @@
 
 import { spawnSync } from 'node:child_process';
 import { setProcessTitle } from './infrastructure/process-title.js';
+import { isOffValue } from './infrastructure/env-flag.js';
 
 const args = process.argv.slice(2);
 
 function envFalsey(name) {
-  const v = String(process.env[name] || '').trim().toLowerCase();
-  return v === '0' || v === 'false' || v === 'off' || v === 'no';
+  return isOffValue(process.env[name]);
 }
 
 // Package-management commands always run in JS (never native dispatch)
