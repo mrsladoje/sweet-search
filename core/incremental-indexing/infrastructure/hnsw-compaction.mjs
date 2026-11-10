@@ -124,12 +124,22 @@ function writeDurable(p, bytes) {
   fs.renameSync(tmp, p);
 }
 
-/** Run (or finish) a publish journal: idempotent removes and renames. */
+/**
+ * Run (or finish) a publish journal: idempotent removes and renames.
+ *
+ * A remove is skipped when a later step already moved its new file to that path (the move's
+ * source is gone). The journal removes the old stale bitmap first and moves the new one in
+ * last: a crash after that last move and before the journal was deleted made the replay
+ * remove the NEW bitmap, and the retired nodes of the new base lost their stale bits.
+ */
 function runJournal(journalPath, steps) {
-  for (const [op, a, b] of steps) {
-    if (op === 'rm') fs.rmSync(a, { force: true });
-    else if (op === 'mv' && fs.existsSync(a)) fs.renameSync(a, b);
-  }
+  steps.forEach(([op, a, b], i) => {
+    if (op === 'rm') {
+      const alreadyReplaced = steps.slice(i + 1)
+        .some(([laterOp, src, dst]) => laterOp === 'mv' && dst === a && !fs.existsSync(src) && fs.existsSync(a));
+      if (!alreadyReplaced) fs.rmSync(a, { force: true });
+    } else if (op === 'mv' && fs.existsSync(a)) fs.renameSync(a, b);
+  });
   fs.rmSync(journalPath, { force: true });
 }
 

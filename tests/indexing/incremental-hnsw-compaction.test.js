@@ -228,3 +228,41 @@ describe('binary HNSW compaction', () => {
     await expectFindsEachLive([0, 149, 151, 189]);
   });
 });
+
+// The publish journal removes the old stale bitmap first and moves the new one in last. A
+// crash after that last move, before the journal file was deleted, made the replay remove the
+// NEW bitmap: the retired nodes of the new base lost their stale bits.
+// See docs/STATE_MACHINES.md, "Binary HNSW base, delta and compaction".
+describe('HNSW compaction journal — replay after its last step', () => {
+  let dir;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-hnsw-journal-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  function journalFor(indexPath) {
+    const paths = compactionPaths(indexPath);
+    const staleBin = `${indexPath}.stale.bin`;
+    fs.writeFileSync(paths.journal, JSON.stringify({ steps: [['rm', staleBin], ['mv', paths.staleNext, staleBin]] }));
+    return { paths, staleBin };
+  }
+
+  it('keeps the new stale bitmap when every step had already run', () => {
+    const indexPath = path.join(dir, 'codebase-binary-hnsw.idx');
+    const { paths, staleBin } = journalFor(indexPath);
+    fs.writeFileSync(staleBin, 'new bitmap'); // the last step moved it in; `.next` is gone
+
+    expect(rollForwardHnswCompaction(indexPath)).toBe(true);
+    expect(fs.readFileSync(staleBin, 'utf8')).toBe('new bitmap');
+    expect(fs.existsSync(paths.journal)).toBe(false);
+  });
+
+  it('still replaces the old bitmap when the crash came before the last step', () => {
+    const indexPath = path.join(dir, 'codebase-binary-hnsw.idx');
+    const { paths, staleBin } = journalFor(indexPath);
+    fs.writeFileSync(staleBin, 'old bitmap');
+    fs.writeFileSync(paths.staleNext, 'new bitmap');
+
+    expect(rollForwardHnswCompaction(indexPath)).toBe(true);
+    expect(fs.readFileSync(staleBin, 'utf8')).toBe('new bitmap');
+    expect(fs.existsSync(paths.staleNext)).toBe(false);
+  });
+});
