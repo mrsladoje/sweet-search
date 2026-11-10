@@ -369,6 +369,48 @@ export async function getChangedFiles(allFiles, projectRoot) {
   };
 }
 
+/**
+ * The file-state rows of `files` as they are on disk NOW: content hash, size, mtime, inode.
+ * A run takes them before it reads any file for the build and stores them when it ends, so a
+ * file edited during the run keeps a row that no longer matches its stat, and the next dirty
+ * scan indexes it again. Rows taken at the end of the run paired the new stat with the old
+ * indexed content: the edit was never indexed. Files that cannot be read are left out.
+ *
+ * The stat is taken before the read: a write that lands between the two then also leaves the
+ * stored stat different from the file's.
+ */
+export async function hashFilesForState(files, projectRoot) {
+  const BATCH_SIZE = 100;
+  const hashes = {};
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    const batch = files.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(async (file) => {
+      try {
+        const filePath = path.join(projectRoot, file);
+        const metadata = await getFileMetadata(filePath);
+        const content = await fs.readFile(filePath);
+        return { hash: hashContent(content), ...metadata };
+      } catch {
+        return null;
+      }
+    }));
+    // Assigned in input order: the stored rows keep the order of `files`.
+    for (let j = 0; j < batch.length; j++) {
+      if (results[j]) hashes[batch[j]] = results[j];
+    }
+  }
+  return hashes;
+}
+
+/**
+ * Store the rows of `fileHashes` and keep every other file's row: the save of a run that
+ * indexed only some files (`index --files-from-stdin`). updateState replaces all rows.
+ */
+export async function updateStateForFiles(fileHashes, stats = {}) {
+  const { state } = await loadState(true);
+  return updateState({ ...(state.files || {}), ...fileHashes }, stats);
+}
+
 export async function updateState(currentHashes, stats = {}) {
   const state = {
     version: STATE_VERSION,

@@ -295,7 +295,7 @@ Output:
       throw filesToIndexResult.error;
     }
 
-    const { filesToIndex, incrementalInfo, earlyExit, exitReason } = filesToIndexResult.result;
+    const { filesToIndex, incrementalInfo, stateHashes, earlyExit, exitReason } = filesToIndexResult.result;
 
     if (earlyExit) {
       if (quiet && exitReason === 'no_valid_files') {
@@ -391,6 +391,7 @@ Output:
       vectorsOnly,
       fullReindex,
       incrementalInfo,
+      stateHashes,
       allFiles,
       vectorStats,
       graphStats,

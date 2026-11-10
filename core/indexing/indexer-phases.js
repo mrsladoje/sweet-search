@@ -1,10 +1,9 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
-import path from 'path';
 
 import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG, HCGS_CONFIG } from '../infrastructure/config/index.js';
 import { isEmbedForcedToCpu } from '../infrastructure/env-flag.js';
-import { getChangedFiles, updateState, updatePhaseProgress, markPhaseComplete, clearPhaseProgress } from './incremental-tracker.js';
+import { getChangedFiles, updateState, updateStateForFiles, hashFilesForState, updatePhaseProgress, markPhaseComplete, clearPhaseProgress } from './incremental-tracker.js';
 import { backupSummaries, restoreSummaries, markForRegeneration } from '../graph/summary-manager.js';
 import { colors, log, discoverFiles, readFilesFromStdin, atomicSwapDatabase, shouldStreamVectors } from './indexer-utils.js';
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
@@ -15,7 +14,6 @@ import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
 import { binaryHnswIndexExists } from '../vector-store/index-file-header.js';
 import { publishIndexerManifest } from './indexer-manifest.js';
 import { takeProvenance } from '../infrastructure/inference-provenance.js';
-import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
 import {
   configureLocalModelRuntime,
   resetLocalModelRuntime,
@@ -221,6 +219,8 @@ export async function determineFilesToIndexPhase(options = {}) {
 
   let filesToIndex = allFiles;
   let incrementalInfo = null;
+  // A full rebuild's file-state rows, taken now (see hashFilesForState).
+  let stateHashes = null;
 
   if (filesFromStdin && stdinFiles && stdinFiles.length > 0) {
     log('\n--- Targeted Indexing Mode ---', 'bright');
@@ -242,11 +242,15 @@ export async function determineFilesToIndexPhase(options = {}) {
     log(`  Targeting ${filesToIndex.length} files for vector/summary updates`, 'green');
     log(`  Graph will still be fully rebuilt (${allFiles.length} files)`, 'dim');
 
+    // Rows for the targeted files only, taken now. `targeted` makes the save keep the rows of
+    // every other file: an empty `currentHashes` saved as the whole state removed them all,
+    // and the maintainer then indexed the whole repository again as new files.
     incrementalInfo = {
       toIndex: filesToIndex,
       toRemove: [],
       unchanged: allFiles.filter(f => !validStdinFiles.includes(f)),
-      currentHashes: {},
+      currentHashes: dryRun ? {} : await hashFilesForState(validStdinFiles, PROJECT_ROOT),
+      targeted: true,
     };
 
   } else if (!fullReindex && !dryRun) {
@@ -275,9 +279,10 @@ export async function determineFilesToIndexPhase(options = {}) {
     }
   } else if (fullReindex) {
     log('\n--- Full Reindex Mode ---', 'bright');
+    if (!dryRun) stateHashes = await hashFilesForState(allFiles, PROJECT_ROOT);
   }
 
-  return { filesToIndex, incrementalInfo, earlyExit: false };
+  return { filesToIndex, incrementalInfo, stateHashes, earlyExit: false };
 }
 
 export async function buildCodeGraphWithHCGSPhase(options = {}) {
@@ -841,7 +846,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
 }
 
 export async function updateIncrementalStatePhase(options = {}) {
-  const { dryRun, fullReindex, incrementalInfo, allFiles, vectorStats, graphStats, manifestStateDir, sparseGramResult, graphOnly, vectorsOnly } = options;
+  const { dryRun, fullReindex, incrementalInfo, stateHashes, allFiles, vectorStats, graphStats, manifestStateDir, sparseGramResult, graphOnly, vectorsOnly } = options;
 
   if (dryRun) return;
 
@@ -856,41 +861,19 @@ export async function updateIncrementalStatePhase(options = {}) {
   }
 
   if (incrementalInfo) {
-    await updateState(incrementalInfo.currentHashes, {
+    const save = incrementalInfo.targeted ? updateStateForFiles : updateState;
+    await save(incrementalInfo.currentHashes, {
       totalChunks: vectorStats.chunks,
       entities: graphStats.entities,
       relationships: graphStats.relationships
     });
     log('\nIncremental state updated', 'green');
   } else if (fullReindex) {
-    const hashes = {};
-    // Batched read+stat (order-preserving assignment — key insertion order,
-    // and therefore the serialized state file, matches the sequential loop).
-    // Mirrors the H6 batching in incremental-tracker.getChangedFiles.
-    const HASH_BATCH = 100;
-    for (let i = 0; i < allFiles.length; i += HASH_BATCH) {
-      const batch = allFiles.slice(i, i + HASH_BATCH);
-      const results = await Promise.all(batch.map(async (file) => {
-        try {
-          const fullPath = path.join(PROJECT_ROOT, file);
-          const [content, stat] = await Promise.all([
-            fs.readFile(fullPath),
-            fs.stat(fullPath, { bigint: true }).catch(() => null),
-          ]);
-          return {
-            hash: contentHashSync(content),
-            size: stat ? stat.size.toString() : null,
-            mtime_ns: stat ? stat.mtimeNs.toString() : null,
-            inode: stat ? stat.ino.toString() : null,
-          };
-        } catch (e) {
-          return null;
-        }
-      }));
-      for (let j = 0; j < batch.length; j++) {
-        if (results[j]) hashes[batch[j]] = results[j];
-      }
-    }
+    // The rows taken before the build (determineFilesToIndexPhase). Hashing here, after the
+    // build, stored a file edited or deleted during the build as indexed with its new
+    // content: the stat-based dirty scan then never indexed the edit, and never retired the
+    // deleted file's chunks. A caller that did not take them gets rows as of now.
+    const hashes = stateHashes ?? await hashFilesForState(allFiles, PROJECT_ROOT);
     await updateState(hashes, {
       totalChunks: vectorStats.chunks,
       entities: graphStats.entities,
