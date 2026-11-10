@@ -161,6 +161,17 @@ export function hasCompleteBaseIndex(stateDir) {
 }
 
 /**
+ * The configuration fingerprint stored with the index in `stateDir` (the head of
+ * merkle-state.json), or null when there is none. Two state dirs with the same stored
+ * fingerprint get the same verdict from one process.
+ */
+export function readStoredFingerprint(stateDir) {
+  const head = readMerkleHead(stateDir);
+  const stored = head === null ? undefined : extractFingerprint(head);
+  return stored && typeof stored === 'object' ? stored : null;
+}
+
+/**
  * Readiness plus a human/machine-facing `state` label for status surfaces.
  *
  * @returns {{ready: boolean, reason: string, changes?: Array,

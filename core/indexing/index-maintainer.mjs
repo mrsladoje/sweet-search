@@ -142,6 +142,42 @@ export function stateDirGone(stateDir, projectRoot) {
   return missing(stateDir) || missing(projectRoot);
 }
 
+/**
+ * The main checkout and the worktree of a linked worktree's index (a state dir that is a
+ * link into `<main>/.sweet-search/worktrees/`, worktree-index.mjs), or null for any other
+ * index.
+ */
+export function linkedWorktreeCloneOf(ctx) {
+  if (!ctx?.stateDir || ctx.stateDir === ctx.stateDirPath || !isWorktreesDirPath(dirname(ctx.stateDir))) return null;
+  return { mainCheckout: dirname(dirname(dirname(ctx.stateDir))), worktree: ctx.projectRoot };
+}
+
+// A dormant maintainer of a linked worktree's index asks for a new clone at most this often.
+const CLONE_REPLACEMENT_ASK_MS = 60_000;
+let cloneReplacementAskedAt = 0;
+
+/**
+ * This maintainer is dormant because its index is not a complete baseline. For a linked
+ * worktree's index that state had no way out: the index was cloned from a main index that
+ * was itself not ready, or an upgrade changed the index format, and only the main checkout
+ * gets rebuilt. Ask for a new clone of the main index (it is made only when that index is
+ * ready now, and it stops this process first). Never throws.
+ */
+export async function requestCloneReplacement(ctx) {
+  const clone = linkedWorktreeCloneOf(ctx);
+  if (!clone || Date.now() - cloneReplacementAskedAt < CLONE_REPLACEMENT_ASK_MS) return null;
+  cloneReplacementAskedAt = Date.now();
+  try {
+    const { requestWorktreeIndex } = await import('./worktree-index.mjs');
+    const r = requestWorktreeIndex({ ...clone, replace: true });
+    if (r.started) log('INFO', `This worktree's index is not a complete baseline: asked for a new clone of the main checkout's index (pid ${r.pid})`);
+    return r;
+  } catch (err) {
+    log('WARN', `Could not ask for a new clone of the main checkout's index: ${err?.message ?? err}`);
+    return null;
+  }
+}
+
 /** A state dir that is a link with nothing behind it (a removed worktree's index). */
 function danglingLink(p) {
   try { return lstatSync(p).isSymbolicLink() && missing(p); } catch { return false; }
@@ -1440,6 +1476,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
           const onProgress = createLifecycleProgress(lock.lockFile);
           const tickCounters = await runReconcileV2Tick({ ...ctx, onProgress, skipFullWalk: watcherState.active && !runFullWalk });
           onProgress('tick:post');
+          if (tickCounters?.skipped === true && tickCounters.baseline) await requestCloneReplacement(ctx);
           await drainMaintenanceInline({ ...ctx, onProgress });
           onProgress('drain:post');
 

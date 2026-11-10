@@ -28,6 +28,19 @@
  *      differ (and every later edit, within seconds), and every tool tier and the native
  *      grep lane serve it with no worktree special case.
  *
+ * THE SOURCE MUST BE A FINISHED BUILD. A main index whose build was killed half way (no
+ * manifest, no merkle state) is not cloned: the clone would be a broken index that looks
+ * like one. The bootstrap waits for the main index, and the split roots serve meanwhile.
+ * A finished main index in an older index format (after an upgrade, before its rebuild)
+ * IS cloned: it serves the worktree as it serves the main checkout, and the MCP server
+ * has no split roots to fall back to. Its maintainer stays dormant, as the main one does.
+ *
+ * A WORKTREE INDEX THAT IS NOT A COMPLETE BASELINE IS REPLACED. Such an index (an
+ * old-format clone, or any clone an upgrade left in the old format) had no way out: the
+ * user rebuilds the main checkout, never each worktree. Its dormant maintainer asks for a
+ * new clone (index-maintainer.mjs; `--replace` here), which is made once the main index
+ * is a complete baseline again.
+ *
  * Until the rename, calls are served by the split roots as before; after it,
  * resolveRoots finds the worktree's own index first. The queued files are grepped from
  * disk until the maintainer has indexed them (grep-corpus.js listPendingReindexFiles), so
@@ -48,7 +61,8 @@
  * is deleted by gcWorktreeIndexes: when that maintainer stops, when a maintainer starts,
  * and before every bootstrap.
  *
- * Run as: node worktree-index.mjs --main=<main checkout> --worktree=<worktree top>
+ * Run as: node worktree-index.mjs --main=<main checkout> --worktree=<worktree top> [--replace]
+ *         node worktree-index.mjs --readiness-of=<state dir>   (prints the baseline verdict)
  */
 
 import { spawnSync, spawn } from 'node:child_process';
@@ -64,6 +78,16 @@ import { CODEBASE_DB, CODE_GRAPH_DB, DIRTY_QUEUE, MAINTAINER_LOCK, PAUSE_FILE, P
 import { projectPidFile, projectSocketPath, resolveProjectRoot } from '../search/server-identity.js';
 
 const STATE_DIR_NAME = '.sweet-search';
+const MERKLE_STATE_FILE = 'merkle-state.json';
+// A main index that is not a complete baseline is looked at again after this long.
+const MAIN_NOT_READY_RETRY_MS = 2 * 60_000;
+// A worktree index is not replaced again this soon after it was cloned, and a replacement
+// that found nothing to do is not asked for again for this long.
+const REPLACE_MIN_AGE_MS = 10 * 60_000;
+const REPLACE_NO_GAIN_RETRY_MS = 6 * 3600_000;
+// The verdicts of hasCompleteBaseIndex that mean "no full build finished here" (the others
+// that are not `ready` mean a finished build in an older format, or with another model).
+const BUILD_NOT_FINISHED = new Set(['no-state-dir', 'no-manifest', 'manifest-epoch-zero', 'no-merkle-state', 'no-config-fingerprint', 'missing-vectors-db']);
 // A failed bootstrap is not retried on every call: once per this interval at most.
 const RETRY_AFTER_MS = 10 * 60_000;
 // A claim whose holder died, or that is older than this, no longer blocks a bootstrap.
@@ -145,18 +169,29 @@ export function bootstrapState(mainCheckout, worktree, nowMs = Date.now()) {
  *
  * @returns {{started: boolean, reason: string, pid?: number}}
  */
-export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env, entry = fileURLToPath(import.meta.url), daemonPid = 0 }) {
+export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env, entry = fileURLToPath(import.meta.url), daemonPid = 0, replace = false }) {
   try {
     if (!worktreeIndexEnabled(env)) return { started: false, reason: 'disabled' };
     if (!mainCheckout || !worktree || mainCheckout === worktree) return { started: false, reason: 'not-linked' };
-    if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, CODEBASE_DB))) return { started: false, reason: 'indexed' };
-    if (!fs.existsSync(path.join(mainCheckout, STATE_DIR_NAME, CODEBASE_DB))) return { started: false, reason: 'no-main-index' };
-    // A state dir of the worktree's own with no index in it (an index run that stopped
-    // early): the bootstrap leaves it alone, so starting one would only repeat forever.
+    const indexed = fs.existsSync(path.join(worktree, STATE_DIR_NAME, CODEBASE_DB));
+    if (indexed && !replace) return { started: false, reason: 'indexed' };
+    const mainState = path.join(mainCheckout, STATE_DIR_NAME);
+    if (!fs.existsSync(path.join(mainState, CODEBASE_DB))) return { started: false, reason: 'no-main-index' };
+    // A state dir of the worktree's own (an index the user built there, or an index run
+    // that stopped early): never touched, so starting a bootstrap would only repeat forever.
     if (ownStateDir(worktree)) return { started: false, reason: 'own-state-dir' };
+    // The cheap part of the readiness check (the background process does all of it): a
+    // main index with no manifest or no merkle state is a build that did not finish.
+    if (!mainIndexLooksComplete(mainState)) return { started: false, reason: 'main-index-not-ready' };
+    if (indexed) {
+      // Only the clone this module made for this worktree path is ever replaced.
+      if (!linkLeadsTo(worktree, worktreeIndexDir(mainCheckout, worktree))) return { started: false, reason: 'indexed' };
+      if (stampAgeMs(path.join(worktree, STATE_DIR_NAME)) < REPLACE_MIN_AGE_MS) return { started: false, reason: 'replaced-recently' };
+    }
     const state = bootstrapState(mainCheckout, worktree);
     if (state) return { started: false, reason: state };
     const args = [entry, `--main=${mainCheckout}`, `--worktree=${worktree}`];
+    if (indexed) args.push('--replace');
     if (daemonPid > 0) args.push(`--daemon-pid=${daemonPid}`);
     const child = spawn(process.execPath, args, {
       detached: true,
@@ -170,6 +205,51 @@ export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env
   } catch (err) {
     return { started: false, reason: `error: ${err?.message || err}` };
   }
+}
+
+// The baseline gate, loaded when a bootstrap needs it (it loads the configuration).
+const baselineReadiness = () => import('../incremental-indexing/infrastructure/baseline-readiness.mjs');
+
+/** Has a full build finished in this state dir? (Manifest published and merkle state saved.) */
+function mainIndexLooksComplete(mainState) {
+  const manifest = readJson(path.join(mainState, RECONCILE_MANIFEST));
+  return Number.isInteger(manifest?.epoch) && manifest.epoch >= 1 && fs.existsSync(path.join(mainState, MERKLE_STATE_FILE));
+}
+
+/** How long ago this index was stamped for its checkout (Infinity when it has no stamp). */
+function stampAgeMs(stateDir) {
+  const at = Date.parse(readJson(path.join(stateDir, 'worktree-stamp.json'))?.stampedAt || '');
+  return Number.isFinite(at) ? Date.now() - at : Infinity;
+}
+
+/**
+ * Is the index in `stateDir` a complete baseline for `checkout`: would the maintainer of
+ * that checkout work on it, or stay dormant (hasCompleteBaseIndex)? The verdict depends on
+ * the configuration of the process that gives it: the persisted model choice in the
+ * checkout's `.sweet-search/config.json`, its `.env`. So it is asked of a process whose
+ * project root is that checkout, as its maintainer's is, never of this one.
+ *
+ * When the verdict cannot be had (the process fails), the index counts as ready: the
+ * check must never be the reason a worktree gets no index.
+ *
+ * @returns {{ready: boolean, reason: string}}
+ */
+export function indexReadiness(checkout, stateDir, { entry = fileURLToPath(import.meta.url), env = process.env } = {}) {
+  const childEnv = { ...env, SWEET_SEARCH_PROJECT_ROOT: checkout };
+  delete childEnv.SWEET_SEARCH_STATE_DIR;
+  const r = spawnSync(process.execPath, [entry, `--readiness-of=${stateDir}`], {
+    cwd: checkout, env: childEnv, encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  try {
+    const verdict = JSON.parse(String(r.stdout || '').trim().split('\n').pop());
+    if (typeof verdict?.ready === 'boolean') return { ready: verdict.ready, reason: String(verdict.reason || '') };
+  } catch { /* no verdict */ }
+  return { ready: true, reason: 'unknown' };
+}
+
+/** Does the worktree's `.sweet-search` link lead to `dir`? */
+function linkLeadsTo(worktree, dir) {
+  try { return fs.realpathSync(path.join(worktree, STATE_DIR_NAME)) === fs.realpathSync(dir); } catch { return false; }
 }
 
 /**
@@ -669,13 +749,40 @@ function canLink(worktree) {
  * @returns {Promise<{mode: 'clone'|'copy', same: number, changed: number, ms: number, dir: string}|{skipped: string}>}
  */
 export async function bootstrapWorktreeIndex({
-  mainCheckout, worktree, log = () => {}, launch = true, lockWaitMs = CLONE_LOCK_WAIT_MS, daemonPid = 0,
+  mainCheckout, worktree, log = () => {}, launch = true, lockWaitMs = CLONE_LOCK_WAIT_MS, daemonPid = 0, replace = false,
 }) {
   const t0 = Date.now();
   const mainState = path.join(mainCheckout, STATE_DIR_NAME);
-  if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, CODEBASE_DB))) return { skipped: 'indexed' };
+  const finalDir = worktreeIndexDir(mainCheckout, worktree);
+  // An index the worktree already has is replaced only on request, and only when it is the
+  // clone this module made (the link leads to its folder), never an index of another origin.
+  const replacing = fs.existsSync(path.join(worktree, STATE_DIR_NAME, CODEBASE_DB));
+  if (replacing && !(replace && linkLeadsTo(worktree, finalDir))) return { skipped: 'indexed' };
   if (!fs.existsSync(path.join(mainState, CODEBASE_DB))) return { skipped: 'no-main-index' };
   if (ownStateDir(worktree)) return { skipped: 'own-state-dir' };
+  // A first clone needs a finished build, a replacement needs a complete baseline (see the
+  // header). Judged by a process rooted in the main checkout; a failed bootstrap is tried
+  // again after its retry period.
+  const mainReady = indexReadiness(mainCheckout, mainState);
+  if (replacing ? !mainReady.ready : BUILD_NOT_FINISHED.has(mainReady.reason)) {
+    throw Object.assign(new Error(`the main checkout's index is not ready (${mainReady.reason}); run "sweet-search index" in ${mainCheckout}`), { retryAfterMs: MAIN_NOT_READY_RETRY_MS });
+  }
+  if (replacing) {
+    const own = indexReadiness(worktree, path.join(worktree, STATE_DIR_NAME));
+    if (own.ready) {
+      throw Object.assign(new Error('the worktree\'s index is a complete baseline: nothing to replace'), { retryAfterMs: REPLACE_MIN_AGE_MS });
+    }
+    // The clone already has the main index's baseline and the worktree's processes still
+    // refuse it (their configuration differs from the main checkout's, for example a model
+    // chosen in the worktree): a new clone would get the same verdict, and would undo
+    // that choice. Only a rebuild in the worktree helps.
+    const { readStoredFingerprint } = await baselineReadiness();
+    const mine = readStoredFingerprint(finalDir);
+    if (mine && mainIndexLooksComplete(finalDir) && JSON.stringify(mine) === JSON.stringify(readStoredFingerprint(mainState))) {
+      throw Object.assign(new Error(`the worktree's index is not ready (${own.reason}) and has the main index's baseline: nothing to replace it with; run "sweet-search index" in ${worktree}`), { retryAfterMs: REPLACE_NO_GAIN_RETRY_MS });
+    }
+    log(`replacing the worktree's index (${own.reason}) with a clone of the main index`);
+  }
   // Cheap checks first: a worktree that cannot hold the link must not cost a copy and a
   // stopped main maintainer, again on every retry.
   // git must ignore the link's name before the probe makes it.
@@ -688,7 +795,6 @@ export async function bootstrapWorktreeIndex({
   for (const dir of gcWorktreeIndexes(worktreesDir)) log(`removed the index of a removed worktree: ${dir}`);
 
   const { holdMaintainerForIndexRun, reconcilePaused, launchMaintainer, maintainerAlive } = await import('./maintainer-launcher.mjs');
-  const finalDir = worktreeIndexDir(mainCheckout, worktree);
   const tmp = `${finalDir}.bootstrap-${process.pid}`;
   fs.rmSync(tmp, { recursive: true, force: true });
   let mode;
@@ -733,6 +839,13 @@ export async function bootstrapWorktreeIndex({
     writeQueue(tmp, changed);
     dateIndexAs(tmp, publishedAtMs);
     log(`file records: ${same} unchanged, ${changed.length} queued for re-indexing`);
+    if (replacing) {
+      // Stop the old index's maintainer as an index run does (it is the process that asked
+      // for this replacement). The pause goes away with the old folder. A pause someone
+      // else holds is an index run in the worktree: that run makes the index ready.
+      const hold = await holdMaintainerForIndexRun(finalDir, { reason: 'the worktree index is being replaced', waitForHolderMs: 2_000, timeoutMs: 30_000 });
+      if (!hold.ours) throw Object.assign(new Error('the worktree\'s index is paused (an index run)'), { retryAfterMs: 60_000 });
+    }
     // A leftover index for this path (its worktree was removed and re-added, and the
     // clean-up has not run) is replaced: it describes other files.
     const old = readJson(path.join(finalDir, MAINTAINER_LOCK));
@@ -767,7 +880,7 @@ export async function bootstrapWorktreeIndex({
  *
  * @returns {Promise<'ready'|'skipped'|'busy'|'failed'>}  'busy': another process holds the claim
  */
-async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true, lockWaitMs, daemonPid = 0 }) {
+async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true, lockWaitMs, daemonPid = 0, replace = false }) {
   const claim = bootstrapClaimPath(mainCheckout, worktree);
   const logFile = path.join(mainCheckout, STATE_DIR_NAME, 'worktree-bootstrap.log');
   const log = (msg) => {
@@ -783,7 +896,7 @@ async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = nu
   }
   if (!claimed) return 'busy';
   try {
-    const r = await bootstrapWorktreeIndex({ mainCheckout, worktree, log, launch, daemonPid, ...(lockWaitMs ? { lockWaitMs } : {}) });
+    const r = await bootstrapWorktreeIndex({ mainCheckout, worktree, log, launch, daemonPid, replace, ...(lockWaitMs ? { lockWaitMs } : {}) });
     log(r.skipped ? `skipped: ${r.skipped}` : `ready in ${r.ms} ms`);
     fs.rmSync(claim, { force: true });
     return r.skipped ? 'skipped' : 'ready';
@@ -825,6 +938,19 @@ export async function ensureWorktreeIndex({ mainCheckout, worktree, env = proces
 
 async function main() {
   const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) || '';
+  const readinessOf = arg('readiness-of');
+  if (readinessOf) {
+    // The baseline verdict of THIS process's project root (indexReadiness), as its
+    // maintainer gives it: the persisted model choice first, then the gate.
+    const [{ applyPersistedLiModel }, { hasCompleteBaseIndex }] = await Promise.all([
+      import('../infrastructure/init-config.js'),
+      baselineReadiness(),
+    ]);
+    applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
+    const verdict = hasCompleteBaseIndex(readinessOf);
+    process.stdout.write(`\n${JSON.stringify({ ready: verdict.ready, reason: verdict.reason })}\n`);
+    return;
+  }
   const mainCheckout = arg('main');
   const worktree = arg('worktree');
   if (!mainCheckout || !worktree) {
@@ -836,7 +962,7 @@ async function main() {
     applyBackgroundPriority?.(process.pid);
   } catch { /* best effort */ }
   const daemonPid = Number(arg('daemon-pid')) || 0;
-  const outcome = await runWorktreeBootstrap({ mainCheckout, worktree, daemonPid });
+  const outcome = await runWorktreeBootstrap({ mainCheckout, worktree, daemonPid, replace: process.argv.includes('--replace') });
   if (outcome === 'failed') process.exitCode = 1;
 }
 

@@ -10,14 +10,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 import {
   bootstrapWorktreeIndex, gcWorktreeIndexes, isRuntimeFile, rekeyFileState, requestWorktreeIndex,
   worktreeIndexDir, bootstrapState, bootstrapClaimPath, isClonedEntry, indexDateMs, createExclusive,
-  removeIfStale, cloneIndexDir, plainCopyMaxBytes, ensureWorktreeIndex,
+  removeIfStale, cloneIndexDir, plainCopyMaxBytes, ensureWorktreeIndex, indexReadiness,
 } from '../../core/indexing/worktree-index.mjs';
 import { holdMaintainerForIndexRun } from '../../core/indexing/maintainer-launcher.mjs';
-import { stateDirGone } from '../../core/indexing/index-maintainer.mjs';
+import { stateDirGone, linkedWorktreeCloneOf, requestCloneReplacement } from '../../core/indexing/index-maintainer.mjs';
 import { projectSocketPath } from '../../core/search/server-identity.js';
 import { pendingReindexFiles } from '../../core/search/index-freshness.js';
 import http from 'node:http';
@@ -41,11 +42,34 @@ function statOf(abs) {
   return { size: st.size.toString(), mtime_ns: st.mtimeNs.toString(), inode: st.ino.toString() };
 }
 
-/** A main index whose file records describe the main checkout's files exactly. */
+// The configuration fingerprint a process rooted in a checkout gives a complete index: the
+// one its maintainer compares (baseline-readiness.mjs). Taken from such a process, not from
+// this one, whose project root is the repository under test.
+let fingerprint = null;
+function currentFingerprint(root) {
+  if (fingerprint) return fingerprint;
+  const url = (rel) => JSON.stringify(pathToFileURL(path.resolve(import.meta.dirname, '../../core', rel)).href);
+  const script = `const [{ applyPersistedLiModel }, { buildConfigFingerprint }] = await Promise.all([import(${url('infrastructure/init-config.js')}), import(${url('indexing/config-fingerprint.js')})]);`
+    + 'applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT); process.stdout.write("\\n" + JSON.stringify(buildConfigFingerprint()));';
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: root, env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: root }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  fingerprint = JSON.parse(out.trim().split('\n').pop());
+  return fingerprint;
+}
+
+/** The head of merkle-state.json: what marks a full build as complete, with its format. */
+function writeMerkleHead(state, overrides = {}) {
+  fs.writeFileSync(path.join(state, 'merkle-state.json'),
+    JSON.stringify({ version: currentFingerprint(main).version, config_fingerprint: { ...currentFingerprint(main), ...overrides }, lastIndex: '2020-01-01T00:00:00.000Z' }));
+}
+
+/** A complete main index whose file records describe the main checkout's files exactly. */
 function makeMainIndex() {
   const state = path.join(main, '.sweet-search');
   fs.mkdirSync(state, { recursive: true });
   fs.writeFileSync(path.join(state, 'codebase.db'), 'index');
+  writeMerkleHead(state);
   fs.mkdirSync(path.join(state, 'codebase-late-interaction.db.segments'));
   fs.writeFileSync(path.join(state, 'codebase-late-interaction.db.segments', 'segment-1.bin'), 'seg');
   // Runtime files: none may reach the worktree's index.
@@ -291,6 +315,198 @@ describe('requestWorktreeIndex', () => {
     expect(fs.existsSync(path.join(wt, '.sweet-search', 'codebase.db'))).toBe(true);
     expect(requestWorktreeIndex({ mainCheckout: main, worktree: wt }).reason).toBe('indexed');
   }, 30_000);
+});
+
+// A clone was taken from any main index that had a codebase.db, also one whose build was
+// killed half way. And a clone that was not a complete baseline (taken from a main index in
+// an older format, or left in the old format by an upgrade) served the worktree for good
+// with a dormant maintainer, also after the main index was rebuilt.
+// See docs/STATE_MACHINES.md, IX-SM5 and finding IX3.
+describe('main index readiness (the clone source must be a finished build)', () => {
+  it('judges a state dir as the maintainer of that checkout does', () => {
+    const state = makeMainIndex();
+    expect(indexReadiness(main, state)).toMatchObject({ ready: true });
+    writeMerkleHead(state, { chunkingVersion: -1 });
+    expect(indexReadiness(main, state)).toMatchObject({ ready: false, reason: 'config-fingerprint-mismatch' });
+    fs.rmSync(path.join(state, 'merkle-state.json'));
+    expect(indexReadiness(main, state)).toMatchObject({ ready: false, reason: 'no-merkle-state' });
+  });
+
+  it('starts no bootstrap from a main index whose build did not finish', () => {
+    const state = makeMainIndex();
+    // A full build killed after it swapped codebase.db in: no merkle state, no manifest.
+    fs.rmSync(path.join(state, 'merkle-state.json'));
+    fs.rmSync(path.join(state, 'reconcile-manifest.json'));
+    const r = requestWorktreeIndex({ mainCheckout: main, worktree: wt, env: { ...process.env, SWEET_SEARCH_RECONCILE_V2: '0' } });
+    expect(r).toEqual({ started: false, reason: 'main-index-not-ready' });
+    expect(bootstrapState(main, wt)).toBe(null);
+  });
+
+  it('does not clone a main index whose build did not finish, and tries again later', async () => {
+    const state = makeMainIndex();
+    fs.rmSync(path.join(state, 'merkle-state.json')); // the build was killed before its last step
+    await expect(bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false }))
+      .rejects.toMatchObject({ message: expect.stringMatching(/main checkout's index is not ready \(no-merkle-state\)/), retryAfterMs: 120_000 });
+    expect(fs.existsSync(path.join(wt, '.sweet-search', 'codebase.db'))).toBe(false);
+    // The build is run again and finishes: the next bootstrap clones the index.
+    writeMerkleHead(state);
+    const r = await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
+    expect(['clone', 'copy']).toContain(r.mode);
+  });
+
+  it('clones a finished main index in an older format, and replaces the clone once the main index is rebuilt', async () => {
+    const state = makeMainIndex();
+    writeMerkleHead(state, { chunkingVersion: -1 }); // built by an older version: the upgrade asks for a rebuild
+    fs.writeFileSync(path.join(state, 'codebase.db'), 'old format index');
+    const first = await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
+    expect(['clone', 'copy']).toContain(first.mode);
+    const clone = path.join(wt, '.sweet-search');
+    expect(indexReadiness(wt, clone)).toMatchObject({ ready: false, reason: 'config-fingerprint-mismatch' });
+    // No replacement while the main index is in the old format too.
+    await expect(bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false, replace: true }))
+      .rejects.toThrow(/main checkout's index is not ready \(config-fingerprint-mismatch\)/);
+
+    // `sweet-search index` in the main checkout: new format.
+    fs.writeFileSync(path.join(state, 'codebase.db'), 'index');
+    writeMerkleHead(state);
+    const second = await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false, replace: true });
+    expect(['clone', 'copy']).toContain(second.mode);
+    expect(fs.readFileSync(path.join(clone, 'codebase.db'), 'utf8')).toBe('index');
+    expect(indexReadiness(wt, clone)).toMatchObject({ ready: true });
+  });
+});
+
+describe('a worktree index that is not a complete baseline is replaced', () => {
+  const cloneState = () => fs.realpathSync(path.join(wt, '.sweet-search'));
+  // The index marker as a tool call would read it. Empty while a replacement is between
+  // removing the old folder and publishing the new one (the split roots serve then).
+  const cloneText = () => {
+    try { return fs.readFileSync(path.join(wt, '.sweet-search', 'codebase.db'), 'utf8'); } catch { return ''; }
+  };
+  const ageStamp = (ms) => {
+    const file = path.join(cloneState(), 'worktree-stamp.json');
+    const stamp = JSON.parse(fs.readFileSync(file, 'utf8'));
+    stamp.stampedAt = new Date(Date.now() - ms).toISOString();
+    fs.writeFileSync(file, JSON.stringify(stamp));
+  };
+  /** The state after: clone taken from an old-format main index, main index then rebuilt. */
+  async function staleClone() {
+    const state = makeMainIndex();
+    await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
+    writeMerkleHead(cloneState(), { chunkingVersion: -1 });
+    fs.writeFileSync(path.join(cloneState(), 'codebase.db'), 'old index');
+    return state;
+  }
+
+  it('leaves an indexed worktree alone unless a replacement is asked for', async () => {
+    await staleClone();
+    expect(await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false })).toEqual({ skipped: 'indexed' });
+    expect(requestWorktreeIndex({ mainCheckout: main, worktree: wt }).reason).toBe('indexed');
+  });
+
+  it('replaces the clone with a clone of the main index that is ready now', async () => {
+    await staleClone();
+    const before = cloneState();
+    const r = await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false, replace: true });
+    expect(['clone', 'copy']).toContain(r.mode);
+    expect(cloneState()).toBe(before); // the same place, new content
+    expect(fs.readFileSync(path.join(cloneState(), 'codebase.db'), 'utf8')).toBe('index');
+    expect(indexReadiness(wt, path.join(wt, '.sweet-search'))).toMatchObject({ ready: true });
+    // The worktree's own changes are queued again for its maintainer.
+    expect(fs.readFileSync(path.join(cloneState(), 'index-maintainer-queue.jsonl'), 'utf8')).toMatch(/b\.js/);
+    expect(fs.existsSync(path.join(cloneState(), 'reconcile-pause.json'))).toBe(false);
+  });
+
+  it('replaces nothing when the worktree index is ready', async () => {
+    makeMainIndex();
+    await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
+    await expect(bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false, replace: true }))
+      .rejects.toThrow(/nothing to replace/);
+  });
+
+  it('replaces nothing when the main index is not ready either', async () => {
+    const state = await staleClone();
+    writeMerkleHead(state, { chunkingVersion: -1 });
+    await expect(bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false, replace: true }))
+      .rejects.toThrow(/main checkout's index is not ready/);
+    expect(fs.readFileSync(path.join(cloneState(), 'codebase.db'), 'utf8')).toBe('old index');
+  });
+
+  it('replaces nothing when the clone already has the main index\'s baseline', async (ctx) => {
+    const state = makeMainIndex();
+    const model = currentFingerprint(main).liModel;
+    // The verdicts below differ through the persisted model choice; an environment that
+    // fixes the model, or switches late interaction off, gives both roots one verdict.
+    if (!model || process.env.SWEET_SEARCH_LATE_INTERACTION_MODEL) ctx.skip();
+    await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
+    // A model chosen in the worktree: its own processes now refuse the index, the main
+    // checkout's still accept the main index. A new clone would bring the same baseline
+    // (and would undo the choice): the index is left alone.
+    const choice = JSON.stringify({ runtime: { li: { model: model === 'lateon-code' ? 'lateon-code-edge' : 'lateon-code' } } });
+    fs.writeFileSync(path.join(cloneState(), 'config.json'), choice);
+    expect(indexReadiness(main, state)).toMatchObject({ ready: true });
+    expect(indexReadiness(wt, path.join(wt, '.sweet-search'))).toMatchObject({ ready: false, reason: 'config-fingerprint-mismatch' });
+    await expect(bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false, replace: true }))
+      .rejects.toMatchObject({ message: expect.stringMatching(/nothing to replace it with/), retryAfterMs: 6 * 3600_000 });
+    expect(fs.readFileSync(path.join(cloneState(), 'config.json'), 'utf8')).toBe(choice);
+  });
+
+  it('asks for a replacement at most once per period, and never for a state dir of the worktree\'s own', async () => {
+    await staleClone();
+    const env = { ...process.env, SWEET_SEARCH_RECONCILE_V2: '0' };
+    // Just cloned: a replacement would be a loop.
+    expect(requestWorktreeIndex({ mainCheckout: main, worktree: wt, env, replace: true }).reason).toBe('replaced-recently');
+    ageStamp(11 * 60_000);
+    const r = requestWorktreeIndex({ mainCheckout: main, worktree: wt, env, replace: true });
+    expect(r.started).toBe(true);
+    const deadline = Date.now() + 20_000;
+    while (cloneText() !== 'index' && Date.now() < deadline) {
+      await new Promise((res) => setTimeout(res, 100));
+    }
+    expect(cloneText()).toBe('index');
+
+    // A real folder (an index the user built in the worktree) is never replaced.
+    const own = path.join(tmp, 'own');
+    git(main, 'worktree', 'add', '-q', own, '-b', 'own');
+    fs.mkdirSync(path.join(own, '.sweet-search'));
+    fs.writeFileSync(path.join(own, '.sweet-search', 'codebase.db'), 'mine');
+    expect(requestWorktreeIndex({ mainCheckout: main, worktree: own, env, replace: true }).reason).toBe('own-state-dir');
+  }, 40_000);
+
+  it('the maintainer of a linked worktree index knows its main checkout and worktree', async () => {
+    makeMainIndex();
+    await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
+    expect(linkedWorktreeCloneOf({ projectRoot: wt, stateDirPath: path.join(wt, '.sweet-search'), stateDir: cloneState() }))
+      .toEqual({ mainCheckout: main, worktree: wt });
+    // The main checkout's own index, and any index that is a real folder, is not a clone.
+    const mainState = path.join(main, '.sweet-search');
+    expect(linkedWorktreeCloneOf({ projectRoot: main, stateDirPath: mainState, stateDir: mainState })).toBe(null);
+  });
+
+  it('a dormant maintainer of a linked worktree index asks for the new clone and gets it', async () => {
+    await staleClone();
+    ageStamp(11 * 60_000);
+    const ctx = { projectRoot: wt, stateDirPath: path.join(wt, '.sweet-search'), stateDir: cloneState() };
+    const mainState = path.join(main, '.sweet-search');
+    // The background process inherits this: it must not start a real maintainer here.
+    const before = process.env.SWEET_SEARCH_RECONCILE_V2;
+    process.env.SWEET_SEARCH_RECONCILE_V2 = '0';
+    try {
+      // The main checkout's own maintainer never asks.
+      expect(await requestCloneReplacement({ projectRoot: main, stateDirPath: mainState, stateDir: mainState })).toBe(null);
+      const r = await requestCloneReplacement(ctx);
+      expect(r).toMatchObject({ started: true });
+      // Asked once per period: the next dormant tick starts nothing.
+      expect(await requestCloneReplacement(ctx)).toBe(null);
+      const deadline = Date.now() + 20_000;
+      while (cloneText() !== 'index' && Date.now() < deadline) {
+        await new Promise((res) => setTimeout(res, 100));
+      }
+      expect(cloneText()).toBe('index');
+    } finally {
+      if (before === undefined) delete process.env.SWEET_SEARCH_RECONCILE_V2; else process.env.SWEET_SEARCH_RECONCILE_V2 = before;
+    }
+  }, 40_000);
 });
 
 describe('review fixes', () => {
