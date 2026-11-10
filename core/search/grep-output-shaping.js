@@ -987,6 +987,15 @@ export function renderGrepHiddenFiles(hidden) {
 /** The one line that says how to see hidden hits; printed once, only when something is hidden. */
 export const GREP_HIDDEN_HINT = '# hidden hits: raise -k or use --in <file>';
 
+/**
+ * ss-grep -l and -c list at most this many files from the engine before the k cut (all of them).
+ * The daemon's /search accepts a `maxFiles` up to this value (search-server.js
+ * readGrepShapingParams): a smaller bound there refuses the request of -l and -c, and a fresh
+ * process then loads a cold engine for each such call. The lane has its own copy
+ * (crates/sweet-search-native/src/lane/pipeline.rs GREP_FILE_MODE_MAX_FILES).
+ */
+export const GREP_FILE_MODE_MAX_FILES = 100000;
+
 // Prose and examples, not the code under question: release notes, changelogs, docs, example
 // and sample programs. Listed after code, never a reason to print.
 const DOC_PATH_RE = /\.(?:md|mdx|markdown|txt|rst|adoc|rdoc)$|(?:^|\/)(?:docs?|examples?|samples?|demos?|CHANGELOG|CHANGES|NEWS|HISTORY)(?:\/|\.|$)/i;

@@ -39,6 +39,7 @@ import {
   selectEvictionTargets as registrySelectEvictionTargets,
 } from './daemon-registry.js';
 import { renderRegexDialectHint } from './regex-dialect.js';
+import { GREP_FILE_MODE_MAX_FILES } from './grep-output-shaping.js';
 import {
   readFixFlags,
   renderCompactSufficiency,
@@ -124,7 +125,8 @@ function parseBoundedSearchInteger(value, name, max) {
 
 /**
  * The ss-grep shaping options of a /search call: perFileCap and maxFiles (bounded integers;
- * throws on a bad value, answered 400) and fileOrder=weight, ss-grep's weighted file selection
+ * throws on a bad value, answered 400; maxFiles goes up to the value ss-grep -l and -c send, or
+ * the tool never gets a warm answer for them) and fileOrder=weight, ss-grep's weighted file selection
  * (SS_FIX_GREP_ALLOC, read client-side; absent = the legacy path-order selection).
  * Client-decided arms (ss-grep sends them by default since 2026-10-03; absent = legacy):
  * fileWeight=sat2 (SS_FIX_GREP_WEIGHT) and lineClasses=1 (SS_FIX_GREP_LINES).
@@ -133,7 +135,7 @@ function parseBoundedSearchInteger(value, name, max) {
 export function readGrepShapingParams(searchParams) {
   return {
     perFileCap: parseBoundedSearchInteger(searchParams.get('perFileCap'), 'perFileCap', 1000),
-    maxFiles: parseBoundedSearchInteger(searchParams.get('maxFiles'), 'maxFiles', 1000),
+    maxFiles: parseBoundedSearchInteger(searchParams.get('maxFiles'), 'maxFiles', GREP_FILE_MODE_MAX_FILES),
     grepFileOrder: searchParams.get('fileOrder') === 'weight' ? 'weight' : undefined,
     grepFileWeight: searchParams.get('fileWeight') === 'sat2' ? 'sat2' : undefined,
     grepLineClasses: searchParams.get('lineClasses') === '1' ? true : undefined,

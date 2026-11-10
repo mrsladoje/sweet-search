@@ -11,8 +11,8 @@ import {
   GREP_BOOL_SHORTS, translateBreAlternation, unsupportedGrepOption,
 } from '../argparse.mjs';
 import {
-  GREP_HIDDEN_HINT, renderGrepBody, renderGrepHiddenFiles, renderOutsideScopeLine, renderOutsideScopeProbeLine,
-  renderGrepListing, renderGrepFileList, renderGrepFileCounts, renderGrepOnlyMatching,
+  GREP_FILE_MODE_MAX_FILES, GREP_HIDDEN_HINT, renderGrepBody, renderGrepHiddenFiles, renderOutsideScopeLine,
+  renderOutsideScopeProbeLine, renderGrepListing, renderGrepFileList, renderGrepFileCounts, renderGrepOnlyMatching,
 } from '../../search/grep-output-shaping.js';
 import { loadNativeAddon } from '../../infrastructure/native-resolver.js';
 import { cwdGrepScope } from '../../search/cwd-paths.js';
@@ -95,8 +95,6 @@ const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp]
   + "  -g '*.h' searches only matching files; -g '!tests/**' excludes (exclusion wins). Also --include <glob>, --exclude <glob>, --exclude-dir <dir>.\n"
   + '  -l lists the files with a match (most relevant first), -c prints path:count, -o prints only the matched text; '
   + '-k N caps the files (-l, -c) or hit lines (-o). Without -E or -F, a pattern with \\| and no | is grep basic regex.';
-// -l and -c list at most this many files from the engine before the k cut (all of them).
-const GREP_FILE_MODE_MAX_FILES = 100000;
 // ss-grep -o: every non-empty match of `rx` on each hit line, found by the native engine's own
 // regex (the lane calls the same function). Without that addon export: the stored first match.
 function grepOnlyMatchingTexts(rx, rows) {

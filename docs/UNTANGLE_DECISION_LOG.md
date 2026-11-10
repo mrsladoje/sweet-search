@@ -493,11 +493,26 @@ Four fresh read-only agents read the code again with this log and the constraint
   and `useLateInteraction: false`, and `fetchMode` sends `mode: 'grep'` on both paths. A merge must keep these or show
   that they have no effect. `semantic.mjs` has a fifth block of the same shape for `readSemantic`.
 - **Found, not changed.**
-  - `ss-grep -l` and `-c` ask the daemon for `maxFiles: 100000` (`GREP_FILE_MODE_MAX_FILES`); `/search` rejects a value
-    above 1,000 (`readGrepShapingParams`). The warm request therefore always fails and the `catch` of `fetchMode` runs.
-    Inside the daemon the fallback is the daemon's own searcher, so nothing is lost. In a fresh process (`cli.js`, the
-    path behind the native client) each such call loads a cold engine: 2 to 8 s on this machine in the capture.
+  - `ss-grep -l` and `-c` ask the daemon for `maxFiles: 100000` (`GREP_FILE_MODE_MAX_FILES`); `/search` rejected a value
+    above 1,000 (`readGrepShapingParams`). The warm request always failed and the `catch` of `fetchMode` ran. Inside the
+    daemon the fallback is the daemon's own searcher, so nothing was lost. In a fresh process (`cli.js`, the path behind
+    the native client) each such call loaded a cold engine: 2 to 8 s on this machine. Fixed in the next commit (section
+    below).
   - The index paths of the engine are module-level (`DB_PATHS`). One process can serve only the project it started for:
     a capture process started in this repository opened this repository's code graph for `ss-trace` and for the cold
     grep fallback, although every call named the fixture as its root. The daemon and `cli.js` are not affected (one
     project per process). The per-call context does not remove this limit; the replacement of `process.*` must.
+
+## Done: ss-grep -l / -c get a warm answer in a fresh process (2026-11-10)
+
+- `GREP_FILE_MODE_MAX_FILES` (100,000) has one JS owner, `core/search/grep-output-shaping.js`. `commands/grep.mjs` sends
+  it and `readGrepShapingParams` accepts `maxFiles` up to it (was 1,000, older than the -l / -c modes of 2026-10-20).
+  The lane keeps its own copy (`lane/pipeline.rs`). `perFileCap` and `outsideProbe` keep their bound of 1,000.
+- No output byte changed: the same 1,892 calls, split code against fixed code, have equal exit codes and equal stdout.
+  stderr differs in 34 calls of the in-process and `cli.js` captures, all `-l` / `-c`: the load banners of the cold engine
+  are gone (32 calls), or the engine loads once and not twice (2 calls, a regex that does not parse). Shadow log: 134 answered by the lane with the
+  same bytes, 0 different; 26 of them are `-l` / `-c` / `-o` calls, whose JS answer now comes through `/search`.
+- `tests/agent-tools/ss-grep-file-modes-warm.test.js` runs `-l` and `-c` against a fake daemon that checks the request
+  with the real parser; a cold engine fails the call. It fails with the old bound.
+- Still cold in a fresh process: a regex that the engine cannot parse. The daemon answers with an error, the `catch`
+  runs the engine in process, and the regex repair reads the parse error of that engine.

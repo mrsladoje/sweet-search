@@ -47,6 +47,8 @@ import {
   readGrepShapingParams,
 } from '../../core/search/search-server.js';
 
+import { GREP_FILE_MODE_MAX_FILES } from '../../core/search/grep-output-shaping.js';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI = join(REPO_ROOT, 'core', 'cli.js');
 const M2CRB = join(REPO_ROOT, 'eval', 'corpus', 'm2crb');
@@ -223,7 +225,11 @@ describe('warm-daemon JSON clients', () => {
     expect(requests[1].searchParams.has('fileOrder')).toBe(false);
     expect(readGrepShapingParams(requests[1].searchParams))
       .toEqual({ perFileCap: 20, maxFiles: 20, grepFileOrder: undefined });
-    expect(() => readGrepShapingParams(new URLSearchParams('maxFiles=1001'))).toThrow(/maxFiles must be <= 1000/);
+    expect(() => readGrepShapingParams(new URLSearchParams('perFileCap=1001'))).toThrow(/perFileCap must be <= 1000/);
+    // maxFiles goes up to the value ss-grep -l and -c send, and no further.
+    expect(readGrepShapingParams(new URLSearchParams(`maxFiles=${GREP_FILE_MODE_MAX_FILES}`)).maxFiles).toBe(GREP_FILE_MODE_MAX_FILES);
+    expect(() => readGrepShapingParams(new URLSearchParams(`maxFiles=${GREP_FILE_MODE_MAX_FILES + 1}`)))
+      .toThrow(new RegExp(`maxFiles must be <= ${GREP_FILE_MODE_MAX_FILES}`));
     // Any other fileOrder value is ignored (legacy selection), never an error.
     for (const v of ['', 'Weight', 'path', 'weight ', 'weight,weight']) {
       expect(readGrepShapingParams(new URLSearchParams({ fileOrder: v })).grepFileOrder).toBeUndefined();
