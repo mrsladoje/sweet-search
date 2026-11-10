@@ -4,6 +4,7 @@
 
 import fs from 'fs/promises';
 import { bootLog } from '../infrastructure/boot-log.js';
+import { forgetFailedLoad } from '../infrastructure/load-retry.js';
 import { existsSync } from 'fs';
 import path from 'path';
 import { join } from 'path';
@@ -434,6 +435,11 @@ export class SemanticCache {
       this.loadingModel = false;
       return this.localModel;
     })();
+    // A failed load is tried again later (load-retry.js).
+    const pending = this.loadPromise;
+    forgetFailedLoad(pending, () => {
+      if (this.loadPromise === pending) { this.loadPromise = null; this.loadingModel = false; }
+    });
 
     return this.loadPromise;
   }
@@ -527,7 +533,11 @@ class QueryDeduplicator {
 
   set(text, promise) {
     this.inflight.set(text, promise);
-    promise.finally(() => this.inflight.delete(text));
+    // Not `.finally()`: it returns a promise that rejects when `promise` does, and nothing
+    // handled that one, so every failed embedding was also an unhandled rejection, which
+    // ends a Node process (the search daemon after one failed query embedding).
+    const forget = () => { if (this.inflight.get(text) === promise) this.inflight.delete(text); };
+    promise.then(forget, forget);
   }
 
   has(text) {

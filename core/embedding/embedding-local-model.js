@@ -5,6 +5,7 @@
 import crypto from 'crypto';
 import { bootLog } from '../infrastructure/boot-log.js';
 import { isEmbedForcedToCpu } from '../infrastructure/env-flag.js';
+import { forgetFailedLoad } from '../infrastructure/load-retry.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
 import { join } from 'path';
@@ -567,6 +568,11 @@ export async function getLocalPipeline() {
     isLoadingLocal = false;
     return localPipeline;
   })();
+  // A failed load is tried again later (load-retry.js): it used to fail every later call.
+  const pending = loadPromise;
+  forgetFailedLoad(pending, () => {
+    if (loadPromise === pending) { loadPromise = null; isLoadingLocal = false; }
+  });
 
   return loadPromise;
 }

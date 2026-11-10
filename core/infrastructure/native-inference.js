@@ -49,6 +49,7 @@
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { loadNativeAddon } from './native-resolver.js';
+import { forgetFailedLoad } from './load-retry.js';
 import { createTokenizer } from './native-tokenizer.js';
 import { getModelCacheDir, fetchModel } from './model-fetcher.js';
 import { getModelEntry } from './model-registry.js';
@@ -209,13 +210,11 @@ export async function getNativeEmbeddingModel() {
     return _embeddingModel;
   })();
 
-  try {
-    return await _embeddingModelLoadPromise;
-  } finally {
-    // Clear the promise on resolve so a future explicit unload can re-load.
-    // Keep it set on success: subsequent calls hit the _embeddingModel cache
-    // first and never reach the promise check.
-  }
+  // Kept on success (later calls hit the _embeddingModel cache first). A failed load is
+  // tried again later (load-retry.js).
+  const pending = _embeddingModelLoadPromise;
+  forgetFailedLoad(pending, () => { if (_embeddingModelLoadPromise === pending) _embeddingModelLoadPromise = null; });
+  return pending;
 }
 
 /**
@@ -231,6 +230,8 @@ async function getEmbTokenizer() {
     _embTokenizer = await createTokenizer(tokenizerPath);
     return _embTokenizer;
   })();
+  const pending = _embTokenizerLoadPromise;
+  forgetFailedLoad(pending, () => { if (_embTokenizerLoadPromise === pending) _embTokenizerLoadPromise = null; });
   return _embTokenizerLoadPromise;
 }
 
@@ -374,6 +375,9 @@ async function loadNativeLiVariantOnDefaultDevice(variant) {
   })();
 
   _liModels.set(variant.fp32RegistryKey, { model: null, promise });
+  forgetFailedLoad(promise, () => {
+    if (_liModels.get(variant.fp32RegistryKey)?.promise === promise) _liModels.delete(variant.fp32RegistryKey);
+  });
   return promise;
 }
 
@@ -407,6 +411,9 @@ async function getLiTokenizer() {
   })();
 
   _liTokenizers.set(variant.tokenizerKey, { tokenizer: null, promise });
+  forgetFailedLoad(promise, () => {
+    if (_liTokenizers.get(variant.tokenizerKey)?.promise === promise) _liTokenizers.delete(variant.tokenizerKey);
+  });
   return promise;
 }
 
@@ -549,11 +556,10 @@ export async function loadNativeEmbeddingModelWithDevice(deviceKind, cascadeDirO
     return _embeddingModel;
   })();
 
-  try {
-    return await _embeddingModelLoadPromise;
-  } finally {
-    // Keep promise set on success; clear only on re-load.
-  }
+  // Kept on success; a failed load is tried again later (load-retry.js).
+  const pending = _embeddingModelLoadPromise;
+  forgetFailedLoad(pending, () => { if (_embeddingModelLoadPromise === pending) _embeddingModelLoadPromise = null; });
+  return pending;
 }
 
 /**
@@ -609,6 +615,9 @@ export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride
   })();
 
   _liModels.set(variant.fp32RegistryKey, { model: null, promise });
+  forgetFailedLoad(promise, () => {
+    if (_liModels.get(variant.fp32RegistryKey)?.promise === promise) _liModels.delete(variant.fp32RegistryKey);
+  });
   return promise;
 }
 

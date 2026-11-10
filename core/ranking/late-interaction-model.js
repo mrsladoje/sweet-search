@@ -12,6 +12,7 @@
  */
 
 import { bootLog } from '../infrastructure/boot-log.js';
+import { forgetFailedLoad } from '../infrastructure/load-retry.js';
 import fs from 'fs';
 import { join } from 'path';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
@@ -62,9 +63,12 @@ export async function getLateInteractionPipeline() {
   if (_queryDelegate) { await _queryDelegate.warm(); return null; }
   if (lateInteractionPipeline) return lateInteractionPipeline;
   if (loadPromise) return loadPromise;
-  loadPromise = loadModel();
-  lateInteractionPipeline = await loadPromise;
-  loadPromise = null;
+  const pending = loadModel();
+  loadPromise = pending;
+  // A failed load is tried again later (load-retry.js): the rejected promise used to stay.
+  forgetFailedLoad(pending, () => { if (loadPromise === pending) loadPromise = null; });
+  lateInteractionPipeline = await pending;
+  if (loadPromise === pending) loadPromise = null;
   return lateInteractionPipeline;
 }
 
