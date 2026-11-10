@@ -1,6 +1,7 @@
 // Fixtures for src/args.rs: the argument part of cmdGrep, run from the REAL source text of
-// run-agent-tool.mjs (the helper functions and the start of cmdGrep are cut out of the file and
-// evaluated with the real imports), on the 1,600 corpus argument lists from the repository
+// core/agent-tools/commands/grep.mjs and shared.mjs (the helper functions and the start of cmdGrep
+// are cut out of the two files and evaluated with the real imports and a call context that holds
+// the file root), on the 1,600 corpus argument lists from the repository
 // root, from a subdirectory, and from a subdirectory with the --in paths typed relative to it,
 // plus synthetic edge cases. Usage: node fixtures-gen/args.mjs <synthetic repo dir>
 import fs from 'node:fs';
@@ -13,16 +14,21 @@ const argparse = await import(jsPath('core/agent-tools/argparse.mjs'));
 const cwdPaths = await import(jsPath('core/search/cwd-paths.js'));
 const prefilter = await import(jsPath('core/search/search-pattern-prefilter.js'));
 
-const SRC = fs.readFileSync(jsPath('core/agent-tools/run-agent-tool.mjs'), 'utf8');
+// The helpers shared by several commands, then ss-grep's own.
+const SRC = ['core/agent-tools/commands/shared.mjs', 'core/agent-tools/commands/grep.mjs']
+  .map((rel) => fs.readFileSync(jsPath(rel), 'utf8')).join('\n');
 
+// A function declared at column 0, with or without `export` (the cut leaves `export` out).
 function cutFunction(name) {
-  const start = SRC.indexOf(`\nfunction ${name}(`);
-  if (start === -1) throw new Error(`no function ${name}`);
+  const decl = `function ${name}(`;
+  const at = [`\n${decl}`, `\nexport ${decl}`].map((s) => SRC.indexOf(s)).find((i) => i !== -1);
+  if (at === undefined) throw new Error(`no function ${name}`);
+  const start = SRC.indexOf(decl, at);
   const end = SRC.indexOf('\n}\n', start);
-  return SRC.slice(start + 1, end + 3);
+  return SRC.slice(start, end + 3);
 }
 function cutGrepPrefix() {
-  const head = 'async function cmdGrep(rawArgs, { fromFind = false } = {}) {\n';
+  const head = 'export async function cmdGrep(ctx, rawArgs, { fromFind = false } = {}) {\n';
   const start = SRC.indexOf(head);
   const end = SRC.indexOf('\n  // SS_FIX_GREP_RETRY', start);
   if (start === -1 || end === -1) throw new Error('cmdGrep prefix not found');
@@ -55,8 +61,10 @@ const injected = {
 };
 let FILE_ROOT = '/';
 const names = Object.keys(injected).filter((n) => /^[A-Za-z_$][\w$]*$/.test(n) && n !== 'default');
-const factory = new Function(...names, 'getRoot', body.replaceAll('FILE_ROOT', 'getRoot()'));
-const cmdGrepArgs = factory(...names.map((n) => injected[n]), () => FILE_ROOT);
+// The cut code reads the file root from its call context (`ctx.fileRoot`).
+const ctx = { get fileRoot() { return FILE_ROOT; } };
+const factory = new Function(...names, 'ctx', body);
+const cmdGrepArgs = factory(...names.map((n) => injected[n]), ctx);
 
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 // Compact form: every string has the root spellings replaced by $R / $T (the Rust test puts

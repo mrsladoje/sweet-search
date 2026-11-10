@@ -1,6 +1,6 @@
 //! The native ss-grep lane: the daemon answers `ss-grep` from a Rust thread, without running
 //! the JS tool, when it can print exactly the bytes the JS tool would
-//! (core/agent-tools/run-agent-tool.mjs cmdGrep). Anything else is DECLINED and the
+//! (core/agent-tools/commands/grep.mjs cmdGrep). Anything else is DECLINED and the
 //! native client sends the call to the JS route (POST /agent-tool) as before. That includes
 //! every call while the maintainer's reindex queue holds files (state.rs reindex_pending).
 //!

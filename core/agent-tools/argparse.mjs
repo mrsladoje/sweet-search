@@ -1,6 +1,6 @@
 // Pure argument-parsing helpers for the ss-* CLI wrappers.
 //
-// Kept apart from run-agent-tool.mjs so they can be unit-tested alone. NOTHING here touches
+// Kept apart from the commands (commands/*.mjs) so they can be unit-tested alone. NOTHING here touches
 // process.* or the filesystem — every function is a pure transform over an
 // args array (some mutate the array in place, by design, and return a value).
 

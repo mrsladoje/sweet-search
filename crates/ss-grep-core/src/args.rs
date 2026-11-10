@@ -1,5 +1,6 @@
 //! ss-grep argument parsing: core/agent-tools/argparse.mjs and the start of
-//! `cmdGrep` in core/agent-tools/run-agent-tool.mjs (up to buildGrepPattern).
+//! `cmdGrep` in core/agent-tools/commands/grep.mjs (up to buildGrepPattern), with the helpers it
+//! calls in core/agent-tools/commands/shared.mjs.
 //!
 //! Every place the JS fails with a usage error (failUsage / process.exit) returns
 //! `Err(Decline)`: the JS answers those calls itself.
@@ -724,8 +725,8 @@ fn dedupe(v: Vec<String>) -> Vec<String> {
 }
 
 /// The start of `cmdGrep` (not the `fromFind` variant), in the JS order. `cwd` is the agent's
-/// shell cwd (process.cwd() of the call) and `file_root` FILE_ROOT; both must be absolute.
-// Mirrors: core/agent-tools/run-agent-tool.mjs:cmdGrep (argument part)
+/// shell cwd (process.cwd() of the call) and `file_root` the call's `ctx.fileRoot`; both must be absolute.
+// Mirrors: core/agent-tools/commands/grep.mjs:cmdGrep (argument part)
 pub fn parse_grep_args(args: &[String], probe: &dyn PathProbe, cwd: &str, file_root: &str) -> Result<GrepArgs, Decline> {
     if !posix_is_absolute(cwd) || !posix_is_absolute(file_root) {
         return Err(Decline("cwd and file root must be absolute"));

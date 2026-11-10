@@ -167,7 +167,7 @@ describe('cwdGrepScope (ss-grep implicit scope)', () => {
 
 // ss-find without a late-interaction index falls back to ss-grep. Run the real wrapper with a
 // stub searcher that records what bareGrep is asked, so the behavior is checked, not the source.
-describe('ss-find → ss-grep fallback (run-agent-tool.mjs)', () => {
+describe('ss-find → ss-grep fallback (commands/find.mjs)', () => {
   let fbase;
   let froot;
 

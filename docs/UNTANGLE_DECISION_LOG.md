@@ -434,9 +434,8 @@ Four fresh read-only agents read the code again with this log and the constraint
 
 ## Open: larger items (not started; each needs a decision or a dedicated session)
 
-1. `core/agent-tools/run-agent-tool.mjs` is still one function of about 1,870 lines with 48 closures. Plan: one call
-   context object, one module per tool; `crates/ss-grep-core/fixtures-gen/args.mjs` must change in the same commit;
-   verify with the lane shadow check (`SS_LANE_SHADOW_LOG`).
+1. Done 2026-11-10 (section "Done: open item 1" below). It was: `core/agent-tools/run-agent-tool.mjs` is one function
+   of about 1,870 lines with 48 closures.
 2. `startServer` in `search-server.js` is one function of about 950 lines with the routes inline.
 3. Experiment switches (`SS_FIX_*`, `SS_VARIANT_*`, `SS_SMOKE_*`, A3 / B7 paths) and about 20 ranking tuning variables
    that nothing in the repository sets: remove or keep? (owner is still tuning)
@@ -450,3 +449,55 @@ Four fresh read-only agents read the code again with this log and the constraint
 8. Parity differences between the full build and the incremental build (section above).
 9. Rust: comments pass and the JS/Rust constant parity test (about 45 constants) are not done.
 10. Product seams that tests ask for (section above); `scripts/` experiment files and research helpers (out of scope).
+
+## Done: open item 1, one module per ss-* tool (2026-11-10)
+
+- **Shape.** `core/agent-tools/run-agent-tool.mjs` (2,008 -> 125 lines) keeps `runAgentTool`: it resolves the two roots,
+  builds the call context once and dispatches through a table built from `AGENT_TOOLS`. The six tools are
+  `core/agent-tools/commands/grep.mjs` (567 lines), `find.mjs` (159), `read.mjs` (249), `semantic.mjs` (138),
+  `trace.mjs` (154) and `agent-search.mjs` (249); each exports one function `cmd<Tool>(ctx, args)`. `shared.mjs` (418)
+  holds 32 functions: the helpers that two or more tools use, and what those call. `context.mjs` (66) builds the
+  call context. The bench entry
+  `eval/agent-read-workflows/bin/_ss-helpers.mjs` is unchanged and still re-exports `runAgentTool`.
+- **Call context** (`createCallContext`), decided from what the 48 functions read: `projectRoot`, `fileRoot`, `host`,
+  `sessionId`, `exactRereadOmission`, `shownSpanTrailer`, `spanPolicyEnabled`, `fix`, `a3SessionId`, `alreadyShownOn`,
+  `dedupe`, and the two variables of the lazy index coverage. 28 functions take `ctx` as their first parameter; the
+  other 20 (the usage-failure helpers among them) read no per-call variable and stay plain functions. The context has no
+  environment, working directory or output stream: the commands still use `process.*` inside the virtual process.
+- **Only moves.** A script generated the modules from the committed file. A second script, with a parser, shows that all
+  62 declarations (48 functions, 14 constants) are in exactly one new module and that the text of each is equal to the
+  committed text after the `ctx` edits are undone; that a call passes `ctx` if and only if its callee takes it; and that
+  no such function is used as a value. No experiment switch (`SS_FIX_*`, `SS_VARIANT_*`, `SS_SMOKE_*`, A3, B7) changed.
+- **Readers of the source text.** `crates/ss-grep-core/fixtures-gen/args.mjs` cuts its functions from `shared.mjs` and
+  `grep.mjs` and gives the cut code a `ctx` with the file root. Proof: with the 13 corpus repositories switched off (the
+  corpus is not on this machine), the old and the new generator both write `synthetic.json` and `pure.json` (3,256
+  cases) with the committed bytes. No fixture was regenerated. `// Mirrors:` markers and comments in `crates/` point at
+  `commands/grep.mjs` (comment-only edits; the `description` line of `crates/ss-grep-core/Cargo.toml` too).
+- **Proof of equal output** on a temp fixture project (16 files, indexed; daemon with a private runtime dir, no
+  maintainer), before and after:
+  - 1,892 calls: 445 cases of all six tools (flags, globs, scopes, zero hits, usage errors, 40 settings of 32 switches,
+    ledger and A3 sequences), each with and without the chained-call boundary, through the daemon route (890) and in process
+    (894), plus 108 fresh `cli.js` processes. Every exit code is equal. stdout is equal byte for byte in 1,869 calls;
+    in the other 23 the only difference is a clock field (`latencyMs`, `routerLatency_us`, `latency=Nms`). stderr
+    differs only in clock fields, load durations and the stack frames of one crash case. Two captures of the old code
+    differ from each other in the same fields.
+  - Lane shadow check (`SS_LANE_SHADOW_LOG`): 354 JS-answered ss-grep calls of the matrix, 134 answered by the lane
+    with the same bytes, 0 different, 220 declined (switches, zero hits, usage errors). Through the native client
+    (`bin/ss-grep`): 101 calls with `SWEET_SEARCH_GREP_LANE=0` and with the lane on, 101 equal.
+  - Full suite, lint and the boundary check are clean.
+- **Not merged (out of scope): four copies of the warm-or-fallback fetch.** `grep.mjs` `fetchMode` (-l / -c / -o),
+  `fetchScoped` (file scopes), `fetchUnscoped` (listing), and `find.mjs` (pattern search, with the ss-grep fallback when
+  there is no late-interaction index). Each tries `queryWarmSearch` and, on any error, runs the same engine method in
+  process (`getSweetSearch`). Proposed single owner: one function in `commands/shared.mjs` that takes the engine method
+  and one option set. The copies are not equal today: the warm request adds `mode`, `expand: false`, `rerank: false`
+  and `useLateInteraction: false`, and `fetchMode` sends `mode: 'grep'` on both paths. A merge must keep these or show
+  that they have no effect. `semantic.mjs` has a fifth block of the same shape for `readSemantic`.
+- **Found, not changed.**
+  - `ss-grep -l` and `-c` ask the daemon for `maxFiles: 100000` (`GREP_FILE_MODE_MAX_FILES`); `/search` rejects a value
+    above 1,000 (`readGrepShapingParams`). The warm request therefore always fails and the `catch` of `fetchMode` runs.
+    Inside the daemon the fallback is the daemon's own searcher, so nothing is lost. In a fresh process (`cli.js`, the
+    path behind the native client) each such call loads a cold engine: 2 to 8 s on this machine in the capture.
+  - The index paths of the engine are module-level (`DB_PATHS`). One process can serve only the project it started for:
+    a capture process started in this repository opened this repository's code graph for `ss-trace` and for the cold
+    grep fallback, although every call named the fixture as its root. The daemon and `cli.js` are not affected (one
+    project per process). The per-call context does not remove this limit; the replacement of `process.*` must.

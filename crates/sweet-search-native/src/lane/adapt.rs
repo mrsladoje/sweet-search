@@ -292,7 +292,7 @@ pub(crate) fn enrich(rows: &mut [GrepRow], regex: &str, o: &EnrichOpts, graph: &
     })
 }
 
-/// run-agent-tool.mjs grepSiblingLine.
+/// core/agent-tools/commands/grep.mjs grepSiblingLine.
 pub(crate) fn grep_sibling_line(sibling: Option<&SiblingLine>, rows: &[BodyRow], before: usize, after: usize) -> Option<String> {
     let lines: Vec<i64> = rows.iter().map(|r| r.line as i64).collect();
     enrich::grep_sibling_line(sibling, &lines, before as i64, after as i64)

@@ -60,8 +60,8 @@ const OUTPUT_SWITCHES: [&str; 6] = [
 // worktree-roots.js GIT_LOCATION_VARS: with any of them set only git knows the roots.
 const GIT_LOCATION_VARS: [&str; 5] = ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM"];
 
-/// The SS_* switches the grep path reads (agent-output-fixes.js readFixFlags, run-agent-tool.mjs
-/// SS_SIBLING_LINE / SS_GREP_OUTSIDE_SCOPE / SS_VARIANT_*). Other SS_* variables (bench
+/// The SS_* switches the grep path reads (agent-output-fixes.js readFixFlags, commands/grep.mjs
+/// SS_SIBLING_LINE / SS_GREP_OUTSIDE_SCOPE, commands/context.mjs SS_VARIANT_*). Other SS_* variables (bench
 /// drivers, other tools' switches) do not change an ss-grep answer.
 fn is_grep_switch(k: &str) -> bool {
     k.starts_with("SS_FIX_") || k.starts_with("SS_GREP_") || k.starts_with("SS_VARIANT_") || k == "SS_SIBLING_LINE"

@@ -1,7 +1,7 @@
 /**
  * One ss-* call as a virtual process.
  *
- * The ss-* tool code (core/agent-tools/run-agent-tool.mjs) was written for a
+ * The ss-* tool code (core/agent-tools/run-agent-tool.mjs and commands/) was written for a
  * fresh node process per call: it reads `process.env`, `process.cwd()`, writes to
  * `process.stdout` / `process.stderr`, and ends with `process.exit(code)`. The resident
  * daemon now runs that same code warm, many calls at once, for many callers. Each call
