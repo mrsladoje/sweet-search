@@ -315,14 +315,19 @@ export class Reconciler {
 
         const file = dirty[dirtyCursor];
         this.progress('reconciler:file:start');
+        // In flight from the read on: a file that cannot be read (no permission, a path
+        // that became a directory) threw here before it was the file in flight, so its
+        // failure was never counted, it was never quarantined, and every tick failed on
+        // it. The processing queue then never emptied and no later edit was indexed.
+        inFlightFile = file;
         const hashes = await this.adapters.hashFile(file);
         this.progress('reconciler:file:hashed');
         if (hashes && hashes.contentUnchanged) {
           counters.observeContentUnchanged();
           await this.adapters.recordUnchangedFile?.(file, hashes);
+          inFlightFile = null;
           continue;
         }
-        inFlightFile = file;
         const fileRes = await this._reconcileOneFile(file, epoch, hashes, tickCtx);
         inFlightFile = null;
         this.progress('reconciler:file:done');

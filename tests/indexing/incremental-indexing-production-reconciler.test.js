@@ -275,6 +275,53 @@ describe('production incremental Reconciler', () => {
     expect(JSON.parse(readFileSync(join(stateDir, 'index-maintainer-failures.json'), 'utf8'))).toEqual({});
   });
 
+  // Two failed ticks quarantine the file that was in flight, also when the tick failed for a
+  // reason that was not the file (encoder child down). Only an edit lifted the quarantine.
+  it('gives a quarantined file one retry per retry period, and quarantines it again when it fails', async () => {
+    for (const f of ['a.js', 'bad.js']) writeFileSync(join(projectRoot, 'src', f), `export const ${f[0]} = 1;\n`);
+    const queue = () => writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'),
+      ['src/a.js', 'src/bad.js'].map((file_path) => JSON.stringify({ file_path, source: 'scan' })).join('\n') + '\n');
+    const failuresFile = join(stateDir, 'index-maintainer-failures.json');
+    const ageFailure = (ms) => {
+      const failures = JSON.parse(readFileSync(failuresFile, 'utf8'));
+      failures['src/bad.js'].at = new Date(Date.now() - ms).toISOString();
+      writeFileSync(failuresFile, JSON.stringify(failures));
+    };
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    queue();
+    await adapter.readDirtySet();
+    adapter.recordFileFailure('src/bad.js', new Error('encoder process exited'));
+    adapter.recordFileFailure('src/bad.js', new Error('encoder process exited'));
+    expect(await adapter.readDirtySet()).toEqual(['src/a.js']);
+
+    ageFailure(10 * 60_000); // inside the retry period: still skipped
+    expect(await adapter.readDirtySet()).toEqual(['src/a.js']);
+
+    ageFailure(31 * 60_000); // past it: one more try, with the same content
+    expect(await adapter.readDirtySet()).toEqual(['src/bad.js', 'src/a.js']);
+
+    adapter.recordFileFailure('src/bad.js', new Error('encoder process exited'));
+    expect(await adapter.readDirtySet()).toEqual(['src/a.js']);
+  });
+
+  it.skipIf(process.getuid?.() === 0)('admits a file it cannot read, and the read then fails (the failure the tick must count)', async () => {
+    const bad = join(projectRoot, 'src', 'locked.js');
+    writeFileSync(bad, 'export const locked = 1;\n');
+    fs.chmodSync(bad, 0o000);
+    try {
+      writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), `${JSON.stringify({ file_path: 'src/locked.js', source: 'scan' })}\n`);
+      const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+      expect(await adapter.readDirtySet()).toEqual(['src/locked.js']);
+      await expect(adapter.hashFile('src/locked.js')).rejects.toThrow(/EACCES/);
+      // Counted twice, the file leaves the tick: the queue moves again.
+      adapter.recordFileFailure('src/locked.js', new Error('EACCES'));
+      adapter.recordFileFailure('src/locked.js', new Error('EACCES'));
+      expect(await adapter.readDirtySet()).toEqual([]);
+    } finally {
+      fs.chmodSync(bad, 0o644);
+    }
+  });
+
   it('puts the real file of a fresh edit made through a symlink ahead of the requeued backlog', async () => {
     mkdirSync(join(projectRoot, 'real'), { recursive: true });
     writeFileSync(join(projectRoot, 'real', 'x.js'), 'export const x = 1;\n');

@@ -592,6 +592,45 @@ describe('Reconciler / tick lifecycle', () => {
     expect(readManifest(stateDir)).toBeNull();
   });
 
+  // A file that cannot be read threw in hashFile, before it was the file in flight: no
+  // failure was counted, so it was never quarantined and every tick failed on it for good.
+  it('counts a file whose read fails as the file in flight', async () => {
+    const failed = [];
+    const eacces = Object.assign(new Error("EACCES: permission denied, open 'bad.js'"), { code: 'EACCES' });
+    const r = new Reconciler({
+      stateDir,
+      adapters: makeAdapter({
+        readDirtySet: async () => ['ok.js', 'bad.js', 'later.js'],
+        hashFile: async (file) => {
+          if (file === 'bad.js') throw eacces;
+          return { file, contentUnchanged: false, chunks: [] };
+        },
+        recordFileFailure: (file, e) => failed.push([file, e.code]),
+        requeueDirtyFiles: async () => {},
+      }),
+      config: { filesPerTick: 50, cpuBudgetMs: 60_000 },
+    });
+    await expect(r.tick()).rejects.toThrow(/EACCES/);
+    expect(failed).toEqual([['bad.js', 'EACCES']]);
+  });
+
+  it('does not count an unchanged file against a later failure', async () => {
+    const failed = [];
+    const r = new Reconciler({
+      stateDir,
+      adapters: makeAdapter({
+        readDirtySet: async () => ['same.js', 'bad.js'],
+        hashFile: async (file) => ({ file, contentUnchanged: file === 'same.js', chunks: [] }),
+        applyVectorDelta: async (file) => { if (file === 'bad.js') throw new Error('boom'); return { ops: {} }; },
+        recordFileFailure: (file) => failed.push(file),
+        requeueDirtyFiles: async () => {},
+      }),
+      config: { filesPerTick: 50, cpuBudgetMs: 60_000 },
+    });
+    await expect(r.tick()).rejects.toThrow('boom');
+    expect(failed).toEqual(['bad.js']);
+  });
+
   it('refuses re-entrance during an in-flight tick', async () => {
     let resolveInflight;
     const inflight = new Promise((res) => { resolveInflight = res; });

@@ -89,6 +89,11 @@ export function resetResidentState() {
   residentResolvers.clear();
 }
 const QUARANTINE_AFTER_FAILURES = 2;
+// A quarantined file gets one more try this long after its last failure. The failure count
+// cannot tell a file that breaks the tick from a file that was in flight while the tick
+// broke for another reason (encoder child down, SQLite busy): without the retry, a file from
+// a `git pull` that met two such ticks stayed unindexed until someone edited it.
+const QUARANTINE_RETRY_MS = 30 * 60_000;
 
 /**
  * E.4 SQLite memory pragmas, applied AFTER `journal_mode=WAL; synchronous=NORMAL`
@@ -814,7 +819,10 @@ class ProductionReconcileAdapter {
         changed = true;
         return true;
       }
-      return f.count < QUARANTINE_AFTER_FAILURES;
+      if (f.count < QUARANTINE_AFTER_FAILURES) return true;
+      // One try per retry period: another failure moves `at` forward (recordFileFailure).
+      const failedAt = Date.parse(f.at);
+      return Number.isFinite(failedAt) && Date.now() - failedAt >= QUARANTINE_RETRY_MS;
     });
     if (changed) writeJsonAtomicSync(path.join(this.stateDir, FILE_FAILURES), failures);
     return live;
@@ -831,7 +839,7 @@ class ProductionReconcileAdapter {
     failures[rel] = { ...now, count, error: String(err?.message ?? err).slice(0, 300), at: new Date().toISOString() };
     writeJsonAtomicSync(path.join(this.stateDir, FILE_FAILURES), failures);
     if (count === QUARANTINE_AFTER_FAILURES) {
-      this.logger?.warn?.(`[reconciler] ${rel} failed ${count} ticks in a row (${failures[rel].error}); skipping it until it is edited`);
+      this.logger?.warn?.(`[reconciler] ${rel} failed ${count} ticks in a row (${failures[rel].error}); skipping it until it is edited (one retry every ${QUARANTINE_RETRY_MS / 60_000} min)`);
     }
   }
 
