@@ -258,8 +258,11 @@ export class SweetSearch {
 
     if (this.hasBinaryHnswIndex && this.use3Stage) {
       try {
-        this._binaryHnswIdentity = fileIdentity(this.binaryHnswPath);
+        // Recorded only once the load succeeded: an identity without a loaded index made the
+        // next epoch skip the load and turn the 3-stage path on over an empty index.
+        const identity = fileIdentity(this.binaryHnswPath);
         await this.binaryHnswIndex.load();
+        this._binaryHnswIdentity = identity;
         const stats = this.binaryHnswIndex.getStats();
         this.log(`BinaryHNSW: Loaded ${stats.totalVectors} vectors (${stats.memorySizeMB} MB)`);
       } catch (err) {
@@ -568,7 +571,11 @@ export class SweetSearch {
    * full build) reloads it; otherwise only the delta rows appended since are read.
    */
   async _syncBinaryHnsw() {
-    if (!this._binaryHnswIdentity || fileIdentity(this.binaryHnswPath) !== this._binaryHnswIdentity) {
+    // An index object that never loaded (its load failed at init) has nothing to extend:
+    // refreshDelta() answers "up to date" for it, and hasBinaryHnswIndex would then be true
+    // over an empty index. Load it; a file that still fails turns the flag off again.
+    if (!this._binaryHnswIdentity || !this.binaryHnswIndex?.initialized
+      || fileIdentity(this.binaryHnswPath) !== this._binaryHnswIdentity) {
       await this._reloadBinaryHnsw();
       return;
     }
@@ -1157,10 +1164,23 @@ let _warmInitPromise = null;
 
 export async function getWarmSearcher(options = {}) {
   if (_warmSearcher && _warmSearcher.initialized) return _warmSearcher;
-  if (_warmInitPromise) { await _warmInitPromise; return _warmSearcher; }
-  _warmSearcher = new SweetSearch(options);
-  _warmInitPromise = _warmSearcher.init();
-  await _warmInitPromise;
+  if (!_warmInitPromise) {
+    const searcher = new SweetSearch(options);
+    _warmSearcher = searcher;
+    // A failed init is not kept: the rejected promise used to answer every later call of the
+    // process, so a search before the first index build failed the MCP server's searches
+    // until it restarted. Callers already waiting get the error; the next call starts over.
+    _warmInitPromise = searcher.init().catch((err) => {
+      if (_warmSearcher === searcher) {
+        _warmSearcher = null;
+        _warmInitPromise = null;
+      }
+      try { searcher.close(); } catch { /* best-effort: nothing may be open yet */ }
+      throw err;
+    });
+  }
+  const pending = _warmInitPromise;
+  await pending;
   return _warmSearcher;
 }
 

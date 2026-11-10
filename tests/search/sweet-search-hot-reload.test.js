@@ -121,6 +121,7 @@ describe('SweetSearch._refreshManifestPins — HNSW file rewritten at the same e
     const searcher = makeSearcher();
     searcher.initialized = true;
     searcher.hasBinaryHnswIndex = true;
+    searcher.binaryHnswIndex.initialized = true; // a loaded index
     searcher.use3Stage = true;
     searcher._reloadBinaryHnsw = vi.fn(async () => {});
     writeFileSync(join(stateDir, 'codebase-binary-hnsw.idx'), 'graph v1');
@@ -196,6 +197,7 @@ describe('SweetSearch._reloadManifestArtifacts — HNSW only when its file chang
     await index.save(join(stateDir, 'codebase-binary-hnsw.idx'));
     index.close();
     searcher.hasBinaryHnswIndex = true;
+    searcher.binaryHnswIndex.initialized = true; // a loaded index
     searcher.use3Stage = true;
     searcher._reloadBinaryHnsw = vi.fn(async () => {});
     const { statSync } = await import('node:fs');
@@ -210,6 +212,57 @@ describe('SweetSearch._reloadManifestArtifacts — HNSW only when its file chang
     searcher._binaryHnswIdentity = 'older';
     await searcher._reloadManifestArtifacts({ epoch: 3 });
     expect(searcher._reloadBinaryHnsw).toHaveBeenCalledTimes(1);
+  });
+});
+
+// An index file that failed to load at init (truncated, another pipeline version) left
+// hasBinaryHnswIndex false, so semantic search used the vector scan. The next epoch set the
+// flag from the file's existence and skipped the load because the file identity was unchanged:
+// search then ran the 3-stage path on an index that was never loaded and got no dense hits.
+// See docs/STATE_MACHINES.md, invariant "hasBinaryHnswIndex implies a loaded index".
+describe('SweetSearch._reloadManifestArtifacts — an HNSW index that never loaded', () => {
+  async function searcherWithUnloadedIndex({ truncate }) {
+    const indexPath = join(stateDir, 'codebase-binary-hnsw.idx');
+    const { buildHnswIndex } = await import('../../core/indexing/artifact-builder.js');
+    const vec = (i) => Float32Array.from({ length: 768 }, (_, k) => Math.sin(i * 31 + k));
+    const { index } = await buildHnswIndex([0, 1, 2].map((i) => ({ id: `v${i}`, embedding: vec(i), metadata: {} })), { indexPath });
+    await index.save(indexPath);
+    index.close();
+    const { statSync, truncateSync } = await import('node:fs');
+    if (truncate) truncateSync(indexPath, Math.floor(statSync(indexPath).size / 2));
+
+    const searcher = new SweetSearch({
+      projectRoot: sandbox,
+      codebaseDbPath: join(stateDir, 'codebase.db'),
+      graphDbPath: join(stateDir, 'code-graph.db'),
+      binaryHnswPath: indexPath,
+      sparseGramIndexPath: join(stateDir, 'codebase-sparse-grams.idx'),
+    });
+    searcher._syncManifestPaths = () => {};
+    searcher.use3Stage = true;
+    searcher.lateInteractionIndex = { indexPath: join(stateDir, 'absent-li.db') };
+    // The state a failed load at init leaves: flag off, index object never loaded, and the
+    // identity of the file as it was (and still is).
+    const st = statSync(indexPath, { bigint: true });
+    searcher._binaryHnswIdentity = `${st.ino}:${st.size}:${st.mtimeNs}`;
+    searcher.hasBinaryHnswIndex = false;
+    expect(searcher.binaryHnswIndex.initialized).toBe(false);
+    return searcher;
+  }
+
+  it('keeps the flag off while the file still cannot be loaded', async () => {
+    const searcher = await searcherWithUnloadedIndex({ truncate: true });
+    await searcher._reloadManifestArtifacts({ epoch: 2 });
+    expect(searcher.hasBinaryHnswIndex).toBe(false);
+  });
+
+  it('loads the index when the file can be loaded now', async () => {
+    const searcher = await searcherWithUnloadedIndex({ truncate: false });
+    await searcher._reloadManifestArtifacts({ epoch: 2 });
+    expect(searcher.hasBinaryHnswIndex).toBe(true);
+    expect(searcher.binaryHnswIndex.initialized).toBe(true);
+    expect(searcher.binaryHnswIndex.getStats().totalVectors).toBe(3);
+    searcher.binaryHnswIndex.close();
   });
 });
 
