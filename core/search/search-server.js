@@ -16,6 +16,7 @@ import { createSupervisionState, runSupervisionTick } from '../indexing/maintain
 import { projectSocketPath, projectPidFile, tcpPort, resolveProjectRoot } from './server-identity.js';
 import { callRealpathNative } from '../infrastructure/call-fs.js';
 import { isOffValue } from '../infrastructure/env-flag.js';
+import { claimSocketStart, fileInode } from '../infrastructure/socket-claim.js';
 import { startGrepLane, stopGrepLane, grepLaneHandledCount, drainGrepLaneReceipts } from './grep-lane.js';
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 import { recordDaemonStart } from './daemon-starts.js';
@@ -796,6 +797,25 @@ export async function startServer() {
   // explicit ensureDaemonForProjectRoot() path (stopServer + autoSpawnServer),
   // not by startServer — this guard never steals from a live listener.
   // ---------------------------------------------------------------------------
+  //
+  // The probe alone does not make this exclusive: a daemon binds its socket only after its
+  // imports (about a second), so two daemons started together both found no listener, the
+  // second removed the first one's socket, and the first stayed resident, unreachable, until
+  // its idle exit, which then removed the second one's socket and pid file. The start claim
+  // (socket-claim.js) is held from here until the socket is bound: one starter at a time. A
+  // starter that finds the claim held waits for the holder's socket and then leaves.
+  let startClaim;
+  try {
+    startClaim = await claimSocketStart(socketPath);
+  } catch (err) {
+    // No lock file can be made next to the socket: start as before, without the claim.
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] start claim: ${err?.message || err}\n`);
+    startClaim = { release() {} };
+  }
+  if (!startClaim) {
+    console.log(`[Server] Another daemon serves or is starting on ${socketPath}; not starting a second one.`);
+    return;
+  }
   const existingHealth = await getServerHealth({ timeoutMs: 500 });
   if (existingHealth) {
     if (existingHealth.status === 'failed') {
@@ -804,10 +824,12 @@ export async function startServer() {
       const exited = await waitForServerExit({ timeoutMs: 5000, intervalMs: 200 });
       if (!exited) {
         console.log(`[Server] Existing failed daemon on ${socketPath} did not exit; refusing to steal its live socket.`);
+        startClaim.release();
         return;
       }
     } else {
       console.log(`[Server] Daemon already listening on ${socketPath} (status=${existingHealth.status ?? 'unknown'}); reusing existing instance (no spawn).`);
+      startClaim.release();
       return;
     }
   }
@@ -893,6 +915,15 @@ export async function startServer() {
   const laneStateDirOf = () => path.dirname(DB_PATHS.codebase);
   let shuttingDown = false;
   let wslKeepAliveRef = null;
+  // The socket files this daemon bound (inodes). A path that no longer has that inode was
+  // removed, or bound again by a newer daemon: it is not this daemon's to close or remove.
+  let socketIno = null;
+  let laneSocketIno = null;
+  const ownsSocket = () => socketIno !== null && fileInode(socketPath) === socketIno;
+  const ownsLaneSocket = () => laneSocketIno !== null && fileInode(`${socketPath}.grep`) === laneSocketIno;
+  const ownsPidFile = async () => {
+    try { return (await fs.readFile(pidFile, 'utf8')).trim() === String(process.pid); } catch { return false; }
+  };
 
   // Close a server, letting in-flight requests finish but never letting an idle
   // keep-alive socket block exit (bounded grace, then resolve regardless).
@@ -909,10 +940,31 @@ export async function startServer() {
     if (t.unref) t.unref();
   });
 
-  // Single idempotent teardown shared by SIGINT, /stop, and the idle timer.
+  // A server whose socket path is no longer its own must not be closed: closing a Unix-socket
+  // server removes the PATH, which a newer daemon now serves on. Nothing new can reach this
+  // listener, so let the requests in flight finish (bounded) and leave the path alone.
+  const drainWithoutClosing = async (srv, graceMs = 3000) => {
+    if (!srv) return;
+    try { srv.closeIdleConnections?.(); } catch { /* best-effort */ }
+    const deadline = Date.now() + graceMs;
+    while (Date.now() < deadline) {
+      const open = await new Promise((resolve) => {
+        try { srv.getConnections((err, n) => resolve(err ? 0 : n)); } catch { resolve(0); }
+      });
+      if (open === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      try { srv.closeIdleConnections?.(); } catch { /* best-effort */ }
+    }
+  };
+
+  // Single idempotent teardown shared by SIGINT, SIGTERM, /stop, and the idle timer.
+  // It removes only what this daemon still owns (see socket-claim.js): a daemon that lost its
+  // socket path to a newer one used to remove that daemon's socket, lane socket and pid file.
   const gracefulShutdown = async (reason) => {
     if (shuttingDown) return;
     shuttingDown = true;
+    startClaim.release();
+    const socketOwned = ownsSocket();
     if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
     if (laneTimer) { clearInterval(laneTimer); laneTimer = null; }
     if (registryTimer) { clearInterval(registryTimer); registryTimer = null; }
@@ -921,20 +973,27 @@ export async function startServer() {
         if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] registry remove: ${err?.message || err}\n`);
       }
     }
-    stopGrepLane();
+    // Stopping the lane removes `<socket>.grep` by path too.
+    if (laneSocketIno === null || ownsLaneSocket()) stopGrepLane();
     await closeServerGracefully(tcpServer);
-    await closeServerGracefully(unixServer);
+    if (socketOwned || socketIno === null) await closeServerGracefully(unixServer);
+    else await drainWithoutClosing(unixServer);
     try { searcher.close(); } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] searcher close: ${err?.message || err}\n`);
     }
     try { queryEncoder.close(); } catch { /* the child exits with us anyway */ }
     wslKeepAliveRef?.stop();
     try { await rssRegistration?.unregister(); } catch { /* best-effort */ }
-    try { await fs.unlink(pidFile); } catch (err) {
-      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    if (await ownsPidFile()) {
+      try { await fs.unlink(pidFile); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+      }
     }
-    try { await fs.unlink(socketPath); } catch (err) {
-      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    // Closing the server removed the path already; this covers a close that did not.
+    if (socketOwned && ownsSocket()) {
+      try { await fs.unlink(socketPath); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+      }
     }
     console.log(`[Server] Shutdown (${reason}).`);
     process.exit(0);
@@ -1536,13 +1595,29 @@ export async function startServer() {
       unixServer.once('error', onError);
       unixServer.listen(socketPath);
     });
+  } catch (err) {
+    startClaim.release();
+    throw err;
   } finally {
     process.umask(prevUmask);
   }
+  socketIno = fileInode(socketPath) ?? null;
   // Belt-and-suspenders: also chmod explicitly in case umask was ineffective.
   try { (await import('node:fs')).chmodSync(socketPath, 0o700); } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
+  // The pid file names this daemon for as long as it holds the socket: while it loads, when
+  // it is ready and when the load failed. It was written only once the load ended, so for the
+  // whole load the prewarm hook saw "no daemon" and started another, and a maintainer that
+  // follows the file saw its daemon as gone. Written by rename: a reader never sees it empty.
+  try {
+    const pidTmp = `${pidFile}.${process.pid}.tmp`;
+    await fs.writeFile(pidTmp, process.pid.toString(), { mode: 0o644 });
+    await fs.rename(pidTmp, pidFile);
+  } catch (err) {
+    console.error(`[Server] Could not write the pid file ${pidFile}: ${err?.message || err}`);
+  }
+  startClaim.release();
   console.log(`[Server] Unix socket listening on ${socketPath}`);
   // The native ss-grep lane needs only the index files: it serves before the models load.
   const laneStateDir = laneStateDirOf();
@@ -1553,6 +1628,7 @@ export async function startServer() {
   }).then((on) => {
     if (!on) return;
     laneOn = true;
+    laneSocketIno = fileInode(`${socketPath}.grep`) ?? null;
     holdLanePin();
     console.log(`[Server] Native grep lane on ${socketPath}.grep`);
   }, () => {});
@@ -1566,7 +1642,6 @@ export async function startServer() {
       await searcher.init({ onGrepReady: () => { grepReady = true; } });
       initTimeMs = Date.now() - initStartedAt;
       serverReady = true;
-      await fs.writeFile(pidFile, process.pid.toString(), { mode: 0o644 });
       console.log(`[Server] Indexes loaded in ${initTimeMs}ms`);
       recordDaemonStart(laneStateDirOf(), { startedAt: initStartedAt, loadMs: initTimeMs, ok: true, pid: process.pid });
       // Keeps the zero-hit grep fallback's changed-file listing current from file events
@@ -1601,7 +1676,11 @@ export async function startServer() {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer launch: ${err?.message || err}\n`);
   }
 
+  // SIGTERM is what the fleet memory budget (rss-budget.mjs) and `kill <pid>` send. With no
+  // handler it ended the process at once: calls in flight were cut, and the socket, the lane
+  // socket and the pid file stayed behind.
   process.on('SIGINT', () => { gracefulShutdown('sigint'); });
+  process.on('SIGTERM', () => { gracefulShutdown('sigterm'); });
 
   // (1) Idle-TTL eviction — default ON. Unref'd so it never keeps the event
   // loop alive on its own. The TTL is read every tick so tests/operators can
@@ -1630,6 +1709,15 @@ export async function startServer() {
     if (ttl > 0 && idleFor > ttl) {
       gracefulShutdown('idle-ttl');
       return;
+    }
+    // The socket file was removed or bound again by a newer daemon: no client can reach this
+    // one any more, and it held its 1-2 GB until the idle exit. Leave now.
+    if (socketIno !== null) {
+      const inoNow = fileInode(socketPath);
+      if (inoNow !== undefined && inoNow !== socketIno) {
+        gracefulShutdown('socket-replaced');
+        return;
+      }
     }
     // The index was deleted under this daemon: a removed linked worktree takes its
     // `.sweet-search/` with it. Nothing is left to serve.

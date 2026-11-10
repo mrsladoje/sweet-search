@@ -262,6 +262,108 @@ describe.concurrent('daemon stop paths', () => {
   }), 20000);
 });
 
+// One daemon per socket path, and a daemon removes only what it still owns
+// (docs/STATE_MACHINES.md, "Socket path ownership"; core/infrastructure/socket-claim.js).
+describe.concurrent('socket path ownership', () => {
+  function spawnSecond(ctx, extraEnv = {}) {
+    const first = { child: ctx.child, exited: ctx.childExited };
+    const child = spawnDaemon(ctx, extraEnv);
+    const second = { child, exited: ctx.childExited };
+    ctx.extraChildren = [...(ctx.extraChildren || []), first.child];
+    return { first, second };
+  }
+  async function disposeExtra(ctx) {
+    for (const child of ctx.extraChildren || []) {
+      if (child.exitCode === null && child.signalCode === null) {
+        try { child.kill('SIGKILL'); } catch { /* gone */ }
+      }
+    }
+  }
+  const alive = (child) => child.exitCode === null && child.signalCode === null;
+
+  // Two daemons started at the same moment both found no listener: the second removed the
+  // first one's socket and both stayed resident; the unreachable one later removed the
+  // other's socket and pid file when it idled out.
+  it('two daemons started together: one serves and the other leaves', withCtx(async (ctx) => {
+    try {
+      spawnDaemon(ctx, { SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0' });
+      const { first, second } = spawnSecond(ctx, { SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0' });
+      expect(await waitForUp(ctx)).toBe(true);
+
+      const loser = await Promise.race([
+        first.exited.then(() => first),
+        second.exited.then(() => second),
+        sleep(15000).then(() => null),
+      ]);
+      expect(loser).not.toBeNull();
+      const winner = loser === first ? second : first;
+      expect((await loser.exited).code).toBe(0);
+      expect(alive(winner.child)).toBe(true);
+
+      // The loser's exit left the winner's socket and pid file in place.
+      await sleep(300);
+      expect((await httpGet(ctx, '/health', { timeoutMs: 1000 }))?.status).toBe(200);
+      expect(readFileSync(ctx.pidFile, 'utf-8').trim()).toBe(String(winner.child.pid));
+    } finally {
+      await disposeExtra(ctx);
+    }
+  }), 30000);
+
+  it('names itself in the pid file as soon as the socket is bound, also when the load failed', withCtx(async (ctx) => {
+    // The temp project has no index: the load fails, and the daemon stays up as "failed".
+    spawnDaemon(ctx, { SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0' });
+    expect(await waitForUp(ctx)).toBe(true);
+    const end = Date.now() + 3000;
+    let pid = null;
+    while (Date.now() < end && pid === null) {
+      try { pid = readFileSync(ctx.pidFile, 'utf-8').trim(); } catch { await sleep(50); }
+    }
+    expect(pid).toBe(String(ctx.child.pid));
+  }), 20000);
+
+  it('leaves when its socket path was bound again, and keeps the new owner\'s socket and pid file', withCtx(async (ctx) => {
+    spawnDaemon(ctx, { SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0', SWEET_SEARCH_DAEMON_IDLE_CHECK_MS: '200' });
+    expect(await waitForUp(ctx)).toBe(true);
+
+    // A newer daemon took the path: it removed the socket file, bound its own and wrote its pid.
+    const net = await import('node:net');
+    const { writeFileSync } = await import('node:fs');
+    rmSync(ctx.socketPath, { force: true });
+    const newer = net.createServer((conn) => conn.destroy());
+    await new Promise((resolve, reject) => { newer.once('error', reject); newer.listen(ctx.socketPath, resolve); });
+    writeFileSync(ctx.pidFile, String(process.pid));
+    try {
+      const exit = await Promise.race([ctx.childExited, sleep(6000).then(() => 'timeout')]);
+      expect(exit).not.toBe('timeout');
+      expect(exit.code).toBe(0);
+      expect(existsSync(ctx.socketPath)).toBe(true);
+      const reached = await new Promise((resolve) => {
+        const c = net.connect(ctx.socketPath);
+        c.once('connect', () => { c.destroy(); resolve(true); });
+        c.once('error', () => resolve(false));
+      });
+      expect(reached).toBe(true);
+      expect(readFileSync(ctx.pidFile, 'utf-8')).toBe(String(process.pid));
+    } finally {
+      await new Promise((resolve) => newer.close(resolve));
+    }
+  }), 20000);
+
+  // The fleet memory budget (rss-budget.mjs) and `kill <pid>` send SIGTERM. There was no
+  // handler: the daemon died at once and left its socket and pid file behind.
+  it('SIGTERM shuts down cleanly: exit code 0, socket and pid file removed', withCtx(async (ctx) => {
+    spawnDaemon(ctx, { SWEET_SEARCH_DAEMON_IDLE_TTL_MS: '0' });
+    expect(await waitForUp(ctx)).toBe(true);
+    ctx.child.kill('SIGTERM');
+    const exit = await Promise.race([ctx.childExited, sleep(8000).then(() => 'timeout')]);
+    expect(exit).not.toBe('timeout');
+    expect(exit.code).toBe(0);
+    expect(exit.signal).toBeNull();
+    expect(existsSync(ctx.socketPath)).toBe(false);
+    expect(existsSync(ctx.pidFile)).toBe(false);
+  }), 20000);
+});
+
 // ---------------------------------------------------------------------------
 // FRESHNESS INVARIANT (T6): the detached index maintainer survives a search
 // daemon eviction, and a cold daemon restart does not duplicate it.

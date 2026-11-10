@@ -25,7 +25,7 @@ import net from 'node:net';
 import v8 from 'node:v8';
 import { fileURLToPath } from 'node:url';
 import { setProcessTitle } from '../infrastructure/process-title.js';
-import { pidAlive } from '../infrastructure/pid-alive.js';
+import { takeStartLock, dropStartLock as dropLock, socketAnswers } from '../infrastructure/socket-claim.js';
 
 const MAX_FRAME_BYTES = 256 * 1024 * 1024;
 
@@ -52,17 +52,6 @@ export function createFrameReader(onFrame) {
   };
 }
 
-/** Is a server answering on `socketPath`? */
-function socketAnswers(socketPath, timeoutMs = 500) {
-  return new Promise((resolve) => {
-    const s = net.connect(socketPath);
-    const done = (v) => { clearTimeout(t); s.destroy(); resolve(v); };
-    const t = setTimeout(() => done(false), timeoutMs);
-    s.once('connect', () => done(true));
-    s.once('error', () => done(false));
-  });
-}
-
 async function main() {
   const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) || '';
   const socketPath = arg('socket');
@@ -76,9 +65,7 @@ async function main() {
   // a lock whose holder is gone is taken over.
   const startLock = `${socketPath}.start`;
   if (!takeStartLock(startLock)) process.exit(0);
-  const dropStartLock = () => {
-    try { if (Number(fs.readFileSync(startLock, 'utf8')) === process.pid) fs.unlinkSync(startLock); } catch { /* gone */ }
-  };
+  const dropStartLock = () => dropLock(startLock);
   // Another server already answers: this one is not needed. A socket file nobody answers
   // on is left over from a server that died; take its place.
   if (await socketAnswers(socketPath)) { dropStartLock(); process.exit(0); }
@@ -171,61 +158,6 @@ async function main() {
   idleTimer.unref?.();
   process.on('SIGTERM', () => stop('SIGTERM'));
   process.on('SIGINT', () => stop('SIGINT'));
-}
-
-// A start takes well under this (bind happens before any model loads). An older start
-// lock is left by a server that died before listening; its pid may belong to another
-// process by now, so age decides, not the pid alone.
-const START_LOCK_STALE_MS = 60_000;
-
-function startLockHeld(text, ageMs) {
-  if (ageMs >= START_LOCK_STALE_MS) return false;
-  const holder = Number(text);
-  if (!(holder > 0)) return ageMs < 5_000; // being written (no hard links): young = held
-  return pidAlive(holder);
-}
-
-function ageOf(file) {
-  try { return Date.now() - fs.statSync(file).mtimeMs; } catch { return Infinity; }
-}
-
-/** Create the start lock atomically, or take it over when it is stale. */
-function takeStartLock(file) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, String(process.pid));
-    try {
-      fs.linkSync(tmp, file);
-      return true;
-    } catch (err) {
-      if (err?.code !== 'EEXIST') {
-        // No hard links here: O_EXCL create.
-        try {
-          const fd = fs.openSync(file, 'wx');
-          try { fs.writeSync(fd, String(process.pid)); } finally { fs.closeSync(fd); }
-          return true;
-        } catch (e) {
-          if (e?.code !== 'EEXIST') throw e;
-        }
-      }
-    } finally {
-      try { fs.unlinkSync(tmp); } catch { /* gone */ }
-    }
-    let text = '';
-    try { text = fs.readFileSync(file, 'utf8'); } catch { text = ''; }
-    if (startLockHeld(text, ageOf(file))) return false;
-    // Remove that exact stale version: move it aside (one taker wins), judge it there, and
-    // put back a live lock someone created meanwhile.
-    const aside = `${file}.${process.pid}.stale`;
-    try { fs.renameSync(file, aside); } catch { continue; }
-    let asideText = '';
-    try { asideText = fs.readFileSync(aside, 'utf8'); } catch { asideText = ''; }
-    if (startLockHeld(asideText, ageOf(aside))) {
-      try { fs.linkSync(aside, file); } catch { /* a newer lock holds the name */ }
-    }
-    try { fs.unlinkSync(aside); } catch { /* gone */ }
-  }
-  return false;
 }
 
 const isMain = (() => {
