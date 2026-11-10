@@ -516,3 +516,31 @@ Four fresh read-only agents read the code again with this log and the constraint
   with the real parser; a cold engine fails the call. It fails with the old bound.
 - Still cold in a fresh process: a regex that the engine cannot parse. The daemon answers with an error, the `catch`
   runs the engine in process, and the regex repair reads the parse error of that engine.
+
+## Verification against the code before the refactor (2026-11-10)
+
+Old code = `4656ab9d` (before "untangle 1"), new code = `d01eeb88`. Both ran in one scratch checkout, on one index at one
+path, with the benchmark flags (`--profile=full --sqlite-fast --concurrency=1`, late interaction on, vocabulary
+expansion off). The real `eval/corpus/gencodesearchnet` index was not touched (it has schema version 2; the code needs 3).
+
+- **GCSN dev (3,600 queries), index built by the new code on Metal: MRR@10 87.01%, Recall@5 93.42%.** Earlier runs on
+  this Mac: 87.02% and 87.06% (2026-10-22).
+- **Old code and new code on that index: 87.01% each, in two runs each.** For all 3,600 queries the rank of the correct
+  result, the top results and their scores (6 decimals) are identical between old and new.
+- **Index content**: an index built by the new code has, for all 6,918 chunks, the same id, text, metadata,
+  embedding-input hash and LI-input hash as the index built on 2026-10-22. Only the vectors differ (encoder noise).
+- **Search latency per query (concurrency 1)**: old 35.0 and 32.1 ms mean, new 32.2 and 34.0 ms mean (p50 31 to 34 ms
+  in all four runs). No difference outside the run-to-run noise of about 3 ms.
+- **Cold tool start** (`node core/agent-tools/cli.js`, process start to exit, median of 15, two blocks each): `ss-grep`
+  usage error 121 ms old, 120 to 121 ms new; `ss-read` of a file 133 to 136 ms old, 132 to 134 ms new; same output bytes.
+- Not compared: an index BUILT by the old code today (the equal chunk text and input hashes cover the build path), the
+  warm daemon path, and the other benchmarks (CoSQA, M2CRB, AdvTest, multi-repo, task bench).
+
+Two findings that are not about the refactor:
+
+- A fresh checkout does not have the current native addon (`crates/sweet-search-native/sweet-search-native.darwin-arm64.node`
+  is git-ignored). It loads the tracked `packages/native-darwin-arm64/sweet-search-native.node` from April, which has no
+  inference code, prints "No inference accelerator detected" and indexes on ORT INT8 CPU. Nothing warns that the addon is stale.
+- The same code and the same chunk text gave **85.06%** with an index built on ORT INT8 CPU and **87.01%** with an index
+  built on Metal (queries on ORT INT8 CPU in both): 1.95 points on GCSN dev from the document encoder. Per language:
+  JavaScript -4.1, PHP -3.5, Java -2.2, Go -1.2, Ruby -0.7, Python 0.0.
