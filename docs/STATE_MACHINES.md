@@ -102,7 +102,7 @@ in the code.
 
 ## 3. Rules that several machines share
 
-These rules were implicit. The fixes of this pass made six of them explicit in code.
+These rules were implicit. The fixes of this pass made them explicit in code.
 
 1. **Socket path ownership** (`core/infrastructure/socket-claim.js`). A Unix socket path has no
    owner field, and closing a Unix-socket server removes the path, whatever file is there.
@@ -124,8 +124,16 @@ These rules were implicit. The fixes of this pass made six of them explicit in c
    failures quarantine the file. A quarantined file gets one retry every 30 minutes.
 6. **One flag, one loaded object.** `hasBinaryHnswIndex` is true only with a loaded index
    object. A file that exists but did not load leaves the flag false.
-7. **A pid read from a file is not a process identity.** This rule is NOT yet enforced
-   (issue 8). Several places send a signal to, or wait for, a pid without a start-time check.
+7. **A pid read from a file is not a process identity**
+   (`core/infrastructure/process-identity.js`). The writer of a lock, a pause or a registry
+   entry stores its start token beside its pid. A reader compares that token with the token
+   of the process that has the pid now, before it sends a signal and before it decides that
+   the holder lives. The token is the start time as the OS reports it (Linux: boot id and
+   start ticks; elsewhere `ps -o lstart=` in UTC). Both sides read it the same way and
+   compare it as a string, so a clock step or a time zone change cannot make a live holder
+   look dead. A file with no token (the daemon's pid file is a bare number) names a
+   sweet-search process only if the process title starts with `sweet-search-`. A lock that
+   its holder keeps for milliseconds (the prewarm lock) has an age limit instead.
 8. **A journal replay must be safe after every step, the last one included.**
 9. **A baseline verdict belongs to a project root.** Whether an index is a complete baseline
    depends on the configuration of the process that judges it (the persisted model choice in
@@ -150,7 +158,7 @@ narrow window.
 | D3 | A busy daemon fails the 500 ms health probe and a new daemon takes its socket. | Audit only (SUSPECTED) | Medium | 1 | MITIGATED |
 | D4 | A maintainer that follows the pid file stops when the load takes more than 120 s. | Read | Medium | 1 | FIXED |
 | D5 | No SIGTERM handler. The fleet memory budget sends SIGTERM. Calls in flight are cut and files stay behind. | Reproduced | High | 1 | FIXED |
-| D6 | The memory budget can send SIGTERM to a process that reuses a dead daemon's pid. | Audit only (SUSPECTED) | High, low odds | 8 | OPEN |
+| D6 | The memory budget can send SIGTERM to a process that reuses a dead daemon's pid. | Reproduced | High, low odds | 8 | FIXED |
 | D7 | Resident-daemon cap registry: lost update, and a dropped entry never comes back. Cap is off by default. | Audit only | Low | 16 | OPEN |
 | D8 | A pid file write failure turned a loaded daemon into "failed". | Read | Low | 1 | FIXED |
 | D9 | No back-off for a daemon that dies during each load. Such starts are not in the start history. | Audit only | Medium | 16 | OPEN |
@@ -181,16 +189,16 @@ narrow window.
 | IX1 | A full rebuild hashed files after the build. An edit or delete during the build was never indexed. | Reproduced | High | 5 | FIXED |
 | IX2 | `index --files-from-stdin` emptied the file-state rows. The maintainer then indexed the whole repository again. | Reproduced | High | 5 | FIXED |
 | IX3 | A worktree clone is taken from a main index that is partial or in an old format, and is never refreshed. | Reproduced | High | 7 | FIXED |
-| IX4 | The pause file and the clone lock trust a bare pid. After pid reuse they block for good. | Audit only | Medium | 8 | OPEN |
-| IX5 | `uninstall` sends SIGKILL or SIGTERM to the pid in a pid file or lock with no identity check. | Read | High, low odds | 8 | OPEN |
+| IX4 | The pause file and the clone lock trust a bare pid. After pid reuse they block for good. | Reproduced | Medium | 8 | FIXED |
+| IX5 | `uninstall` sends SIGKILL or SIGTERM to the pid in a pid file or lock with no identity check. | Reproduced | High, low odds | 8 | FIXED |
 | IX6 | `init` stores the new LI model before the download succeeds. A failed init leaves a dormant maintainer. | Audit only (CONFIRMED) | Medium | 13 | OPEN |
 | IX7-IX10 | Codex installer manifest written last, swallowed artifact build failure, deletion-only run, LI swap crash window. | Audit only (SUSPECTED) | Medium | 13 | OPEN |
-| MT1 | SIGTERM to an unrelated process after a maintainer crash and pid reuse. No start-time guard on macOS. | Audit only (CONFIRMED path) | High, low odds | 8 | OPEN |
+| MT1 | SIGTERM to an unrelated process after a maintainer crash and pid reuse. No start-time guard on macOS. | Reproduced | High, low odds | 8 | FIXED |
 | MT2 | The lock rewrite is truncate then write. A reader that sees the empty file removes a live lock. | Audit only (CONFIRMED steps) | High, very low odds | 14 | OPEN |
 | MT3 | After a long sleep of the machine both lock stamps look stale and a healthy maintainer is replaced. | Audit only (SUSPECTED) | Low | 14 | OPEN |
 | MT4 | An orphaned compaction child collides with the next build on fixed staged paths. | Audit only (SUSPECTED) | Medium | 14 | OPEN |
 | MT5 | An idle or daemon-gone exit does not check the dirty queue. | Audit only (SUSPECTED) | Low | 14 | OPEN |
-| MT6 | Smaller: stale pause shown as "paused", non-atomic queue and heartbeat writes. | Audit only | Low | 14 | OPEN |
+| MT6 | Smaller: stale pause shown as "paused", non-atomic queue and heartbeat writes. (The pid reuse part, F6b, is fixed in issue 8.) | Audit only | Low | 14 | OPEN |
 | RQ1 | One panic in the native grep lane poisons its mutex. The lane then declines every call. | Audit only (trigger hypothetical) | Medium | 16 | OPEN |
 | RQ2 | Same as D10. | Reproduced | High | 1 | FIXED |
 | RQ3 | The MCP stdio server has no handler for a closed stdin and can stay as an orphan. | Audit only (SUSPECTED) | Medium | 16 | OPEN |
@@ -265,15 +273,55 @@ D5, D8, D10, RQ2; mitigates D3).
 - Tests: `tests/indexing/worktree-index.test.js` ("main index readiness", "a worktree index
   that is not a complete baseline is replaced": twelve tests).
 
-### 4.3 Open issues, in priority order
+**Issue 8. A pid from a file names a process only with its start token** (MT1, IX4, IX5, D6,
+part F6b of MT6).
+- Cause: a maintainer, an index run, a clone or a daemon that is killed (SIGKILL, OOM, power
+  loss) leaves its lock, pause, pid file or registry entry. The OS gives its pid to another
+  program later. `kill -0` succeeds for that program. The code then sent it SIGTERM or
+  SIGKILL, or took the dead holder for alive for as long as that program ran.
+- Change: `core/infrastructure/process-identity.js` (new): `ownStartToken`, `processIs`
+  (`same`, `other`, `gone`, `unknown`), `sweetSearchProcessIs` (the check before a signal:
+  with no token, the process title decides), `holderLives`. A zombie counts as gone.
+  - Maintainer lock (`index-maintainer.mjs`): the lock stores `startToken` on every platform
+    (the old `startTime` was Linux only). `acquireStateLock` treats a pid that another
+    process has as a dead holder: it takes the lock at once, with no signal and no 5 second
+    grace. This includes a lock that names the pid of the acquiring process itself; the old
+    code sent SIGTERM to its own pid in that case.
+  - Index-run hold (`maintainer-launcher.mjs`, `holdMaintainerForIndexRun`): SIGTERM goes
+    only to the process that wrote the lock. The pause stores `holderStart`, and
+    `pauseHolds` uses it.
+  - Worktree clone (`worktree-index.mjs`): the clone lock stores `start`. A leftover
+    maintainer lock in a worktree index folder is judged by its token, in the bootstrap and
+    in the clean-up.
+  - Memory budget (`rss-budget.mjs`): an entry stores `startToken`. An entry whose pid
+    another process has is dropped: its memory is not counted, and it gets no signal. The
+    default signal function checks the identity again directly before the signal.
+  - `scripts/uninstall.js`: the SIGKILL by pid file and the SIGTERM by lock go only to a
+    sweet-search process. The stale file is removed in both cases.
+  - Prewarm lock (`session-daemon-prewarm.mjs`): a lock older than 60 seconds is taken over,
+    whatever its pid, also when it is empty. The hook holds it for one spawn call. The lock
+    path is shared by all projects, so a lock that stayed stopped every later prewarm.
+- Decision for `unknown` (a file with no token and a process whose command cannot be read,
+  for example on a platform with no `ps`): the code does what it did before. For a holder
+  that means "alive": a holder taken for dead while it works gives two writers.
+- Found on the way, issue 1 area (D5): the daemon installed its SIGTERM and SIGINT handlers
+  about 90 lines after the socket bind. A signal in that window still ended the process
+  with no clean-up. The handlers are now installed before the bind. The evidence was one
+  failure of the SIGTERM test under machine load (exit by signal, not exit code 0).
+- Limits. Two older start-time checks compare an OS start time with a clock value and are
+  not moved to the token: the reader heartbeat (`reader-heartbeat.mjs`, `isReaderAlive`) and
+  the index-device probe lock (`index-device-choice.js`). `maintainerAlive` and
+  `reconcile status` still use a pid probe; the first also needs fresh lock stamps, the
+  second only prints. An unfinished bootstrap folder is named by pid only, so the clean-up
+  keeps it while another process has that pid (disk space, no wrong action).
+- Tests: `tests/infrastructure/process-identity.test.js` (12), `tests/indexing/pid-reuse-guards.test.js`
+  (10: hold, lock takeover, pause, memory budget), `tests/init/uninstall-daemon-stop.test.js`
+  ("uninstall does not signal a pid that is no sweet-search process", 4),
+  `tests/indexing/worktree-index.test.js` (3: clone lock, leftover maintainer lock),
+  `tests/search/session-daemon-prewarm.test.js` (2: old lock). The unrelated program in
+  these tests is a real `sleep` process. Fifteen of the tests fail on the code before the fix.
 
-**Issue 8 (P1). A pid from a file is used as a process identity** (MT1, IX4, IX5, D6, part of
-MT6). Sites: `uninstall.js` (SIGKILL by pid file, SIGTERM by lock), `maintainer-launcher.mjs`
-(`holdMaintainerForIndexRun`), `index-maintainer.mjs` (`sigtermAndStealLock`, start-time guard
-on Linux only), `rss-budget.mjs` (eviction), the pause file and the clone lock. Proposed fix:
-one helper that stores the process start time beside the pid (`ps -o lstart=` on macOS,
-`/proc/<pid>/stat` on Linux) and compares it before a signal or a "holder is alive" decision.
-Issue 1 already removes the most common stale daemon pid file (it is now removed on SIGTERM).
+### 4.3 Open issues, in priority order
 
 **Issue 9 (P2). A failed tick leaves state that the retry reuses** (R3, R6, R7). The retry
 reuses the epoch number. Sparse delta lines and HNSW delta records of the failed attempt are
@@ -582,7 +630,7 @@ Unverified: how long `searcher.init` and long queries block the event loop in pr
 
 #### D5. No SIGTERM handler: the documented "exits cleanly (G4 SIGTERM handler)" does not exist for the search daemon  (CONFIRMED)
 
-> Status: FIXED in this pass (issue 1).
+> Status: FIXED in this pass (issue 1). Later change (with issue 8): the handlers are installed before the socket bind. A signal between the bind and the install still ended the process with no clean-up.
 
 
 (a) Code. Only `process.on('SIGINT', ...)` at search-server.js:1604; core/cli.js and start-server.js install none; `git log -S SIGTERM -- core/search/search-server.js` is empty, so it never existed. rss-budget.mjs:15 says the evicted daemon "exits cleanly (G4 SIGTERM handler)" and `runEvictionTick` sends SIGTERM (382). The search daemon registers itself with the coordinator (search-server.js:830-831, kind 'search').
@@ -598,7 +646,7 @@ Unverified: how long `searcher.init` and long queries block the event loop in pr
 
 #### D6. RSS-budget coordinator can SIGTERM an unrelated process that reuses a dead daemon's pid  (SUSPECTED; outside the files listed, found through the daemon registration)
 
-> Status: OPEN (issue 8).
+> Status: FIXED (issue 8). Reproduced with a real `sleep` process. A registry entry stores the start token of its process; an entry whose pid another process has is dropped and gets no signal.
 
 
 (a) Code. `pruneRegistry` keeps an entry when `pidAlive(entry.pid)` and it is not older than boot (rss-budget.mjs:322-345); unlike daemon-registry.js:247 it does not probe the socket. A search daemon that dies by SIGKILL/OOM/SIGTERM (2.5) never calls `unregister`, and the registry is pruned only by a live daemon's 30 s tick.
@@ -779,6 +827,19 @@ Invariants: I1, I2. Owner token + pid + startTime compared before every unlink (
 | HELD_STALE_BOTH | candidate acquire | holder alive | ABSENT | SIGTERM, 5 s grace, unlink only if lock unchanged | MAINT:287-312 |
 | DEAD_HOLDER | candidate acquire | `isPidRunning` false | ABSENT | unlink | MAINT:366-371 |
 
+Changes after the baseline (issue 8). The lock now stores `startToken` (all platforms) in
+place of `startTime` (Linux only). A new state: PID_REUSED, the holder is dead and another
+process has its pid.
+
+| from | event | guard | to | side effects |
+|---|---|---|---|---|
+| PID_REUSED | candidate acquire | `sweetSearchProcessIs` is `other` | ABSENT, then held by the candidate | unlink, no signal, no grace |
+| PID_REUSED (the pid is the candidate's own) | candidate acquire | the token in the lock is not the candidate's | ABSENT, then held by the candidate | unlink, no signal (the old code sent SIGTERM to itself) |
+| HELD_STALE_BOTH | candidate acquire | `sweetSearchProcessIs` is `same` or `unknown` | ABSENT | SIGTERM, 5 s grace, unlink only if the lock is unchanged (pid, owner token, start token) |
+| PID_REUSED | index-run hold | `other` | unchanged | no signal, no wait; the next maintainer start removes the lock |
+| HELD_* | index-run hold | `same` or `unknown` | ABSENT after the maintainer exits | SIGTERM, wait up to 60 s |
+| PID_REUSED | uninstall | `other` | ABSENT | lock removed, no signal |
+
 #### MT-SM3. Dirty queue and `.processing` queue
 
 Files: `index-maintainer-queue.jsonl` (DIRTY_QUEUE) and `index-maintainer-queue.processing.jsonl` (PROCESSING_QUEUE), state-files.mjs:7-8.
@@ -882,7 +943,7 @@ Ranking: F1, F2 are the ones I would fix first. F3-F6 are lower probability or l
 
 #### MT1. SIGTERM sent to an unrelated process after a maintainer crash (pid reuse) - CONFIRMED (code path); probability low, impact high
 
-> Status: OPEN (issue 8).
+> Status: FIXED (issue 8). Both paths reproduced with a real `sleep` process, and a third: a lock that names the pid of the acquiring process made it send SIGTERM to itself. The lock stores a start token on every platform; a signal goes only to the process that wrote the lock.
 
 
 (a) Code.
@@ -976,10 +1037,11 @@ Unverified: whether `save()` writes via temp+rename, and whether `publish` valid
 
 
 - F6a. `reconcile status` says "paused" for a stale pause (holder dead) while launcher, supervisor and maintainer treat it as not paused. `pauseSnapshot` (OPCLI:213-224) ignores `pauseHolds` (LAUNCHER:390) and `paused:false`. Impact: operator reads wrong state. CONFIRMED. Fix: reuse `readReconcilePause`. Test: pause file with dead `holderPid`; status must say not paused.
-- F6b. Pause held by a crashed index run whose pid is later reused by a long-lived process stays "held" for as long as that process lives (`pauseHolds` uses `pidAlive` only, LAUNCHER:390-393). The index is then unmaintained and no maintainer is spawned. CONFIRMED path, low probability. Fix: store start time in the pause file as in F1.
+- F6b (FIXED, issue 8). Pause held by a crashed index run whose pid is later reused by a long-lived process stays "held" for as long as that process lives (`pauseHolds` uses `pidAlive` only, LAUNCHER:390-393). The index is then unmaintained and no maintainer is spawned. CONFIRMED path, low probability. Fix: store start time in the pause file as in F1.
 - F6c. Displaced maintainer sweeps ALL staging temps with `maxAgeMs: 0` (MAINT:1520) after a "lock ownership lost" abort. The successor's in-flight `*.tmp.<pid>`, `*.json.tmp` files are matched (artifact-temp-sweep.mjs:56-60), so its next rename can fail with ENOENT and its tick fails once; the next tick retries. SUSPECTED, low. Fix: skip the age-0 sweep when the abort reason is "lock ownership lost".
 - F6d. `processMaintenanceQueue` rewrites the queue with `writeFileSync` (truncate then write, MWORK:43-47). An `rebuild force` from the CLI landing between `appendedQueueTail` (MWORK:279) and the write, or between truncate and write, is lost or overwritten; a kill mid-write loses all pending jobs. Jobs are regenerated by watermarks next tick, so impact is small. CONFIRMED path, very low.
 - F6e. Reader heartbeats are created with `writeFileSync` (reader-heartbeat.mjs:106) and read by `liveReaders` without retry (:180). A read in the middle gives a parse error, the reader is dropped from `minLiveEpoch`, and a GC job could prune rows that reader pins. Window is microseconds; SUSPECTED, very low.
+- F6f. Seen in the maintainer log of the released 2.10.5, not traced in the current code. A maintainer that stopped because its daemon was gone ended with an uncaught `MaintainerLifecycleAbort: shutdown requested`. The progress function threw it inside a callback of a maintenance job (`maintenance-handlers.mjs` called from `maintenance-worker.mjs`), outside every `try`. The process then ends by an uncaught exception and the bounded teardown does not run. Unverified: whether the current code still calls the progress function from such a callback. Test idea: request a shutdown while a maintenance job reports progress from a timer or a child-process event; the process must exit with code 0.
 
 
 ### Checked and safe
@@ -2029,6 +2091,17 @@ Readers of the state: `launchMaintainer` L289, supervision tick L736, maintainer
 
 Invariant: a pause owned by a live process is the exclusive right to rewrite or copy the index. There is no time limit and no start-time check.
 
+Changes after the baseline (issue 8). The payload now has `holderStart`, the start token of
+the holder. The last row of the table is replaced:
+
+| From | Event | Guard | To |
+|---|---|---|---|
+| held by dead pid whose number is reused | any reader | `processIs(holderPid, holderStart)` is `other` | treated as absent; a hold removes it and takes the pause |
+| held, no `holderStart` in the payload, pid alive | any reader | `unknown` | held (as before) |
+
+The same rule holds for the clone lock `worktree-bootstrap.lock` (payload `{pid, start, atMs}`).
+The invariant keeps no time limit, and it now has the start check.
+
 #### IX-SM3. Baseline readiness (derived, read-only)
 
 `hasCompleteBaseIndex(stateDir)` (`baseline-readiness.mjs` L123-161). Evaluated in this order: `no-state-dir`, `no-manifest`, `manifest-epoch-zero`, `no-merkle-state`, `no-config-fingerprint`, `config-fingerprint-mismatch`, `missing-vectors-db`, `li-format-outdated`, else `ready`.
@@ -2260,7 +2333,7 @@ Way 2, old format:
 
 #### IX4. Pause file and clone lock block for ever after pid reuse (CONFIRMED logic; needs a pid collision)
 
-> Status: OPEN (issue 8).
+> Status: FIXED (issue 8). Reproduced for the pause, the clone lock and a leftover maintainer lock in a worktree index folder. Each stores the start token of its holder; `status` does not print the pause yet (issue 14, F6a).
 
 
 (a) Code.
@@ -2284,7 +2357,7 @@ The same for a clone lock whose holder died.
 
 #### IX5. `uninstall` signals any live pid found in a pid file or lock (CONFIRMED logic; needs stale file and reused pid)
 
-> Status: OPEN (issue 8).
+> Status: FIXED (issue 8). Reproduced for the pid file and for the lock. Uninstall signals a pid only when it is a sweet-search process (start token of the lock, or the process title for the bare pid file).
 
 
 (a) Code.

@@ -205,7 +205,8 @@ describe('launcher', () => {
   it('passes the daemon pid file to the maintainer', async () => {
     const argvLog = path.join(sandbox, 'argv.json');
     const fake = path.join(sandbox, 'fake-maintainer.mjs');
-    fs.writeFileSync(fake, `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2)));\n`);
+    // tmp + rename: the poll below must never read the file between its create and its write.
+    fs.writeFileSync(fake, `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(`${argvLog}.tmp`)}, JSON.stringify(process.argv.slice(2))); fs.renameSync(${JSON.stringify(`${argvLog}.tmp`)}, ${JSON.stringify(argvLog)});\n`);
     const res = launchMaintainer({
       cwd: projectRoot,
       env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: projectRoot, SWEET_SEARCH_STATE_DIR: stateDir, SWEET_SEARCH_RECONCILE_V2: '1', SWEET_SEARCH_MAINTAINER_BG_PRIORITY: '0' },

@@ -31,6 +31,7 @@ import {
   writeSync,
   closeSync,
   unlinkSync,
+  statSync,
 } from 'node:fs';
 import { connect } from 'node:net';
 import { dirname, join } from 'node:path';
@@ -222,10 +223,16 @@ async function waitForResponsiveSocket(timeoutMs = SOCKET_PROBE_TIMEOUT_MS) {
   return false;
 }
 
+// A hook holds the lock for one spawn call (milliseconds). An older lock is left by a hook
+// that was killed. Its pid can belong to another program by now, and a lock killed before
+// its pid was written stays empty: age decides, not the pid alone. The lock path is shared
+// by every project, so a lock that never goes away would stop all prewarm.
+const LOCK_STALE_MS = 60_000;
+
 /**
  * Acquire an exclusive lock so only one concurrent SessionStart spawns a
  * daemon. Returns the file descriptor on success, null on failure. Handles
- * stale locks whose holder is dead.
+ * stale locks whose holder is dead, and locks older than LOCK_STALE_MS.
  */
 function acquireLock() {
   try {
@@ -236,13 +243,15 @@ function acquireLock() {
     if (err.code !== 'EEXIST') return null;
     let holderRaw = '';
     try { holderRaw = readFileSync(LOCK_PATH, 'utf-8').trim(); } catch { /* unreadable */ }
+    let ageMs = 0;
+    try { ageMs = Date.now() - statSync(LOCK_PATH).mtimeMs; } catch { /* gone: the create below decides */ }
+    const young = ageMs < LOCK_STALE_MS;
     // Empty or unparseable: another process is mid-write between its
     // openSync('wx') success and its writeSync(pid) — do NOT try to steal
     // the lock. Let them finish; we back off.
-    if (!holderRaw) return null;
     const holder = Number(holderRaw);
-    if (!Number.isFinite(holder)) return null;
-    if (pidAlive(holder) && holder !== process.pid) {
+    if (young && (!holderRaw || !Number.isFinite(holder))) return null;
+    if (young && pidAlive(holder) && holder !== process.pid) {
       return null;
     }
     try { unlinkSync(LOCK_PATH); } catch { /* ignore */ }

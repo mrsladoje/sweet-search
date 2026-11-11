@@ -55,6 +55,7 @@ import { spawnSync } from 'node:child_process';
 
 import { pidAlive, selectEvictionTargets, privateRuntimeDir, registryTrustworthy, entryPredatesBoot } from '../search/daemon-registry.js';
 import { resolveMaintainerMemoryProfile } from '../incremental-indexing/domain/interval-autotune.mjs';
+import { processIs, processStartToken, sweetSearchProcessIs } from '../infrastructure/process-identity.js';
 
 const DEFAULT_REGISTRY_FILE = 'sweet-search-rss-daemons.json';
 const POLL_INTERVAL_MS = 30_000;
@@ -338,7 +339,10 @@ async function pruneRegistry(env = process.env, alive = pidAlive) {
     // and every surviving entry here is one this coordinator is willing to
     // SIGTERM. See entryPredatesBoot in daemon-registry.js.
     if (entryPredatesBoot(entry)) continue;
-    if (alive(entry.pid)) {
+    // The same within one boot: a daemon that was killed never unregisters, and its pid
+    // goes to another program later. That program is not part of the fleet: its memory
+    // is not counted and it is never the one to stop (process-identity.js).
+    if (alive(entry.pid) && processIs(entry.pid, entry.startToken) !== 'other') {
       live.push(entry);
       liveMap[key] = entry;
     }
@@ -347,6 +351,18 @@ async function pruneRegistry(env = process.env, alive = pidAlive) {
     await writeRssRegistryAtomic(liveMap, env);
   }
   return live;
+}
+
+/**
+ * SIGTERM the daemon of a registry entry, and only that process: the entry was judged a
+ * moment ago (pruneRegistry), and a signal is the one action that must not reach another
+ * program. Returns false when no signal was sent.
+ */
+function stopRegisteredDaemon(pid, entry) {
+  const who = sweetSearchProcessIs(pid, entry?.startToken);
+  if (who !== 'same' && who !== 'unknown') return false;
+  try { process.kill(pid, 'SIGTERM'); } catch { /* best-effort */ }
+  return true;
 }
 
 /**
@@ -368,7 +384,8 @@ async function pruneRegistry(env = process.env, alive = pidAlive) {
  * @param {number} [deps.selfPid]
  * @param {(pid:number)=>Promise<number>} [deps.rssReader]
  * @param {()=>Promise<number|null>} [deps.pressureReader]
- * @param {(pid:number)=>void} [deps.signal]  Eviction action (default SIGTERM).
+ * @param {(pid:number, entry:object)=>(boolean|void)} [deps.signal]  Eviction action
+ *   (default: SIGTERM after an identity check; `false` means nothing was stopped).
  * @param {number} [deps.totalMem]  System RAM (default os.totalmem()); injectable
  *   so the budget is deterministic in tests regardless of the host's real RAM.
  * @param {(pid:number)=>boolean} [deps.aliveProbe]  Liveness probe (default
@@ -379,7 +396,7 @@ export async function runEvictionTick({
   selfPid = process.pid,
   rssReader = readProcessRss,
   pressureReader = readLinuxMemoryPressure,
-  signal = (pid) => { try { process.kill(pid, 'SIGTERM'); } catch { /* best-effort */ } },
+  signal = stopRegisteredDaemon,
   totalMem = os.totalmem(),
   aliveProbe = pidAlive,
 } = {}) {
@@ -427,7 +444,7 @@ export async function runEvictionTick({
     const targets = selectEvictionTargets(live, selfPid, 1);
     if (targets.length === 0) return result;
     const victim = targets[0];
-    signal(victim.pid);
+    if (signal(victim.pid, victim) === false) return result; // not the registered daemon
     result.evicted = victim.pid;
     return result;
   } catch {
@@ -467,7 +484,8 @@ export async function registerDaemon({ pid = process.pid, stateDir = null, kind 
     if (!isEnabled(env)) return noop;
 
     const now = Date.now();
-    const entry = { pid, stateDir, kind, startedAt: now, lastActivityMs: now, rss: 0 };
+    // startToken: which process this pid is (a later process with the same pid is not it).
+    const entry = { pid, stateDir, kind, startedAt: now, lastActivityMs: now, rss: 0, startToken: processStartToken(pid) };
     try {
       const daemons = await readRssRegistry(env);
       daemons[String(pid)] = entry;

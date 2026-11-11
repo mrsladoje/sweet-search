@@ -25,6 +25,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { stopRunningDaemon, stopRunningMaintainer } from '../../scripts/uninstall.js';
+import { processStartToken } from '../../core/infrastructure/process-identity.js';
 
 let sandbox;
 let pidFile;
@@ -56,15 +57,41 @@ function spawnLongRunningChild() {
   };
 }
 
+/**
+ * Spawn a child that titles itself as the real daemon and maintainer do (process-title.js).
+ * Uninstall signals a pid only when it is such a process: a pid file or a lock can outlive
+ * its writer, and the pid can belong to another program by then. Resolves once the title is set.
+ */
+function spawnTitledChild(title) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', `process.title = ${JSON.stringify(title)}; console.log('ready'); setInterval(() => {}, 1000);`], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      detached: false,
+    });
+    const handle = {
+      pid: child.pid,
+      wait: () => new Promise((r) => {
+        if (child.exitCode !== null || child.signalCode !== null) r({ code: child.exitCode, signal: child.signalCode });
+        else child.on('exit', (code, signal) => r({ code, signal }));
+      }),
+      kill: () => { try { child.kill('SIGKILL'); } catch { /* already gone */ } },
+    };
+    child.stdout.once('data', () => resolve(handle));
+    child.once('error', reject);
+  });
+}
+
 function pidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // -------------------------------------------------------------------------
 
 describe('stopRunningDaemon', () => {
-  it('SIGKILLs a running process listed in the pid file', async () => {
-    const child = spawnLongRunningChild();
+  it('SIGKILLs a running daemon listed in the pid file', async () => {
+    const child = await spawnTitledChild('sweet-search-daemon');
     try {
       writeFileSync(pidFile, String(child.pid), 'utf-8');
       expect(pidAlive(child.pid)).toBe(true);
@@ -135,8 +162,8 @@ describe('stopRunningDaemon', () => {
   it('does not kill processes outside the pid file (scope safety)', async () => {
     // Two long-running children. Only child A's PID is in the file. Stopping
     // must NOT touch child B.
-    const a = spawnLongRunningChild();
-    const b = spawnLongRunningChild();
+    const a = await spawnTitledChild('sweet-search-daemon');
+    const b = await spawnTitledChild('sweet-search-daemon');
     try {
       writeFileSync(pidFile, String(a.pid), 'utf-8');
 
@@ -154,6 +181,79 @@ describe('stopRunningDaemon', () => {
 
 // -------------------------------------------------------------------------
 
+// docs/STATE_MACHINES.md, issue 8 (IX5): a daemon or maintainer that was killed leaves its
+// pid file or lock. The OS gives the pid to another program later, and uninstall killed it.
+describe('uninstall does not signal a pid that is no sweet-search process', () => {
+  it('stopRunningDaemon: a stale pid file whose pid another program has', async () => {
+    const other = spawnLongRunningChild(); // `node -e …`: not titled sweet-search-…
+    try {
+      writeFileSync(pidFile, String(other.pid), 'utf-8');
+
+      const result = stopRunningDaemon({ pidFile, socketPath });
+
+      expect(result.killed).toBe(false);
+      expect(result.pidFileRemoved).toBe(true); // the stale file still goes
+      await sleep(300);
+      expect(pidAlive(other.pid)).toBe(true);
+    } finally {
+      other.kill();
+    }
+  });
+
+  it('stopRunningMaintainer: a stale lock whose pid another program has', async () => {
+    const other = spawnLongRunningChild();
+    try {
+      writeFileSync(join(sandbox, 'index-maintainer.lock'), JSON.stringify({
+        pid: other.pid, timestamp: Date.now() - 600_000, startToken: 'Mon Jan 1 00:00:00 2001',
+      }), 'utf-8');
+
+      const result = stopRunningMaintainer({ stateDir: sandbox });
+
+      expect(result.signalled).toBe(false);
+      expect(result.killed).toBe(false);
+      expect(result.lockRemoved).toBe(true);
+      await sleep(500); // past the SIGTERM-to-SIGKILL escalation
+      expect(pidAlive(other.pid)).toBe(true);
+    } finally {
+      other.kill();
+    }
+  });
+
+  it('stopRunningMaintainer: a lock with no start token whose pid another program has', async () => {
+    const other = spawnLongRunningChild();
+    try {
+      writeFileSync(join(sandbox, 'index-maintainer.lock'), JSON.stringify({ pid: other.pid, timestamp: Date.now() }), 'utf-8');
+
+      const result = stopRunningMaintainer({ stateDir: sandbox });
+
+      expect(result.signalled).toBe(false);
+      await sleep(500);
+      expect(pidAlive(other.pid)).toBe(true);
+    } finally {
+      other.kill();
+    }
+  });
+
+  it('stopRunningMaintainer: the start token in the lock is enough (no title needed)', async () => {
+    const child = spawnLongRunningChild();
+    try {
+      writeFileSync(join(sandbox, 'index-maintainer.lock'), JSON.stringify({
+        pid: child.pid, timestamp: Date.now(), startToken: processStartToken(child.pid),
+      }), 'utf-8');
+
+      const result = stopRunningMaintainer({ stateDir: sandbox });
+
+      expect(result.signalled).toBe(true);
+      await child.wait();
+      expect(pidAlive(child.pid)).toBe(false);
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+// -------------------------------------------------------------------------
+
 describe('stopRunningMaintainer', () => {
   function writeLock(stateDir, pid) {
     writeFileSync(
@@ -164,7 +264,7 @@ describe('stopRunningMaintainer', () => {
   }
 
   it('SIGTERMs a running maintainer recorded in the lock and removes the lock', async () => {
-    const child = spawnLongRunningChild();
+    const child = await spawnTitledChild('sweet-search-maintainer');
     try {
       writeLock(sandbox, child.pid);
       expect(pidAlive(child.pid)).toBe(true);
@@ -211,8 +311,8 @@ describe('stopRunningMaintainer', () => {
   });
 
   it('does not signal processes outside the lock (scope safety)', async () => {
-    const a = spawnLongRunningChild();
-    const b = spawnLongRunningChild();
+    const a = await spawnTitledChild('sweet-search-maintainer');
+    const b = await spawnTitledChild('sweet-search-maintainer');
     try {
       writeLock(sandbox, a.pid);
 

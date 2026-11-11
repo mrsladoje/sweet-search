@@ -75,7 +75,10 @@ describe('runUninstall ordering — maintainer stopped before .sweet-search remo
     // Stand-in maintainer: records its pid in the lock and, every 40ms,
     // recreates .sweet-search/ + the lock (the mkdirSync-per-tick behavior that
     // made the old uninstall order resurrect the deleted dir).
+    // It titles itself as the real maintainer does: uninstall signals the pid in a lock
+    // only when it is a sweet-search process (process-identity.js).
     const standin = `
+      process.title = 'sweet-search-maintainer';
       const fs = require('fs');
       const dir = ${JSON.stringify(stateDir)};
       const lock = ${JSON.stringify(lockFile)};

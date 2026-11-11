@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
 import { pidAlive } from '../core/infrastructure/pid-alive.js';
+import { sweetSearchProcessIs } from '../core/infrastructure/process-identity.js';
 import {
   DATA_DIR_NAME, artifactsInPlanOrder, artifactsInRunOrder, readCreatedPaths, removeSweetIndexSkill,
 } from './install-artifacts.js';
@@ -150,10 +151,12 @@ export function getCoremlCascadeRemovals() {
  * Strategy:
  *   1. Best-effort graceful stop via `node core/cli.js --stop`. If a daemon
  *      is listening on the socket and the CLI can reach it, it shuts down.
- *   2. Robust fallback: if the PID file exists and its PID is still alive,
- *      SIGKILL it directly. This covers stuck daemons, mismatched CLI
- *      versions, and any failure mode where the graceful path silently
- *      doesn't work.
+ *   2. Robust fallback: if the PID file exists and its PID is still a
+ *      sweet-search process, SIGKILL it directly. This covers stuck daemons,
+ *      mismatched CLI versions, and any failure mode where the graceful path
+ *      silently doesn't work. A pid file can outlive its daemon (SIGKILL,
+ *      power loss), and the OS gives the pid to another program later: a pid
+ *      that is not a sweet-search process gets no signal.
  *   3. Unlink the PID file and socket file regardless, so the next hook
  *      invocation starts from a clean state.
  *
@@ -193,9 +196,8 @@ export function stopRunningDaemon({
   if (existsSync(pidFile)) {
     try {
       const pid = Number(readFileSync(pidFile, 'utf-8').trim());
-      if (Number.isFinite(pid) && pid > 0) {
+      if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && isOurProcess(pid)) {
         try {
-          process.kill(pid, 0); // probe — throws if dead
           process.kill(pid, 'SIGKILL');
           result.killed = true;
         } catch { /* already dead */ }
@@ -213,6 +215,16 @@ export function stopRunningDaemon({
 }
 
 const MAINTAINER_LOCK_FILENAME = 'index-maintainer.lock';
+
+/**
+ * Is `pid` the sweet-search process that a pid file or a lock names? With the start token
+ * the writer stored, that token decides. Without one (the daemon's pid file holds a bare
+ * number) the process title does. See core/infrastructure/process-identity.js.
+ */
+function isOurProcess(pid, startToken = null) {
+  const who = sweetSearchProcessIs(pid, startToken);
+  return who === 'same' || who === 'unknown';
+}
 
 /** Synchronous sleep (uninstall is one-shot; a sub-second block is fine). */
 function sleepSyncMs(ms) {
@@ -233,6 +245,9 @@ function sleepSyncMs(ms) {
  *      crash probe).
  *   3. Remove the lock file so the next start is clean.
  *
+ * A lock can outlive its maintainer, and its pid can belong to another program by
+ * then: only the process that wrote the lock gets a signal.
+ *
  * Never throws — every branch swallows errors (the daemon may not be running).
  *
  * Returns `{ present, pid, signalled, killed, lockRemoved }`.
@@ -248,9 +263,14 @@ export function stopRunningMaintainer({
   result.present = true;
 
   let pid = null;
-  try { pid = Number(JSON.parse(readFileSync(lockFile, 'utf-8')).pid); } catch { pid = null; }
+  let startToken = null;
+  try {
+    const lock = JSON.parse(readFileSync(lockFile, 'utf-8'));
+    pid = Number(lock.pid);
+    startToken = lock.startToken ?? null;
+  } catch { pid = null; }
 
-  if (pidAlive(pid)) {
+  if (pid !== process.pid && isOurProcess(pid, startToken)) {
     result.pid = pid;
     try { process.kill(pid, 'SIGTERM'); result.signalled = true; } catch { /* ignore */ }
     sleepSyncMs(300);

@@ -1558,6 +1558,14 @@ export async function startServer() {
     return handleRequest(req, res);
   };
 
+  // SIGTERM is what the fleet memory budget (rss-budget.mjs) and `kill <pid>` send. With no
+  // handler it ended the process at once: calls in flight were cut, and the socket, the lane
+  // socket and the pid file stayed behind. Installed BEFORE the socket is bound: a client
+  // can reach the daemon from the bind on, and a signal that came between the bind and a
+  // later install still ended the process the old way.
+  process.on('SIGINT', () => { gracefulShutdown('sigint'); });
+  process.on('SIGTERM', () => { gracefulShutdown('sigterm'); });
+
   // TCP server — opt-in only (SWEET_SEARCH_TCP_PORT). Bound non-fatally so a
   // port already in use never crashes the server (C3: it used to be bound
   // unconditionally on 9876 and a second project's server died on EADDRINUSE).
@@ -1675,12 +1683,6 @@ export async function startServer() {
   } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer launch: ${err?.message || err}\n`);
   }
-
-  // SIGTERM is what the fleet memory budget (rss-budget.mjs) and `kill <pid>` send. With no
-  // handler it ended the process at once: calls in flight were cut, and the socket, the lane
-  // socket and the pid file stayed behind.
-  process.on('SIGINT', () => { gracefulShutdown('sigint'); });
-  process.on('SIGTERM', () => { gracefulShutdown('sigterm'); });
 
   // (1) Idle-TTL eviction — default ON. Unref'd so it never keeps the event
   // loop alive on its own. The TTL is read every tick so tests/operators can

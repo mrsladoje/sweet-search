@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { acquireStateLock, WEDGED_KILL_GRACE_MS } from '../../core/indexing/index-maintainer.mjs';
+import { processStartToken } from '../../core/infrastructure/process-identity.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DEAF_HOLDER = join(REPO_ROOT, 'tests', 'fixtures', 'sigterm-deaf-holder.mjs');
@@ -81,7 +82,8 @@ describe('acquireStateLock against a SIGTERM-deaf holder', () => {
     writeFileSync(lockFile(), JSON.stringify({
       pid: holder.pid,
       timestamp: ancient,
-      startTime: null,
+      // The lock a maintainer writes names its process, not only its pid.
+      startToken: processStartToken(holder.pid),
       progressTimestamp: ancient,
       progressCounter: 7,
     }));
@@ -114,7 +116,8 @@ describe('acquireStateLock against a SIGTERM-deaf holder', () => {
     writeFileSync(lockFile(), JSON.stringify({
       pid: holder.pid,
       timestamp: now,
-      startTime: null,
+      // The lock a maintainer writes names its process, not only its pid.
+      startToken: processStartToken(holder.pid),
       progressTimestamp: now,
       progressCounter: 7,
     }));

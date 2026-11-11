@@ -20,6 +20,7 @@ import {
 import { holdMaintainerForIndexRun } from '../../core/indexing/maintainer-launcher.mjs';
 import { stateDirGone, linkedWorktreeCloneOf, requestCloneReplacement } from '../../core/indexing/index-maintainer.mjs';
 import { projectSocketPath } from '../../core/search/server-identity.js';
+import { processStartToken } from '../../core/infrastructure/process-identity.js';
 import { pendingReindexFiles } from '../../core/search/index-freshness.js';
 import http from 'node:http';
 import { openFileState } from '../../core/incremental-indexing/infrastructure/file-state-store.mjs';
@@ -223,6 +224,55 @@ describe('bootstrapWorktreeIndex', () => {
     const r = await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
     expect(r.dir).toBe(worktreeIndexDir(main, wt));
     expect(fs.existsSync(path.join(wt, '.sweet-search', 'codebase.db'))).toBe(true);
+  });
+
+  // docs/STATE_MACHINES.md, issue 8 (IX4). A clone or a maintainer that was killed leaves
+  // its lock, and the OS gives its pid to another program later. A pid probe then said
+  // "the holder is alive" for as long as that program ran. `sleep` is that program here.
+  it('takes over the clone lock of a killed clone whose pid another program has', async () => {
+    const state = makeMainIndex();
+    const other = spawn('sleep', ['60'], { stdio: 'ignore' });
+    try {
+      fs.writeFileSync(path.join(state, 'worktree-bootstrap.lock'), JSON.stringify({
+        pid: other.pid, start: 'Mon Jan 1 00:00:00 2001', atMs: Date.now() - 3_600_000,
+      }));
+      const r = await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false, lockWaitMs: 1_500 });
+      expect(r.dir).toBe(worktreeIndexDir(main, wt));
+      expect(fs.existsSync(path.join(state, 'worktree-bootstrap.lock'))).toBe(false);
+    } finally {
+      other.kill('SIGKILL');
+    }
+  });
+
+  it('waits for a clone lock whose holder is the process that wrote it', async () => {
+    const state = makeMainIndex();
+    const other = spawn('sleep', ['60'], { stdio: 'ignore' });
+    try {
+      fs.writeFileSync(path.join(state, 'worktree-bootstrap.lock'), JSON.stringify({
+        pid: other.pid, start: processStartToken(other.pid), atMs: Date.now(),
+      }));
+      await expect(bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false, lockWaitMs: 500 }))
+        .rejects.toThrow(/another worktree clone holds the lock/);
+    } finally {
+      other.kill('SIGKILL');
+    }
+  });
+
+  it('replaces a leftover index whose dead maintainer\'s pid another program has', async () => {
+    makeMainIndex();
+    const other = spawn('sleep', ['60'], { stdio: 'ignore' });
+    try {
+      const leftover = worktreeIndexDir(main, wt);
+      fs.mkdirSync(leftover, { recursive: true });
+      fs.writeFileSync(path.join(leftover, 'index-maintainer.lock'), JSON.stringify({
+        pid: other.pid, timestamp: Date.now() - 3_600_000, startToken: 'Mon Jan 1 00:00:00 2001',
+      }));
+      const r = await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
+      expect(r.dir).toBe(leftover);
+      expect(fs.existsSync(path.join(wt, '.sweet-search', 'codebase.db'))).toBe(true);
+    } finally {
+      other.kill('SIGKILL');
+    }
   });
 });
 

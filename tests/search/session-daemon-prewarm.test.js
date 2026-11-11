@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawn } from 'node:child_process';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync, utimesSync,
 } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import net from 'node:net';
@@ -335,6 +335,29 @@ describe('session-daemon-prewarm', () => {
     const r = await runHook();
     expect(r.code).toBe(0);
     expect(existsSync(markerPath)).toBe(false);
+  });
+
+  // docs/STATE_MACHINES.md, issue 8. A hook holds the lock for one spawn call. A hook that
+  // was killed leaves it, and its pid goes to another program later (here: this test's own
+  // process). The lock path is shared by all projects, so it stopped every later prewarm.
+  it('takes over an old lockfile although a live process has its pid', async () => {
+    writeFileSync(lockPath, String(process.pid), 'utf-8');
+    const old = new Date(Date.now() - 5 * 60_000);
+    utimesSync(lockPath, old, old);
+
+    const r = await runHook();
+    expect(r.code).toBe(0);
+    expect(await waitForMarkerLines(1)).toHaveLength(1);
+  });
+
+  it('takes over an old empty lockfile (the holder was killed before it wrote its pid)', async () => {
+    writeFileSync(lockPath, '', 'utf-8');
+    const old = new Date(Date.now() - 5 * 60_000);
+    utimesSync(lockPath, old, old);
+
+    const r = await runHook();
+    expect(r.code).toBe(0);
+    expect(await waitForMarkerLines(1)).toHaveLength(1);
   });
 });
 

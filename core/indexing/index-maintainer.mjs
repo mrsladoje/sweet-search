@@ -39,6 +39,7 @@ import { launchMaintainer, readReconcilePause } from './maintainer-launcher.mjs'
 import { recordSpawn } from '../infrastructure/spawn-ledger.js';
 import { DIRTY_QUEUE, MAINTAINER_LOCK } from '../infrastructure/state-files.mjs';
 import { pidAlive } from '../infrastructure/pid-alive.js';
+import { ownStartToken, sweetSearchProcessIs } from '../infrastructure/process-identity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -86,40 +87,13 @@ function log(level, message) {
 // This prevents Process A from accidentally releasing Process B's lock.
 
 /**
- * Optionally validates the process start time, to prevent PID reuse attacks.
- * @param {string|null} expectedStartTime - Expected /proc start time (Linux only)
+ * Does the maintainer that wrote this lock still run? Not a pid probe: a maintainer that
+ * was killed leaves its lock, and the OS gives its pid to another program later
+ * (process-identity.js). 'other' and 'gone' are a dead holder.
  */
-function isPidRunning(pid, expectedStartTime = null) {
-  try {
-    process.kill(pid, 0);
-
-    if (expectedStartTime && process.platform === 'linux') {
-      try {
-        const stat = readFileSync(`/proc/${pid}/stat`, 'utf-8');
-        const fields = stat.split(' ');
-        const actualStartTime = fields[21];  // Field 22 (0-indexed: 21) = starttime
-        if (actualStartTime !== expectedStartTime) {
-          return false;  // PID reused by different process
-        }
-      } catch {
-        // /proc not available or unreadable, skip check
-      }
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function getProcessStartTime() {
-  if (process.platform !== 'linux') return null;
-  try {
-    const stat = readFileSync(`/proc/${process.pid}/stat`, 'utf-8');
-    const fields = stat.split(' ');
-    return fields[21];  // Field 22 (0-indexed: 21) = starttime
-  } catch {
-    return null;
-  }
+function lockHolderRuns(lock) {
+  const who = sweetSearchProcessIs(Number(lock?.pid), lock?.startToken);
+  return who === 'same' || who === 'unknown';
 }
 
 export function isReconcilePaused(stateDir) {
@@ -321,13 +295,16 @@ export function recordProgress(lockFile) {
  * twin.
  */
 async function sigtermAndStealLock(existing, lockFile, reason) {
-  log('WARN', `Existing maintainer pid=${existing.pid} appears ${reason}; sending SIGTERM before takeover.`);
-  try { process.kill(existing.pid, 'SIGTERM'); } catch { /* ESRCH/EPERM — fine, we'll steal anyway */ }
-  const deadline = Date.now() + WEDGED_KILL_GRACE_MS;
-  while (Date.now() < deadline && isPidRunning(existing.pid, existing.startTime)) {
-    await new Promise((r) => setTimeout(r, 200));
+  // The caller judged the holder a moment ago; the pid can have changed hands since.
+  if (lockHolderRuns(existing)) {
+    log('WARN', `Existing maintainer pid=${existing.pid} appears ${reason}; sending SIGTERM before takeover.`);
+    try { process.kill(existing.pid, 'SIGTERM'); } catch { /* ESRCH/EPERM — fine, we'll steal anyway */ }
+    const deadline = Date.now() + WEDGED_KILL_GRACE_MS;
+    while (Date.now() < deadline && pidAlive(existing.pid)) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
   }
-  if (isPidRunning(existing.pid, existing.startTime)) {
+  if (lockHolderRuns(existing)) {
     log('WARN', `pid=${existing.pid} still alive after SIGTERM+${WEDGED_KILL_GRACE_MS}ms grace; proceeding (it will self-exit at its next loop tick).`);
   }
   // Re-read before unlinking. During the grace above the observed holder may
@@ -340,7 +317,7 @@ async function sigtermAndStealLock(existing, lockFile, reason) {
   if (!current) return;                       // already gone; nothing to steal
   if (current.pid !== existing.pid
       || (existing.ownerToken != null && current.ownerToken !== existing.ownerToken)
-      || (existing.startTime != null && current.startTime != null && current.startTime !== existing.startTime)) {
+      || (existing.startToken != null && current.startToken != null && current.startToken !== existing.startToken)) {
     log('INFO', `Lock for ${lockFile} now belongs to pid=${current.pid} (was ${existing.pid}); abandoning takeover so we never displace a live successor.`);
     return;
   }
@@ -352,7 +329,8 @@ async function sigtermAndStealLock(existing, lockFile, reason) {
  * above for the design rationale). Decision matrix on an existing lockfile:
  *
  *   no / unparseable lock                  → unlink + retry create
- *   dead holder                            → unlink + retry create
+ *   dead holder, or its pid is another     → unlink + retry create
+ *     process now (start token differs)
  *   alive, heartbeat fresh, progress fresh → REFUSE
  *   alive, heartbeat stale, progress fresh → REFUSE (timer-lag tolerance)
  *   alive, heartbeat fresh, progress stale → SIGTERM + steal (alive-but-stuck)
@@ -384,7 +362,8 @@ export async function acquireStateLock(stateDir) {
       lockState = {
         pid: process.pid,
         timestamp: nowMs,
-        startTime: getProcessStartTime(),
+        // Which process this pid is: a later process with the same pid is not the holder.
+        startToken: ownStartToken(),
         ownerToken: randomUUID(),
         progressCounter: 0,
         progressTimestamp: nowMs,
@@ -399,10 +378,11 @@ export async function acquireStateLock(stateDir) {
         try { unlinkSync(lockFile); } catch {}
         continue;
       }
-      const holderAlive = isPidRunning(existing.pid, existing.startTime);
+      const holderAlive = lockHolderRuns(existing);
       if (!holderAlive) {
-        // Crashed daemon — safe to reclaim. (Preserves the dead-pid contract
-        // exercised by tests/indexing/maintainer-launcher.test.js.)
+        // Crashed daemon — safe to reclaim, also when another process has its pid by now.
+        // (Preserves the dead-pid contract exercised by
+        // tests/indexing/maintainer-launcher.test.js.)
         try { unlinkSync(lockFile); } catch {}
         continue;
       }

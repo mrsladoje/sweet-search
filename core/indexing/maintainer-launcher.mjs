@@ -37,6 +37,7 @@ import { reconcileEnablement } from '../incremental-indexing/domain/interval-aut
 import { applyBackgroundPriority } from './os-priority.mjs';
 import { recordSpawn } from '../infrastructure/spawn-ledger.js';
 import { pidAlive } from '../infrastructure/pid-alive.js';
+import { holderLives, ownStartToken, sweetSearchProcessIs } from '../infrastructure/process-identity.js';
 import { MAINTAINER_LOCK, PAUSE_FILE } from '../infrastructure/state-files.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -389,7 +390,10 @@ export function reconcilePaused(stateDir) {
  */
 export function pauseHolds(payload) {
   if (!payload || payload.paused === false) return false;
-  return !(payload.holderPid && !pidAlive(Number(payload.holderPid)));
+  if (!payload.holderPid) return true;
+  // Not a pid probe: the pid of a killed index run goes to another program later, and the
+  // pause would then hold for as long as that program runs (process-identity.js).
+  return holderLives(Number(payload.holderPid), payload.holderStart);
 }
 
 const INDEX_RUN_STOP_TIMEOUT_MS = 60_000;
@@ -425,7 +429,9 @@ export async function holdMaintainerForIndexRun(stateDir, {
   let blockedBy = null;
   let announced = false;
   const deadline = Date.now() + waitForHolderMs;
-  const payload = JSON.stringify({ paused: true, pausedAt: new Date().toISOString(), reason, holderPid: process.pid });
+  const payload = JSON.stringify({
+    paused: true, pausedAt: new Date().toISOString(), reason, holderPid: process.pid, holderStart: ownStartToken(),
+  });
   // Written once, linked into place as often as needed: a temp file created and removed
   // every poll would be listed and then miss in a worktree clone of this folder.
   const tmp = `${pauseFile}.tmp.${process.pid}`;
@@ -461,9 +467,13 @@ export async function holdMaintainerForIndexRun(stateDir, {
     release.blockedBy = blockedBy;
     return release;
   }
-  let pid = null;
-  try { pid = Number(JSON.parse(readFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), 'utf-8')).pid); } catch { /* none */ }
-  if (pid && pid !== process.pid && pidAlive(pid)) {
+  // Stop the maintainer that wrote the lock, and only that process: a killed maintainer
+  // leaves its lock, and its pid can belong to another program by now.
+  let lock = null;
+  try { lock = JSON.parse(readFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), 'utf-8')); } catch { /* none */ }
+  const pid = Number(lock?.pid);
+  const who = pid && pid !== process.pid ? sweetSearchProcessIs(pid, lock?.startToken) : 'gone';
+  if (who === 'same' || who === 'unknown') {
     try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ }
     const stopDeadline = Date.now() + timeoutMs;
     while (pidAlive(pid) && Date.now() < stopDeadline) await new Promise((r) => setTimeout(r, 100));

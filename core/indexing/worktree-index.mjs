@@ -74,6 +74,7 @@ import { fileURLToPath } from 'node:url';
 
 import { DEAD_LEGACY_ARTIFACTS } from './legacy-artifact-sweep.js';
 import { pidAlive } from '../infrastructure/pid-alive.js';
+import { holderLives, ownStartToken } from '../infrastructure/process-identity.js';
 import { CODEBASE_DB, CODE_GRAPH_DB, DIRTY_QUEUE, MAINTAINER_LOCK, PAUSE_FILE, PROCESSING_QUEUE, RECONCILE_MANIFEST } from '../infrastructure/state-files.mjs';
 import { projectPidFile, projectSocketPath, resolveProjectRoot } from '../search/server-identity.js';
 
@@ -634,7 +635,7 @@ export function gcWorktreeIndexes(worktreesDir, { selfPid = 0, nowMs = Date.now(
       if (fs.existsSync(root) && Number.isFinite(stampedMs) && nowMs - stampedMs < CLAIM_STALE_MS) continue;
       const lock = readJson(path.join(dir, MAINTAINER_LOCK));
       const holder = Number(lock?.pid);
-      if (holder && holder !== selfPid && pidAlive(holder)) continue;
+      if (holder && holder !== selfPid && holderLives(holder, lock.startToken)) continue;
       fs.rmSync(dir, { recursive: true, force: true });
       removed.push(dir);
     } catch { /* next one */ }
@@ -645,23 +646,24 @@ export function gcWorktreeIndexes(worktreesDir, { selfPid = 0, nowMs = Date.now(
 const CLONE_LOCK = 'worktree-bootstrap.lock';
 const CLONE_LOCK_WAIT_MS = 120_000;
 
-// O_EXCL; a dead holder's lock is taken over.
+// O_EXCL; a dead holder's lock is taken over. The holder is a process, not a pid: the lock
+// of a killed clone stays, and its pid goes to another program later (process-identity.js).
 async function takeCloneLock(mainState, waitMs = CLONE_LOCK_WAIT_MS) {
   const file = path.join(mainState, CLONE_LOCK);
   const deadline = Date.now() + waitMs;
   for (;;) {
-    if (createExclusive(file, JSON.stringify({ pid: process.pid, atMs: Date.now() }))) {
+    if (createExclusive(file, JSON.stringify({ pid: process.pid, start: ownStartToken(), atMs: Date.now() }))) {
       return () => {
         try { if (readJson(file)?.pid === process.pid) fs.unlinkSync(file); } catch { /* gone */ }
       };
     }
     const holder = readJson(file);
-    const held = holder ? pidAlive(Number(holder.pid)) : fileAgeMs(file) < UNREADABLE_HELD_MS;
+    const held = holder ? holderLives(Number(holder.pid), holder.start) : fileAgeMs(file) < UNREADABLE_HELD_MS;
     if (!held) {
       removeIfStale(file, (text, ageMs) => {
         let h = null;
         try { h = JSON.parse(text); } catch { h = null; }
-        return h ? !pidAlive(Number(h.pid)) : ageMs >= UNREADABLE_HELD_MS;
+        return h ? !holderLives(Number(h.pid), h.start) : ageMs >= UNREADABLE_HELD_MS;
       });
       continue;
     }
@@ -849,7 +851,7 @@ export async function bootstrapWorktreeIndex({
     // A leftover index for this path (its worktree was removed and re-added, and the
     // clean-up has not run) is replaced: it describes other files.
     const old = readJson(path.join(finalDir, MAINTAINER_LOCK));
-    if (old?.pid && pidAlive(Number(old.pid))) {
+    if (old?.pid && holderLives(Number(old.pid), old.startToken)) {
       // The earlier worktree's maintainer is still shutting down: try again soon.
       throw Object.assign(new Error(`a maintainer still runs on ${finalDir}`), { retryAfterMs: 30_000 });
     }

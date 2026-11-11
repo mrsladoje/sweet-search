@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { holdMaintainerForIndexRun, reconcilePaused, pauseHolds } from '../../core/indexing/maintainer-launcher.mjs';
+import { processStartToken } from '../../core/infrastructure/process-identity.js';
 
 // `sweet-search index` and the maintainer wrote merkle-state.json, the manifest and the
 // stores at the same time, with no exclusion. The index run now pauses the maintainer,
@@ -16,7 +17,7 @@ describe('holdMaintainerForIndexRun', () => {
 
   it('pauses, stops the running maintainer, and removes only its own pause', async () => {
     const fake = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
-    writeFileSync(join(stateDir, 'index-maintainer.lock'), JSON.stringify({ pid: fake.pid, timestamp: Date.now() }));
+    writeFileSync(join(stateDir, 'index-maintainer.lock'), JSON.stringify({ pid: fake.pid, timestamp: Date.now(), startToken: processStartToken(fake.pid) }));
     const exited = new Promise((r) => fake.once('exit', r));
 
     const release = await holdMaintainerForIndexRun(stateDir, { timeoutMs: 5_000 });

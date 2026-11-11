@@ -150,7 +150,7 @@ describe('acquireStateLock — basic paths', () => {
     writeLock({
       pid: 2_147_483_600,
       timestamp: Date.now(),
-      startTime: null,
+      startToken: null,
       progressTimestamp: Date.now(),
     });
     const res = await acquireStateLock(stateDir);
@@ -174,7 +174,7 @@ describe('acquireStateLock — progress-aware takeover (new schema)', () => {
   it('REFUSES when heartbeat fresh AND progress fresh (busy + progressing)', async () => {
     const now = Date.now();
     writeLock({
-      pid: process.pid, timestamp: now, startTime: null, progressTimestamp: now,
+      pid: process.pid, timestamp: now, startToken: null, progressTimestamp: now,
     });
     const res = await acquireStateLock(stateDir);
     expect(res.acquired).toBe(false);
@@ -189,7 +189,7 @@ describe('acquireStateLock — progress-aware takeover (new schema)', () => {
     writeLock({
       pid: process.pid,
       timestamp: now - 5 * 60 * 1000,
-      startTime: null,
+      startToken: null,
       progressTimestamp: now - 30 * 1000,
     });
     const res = await acquireStateLock(stateDir);
@@ -207,7 +207,7 @@ describe('acquireStateLock — progress-aware takeover (new schema)', () => {
     writeLock({
       pid: FAKE_LIVE_PID,
       timestamp: now,
-      startTime: null,
+      startToken: null,
       progressTimestamp: now - 5 * 60 * 1000,
     });
     const res = await acquireStateLock(stateDir);
@@ -225,7 +225,7 @@ describe('acquireStateLock — progress-aware takeover (new schema)', () => {
     writeLock({
       pid: FAKE_LIVE_PID,
       timestamp: ancient,
-      startTime: null,
+      startToken: null,
       progressTimestamp: ancient,
     });
     const res = await acquireStateLock(stateDir);
@@ -249,7 +249,7 @@ describe('acquireStateLock — lockfile without progressTimestamp', () => {
     writeLock({
       pid: FAKE_LIVE_PID,
       timestamp: Date.now(),
-      startTime: null,
+      startToken: null,
     });
     const res = await acquireStateLock(stateDir);
     expect(sigTermSpy).toHaveBeenCalledWith(FAKE_LIVE_PID, 'SIGTERM');
@@ -263,7 +263,7 @@ describe('acquireStateLock — lockfile without progressTimestamp', () => {
     writeLock({
       pid: FAKE_LIVE_PID,
       timestamp: Date.now() - 5 * 60 * 1000,
-      startTime: null,
+      startToken: null,
       // no progressTimestamp — fallback treats heartbeat age as progress age
     });
     const res = await acquireStateLock(stateDir);
