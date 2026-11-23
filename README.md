@@ -1364,6 +1364,8 @@ Code search is a crowded space. Here's an honest read on where sweet-search wins
 
 </details>
 
+[ClickHouse Loom](https://github.com/ClickHouse/loom) covers a related shared-service use case: a code index combined with agent memory and document search over MCP. Its [v1.3.0 code index](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/features/code-index/overview.md) supports code search, definitions, callers and change impact, while [code-linked memories](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/use-cases/memory-linked-to-code.md) can accompany code results and flag changes to the code they reference. It requires a self-hosted deployment and repository indexing to be enabled; uncommitted edits are outside that index. These are documented capabilities, not results from the sweet-search benchmarks above.
+
 <sub>Competitors: <a href="https://github.com/Graphify-Labs/graphify">Graphify</a> · <a href="https://github.com/colbymchenry/codegraph">CodeGraph</a> · <a href="https://github.com/abhigyanpatwari/GitNexus">GitNexus</a> · <a href="https://github.com/DeusData/codebase-memory-mcp">codebase-memory</a> · <a href="https://github.com/zilliztech/claude-context">claude-context</a> · <a href="https://github.com/MinishLab/semble">Semble</a> · <a href="https://github.com/giancarloerra/socraticode">SocratiCode</a> · <a href="https://github.com/lightonai/next-plaid">ColGREP</a> · <a href="https://github.com/oraios/serena">Serena</a> · <a href="https://sourcegraph.com">Sourcegraph</a> · <a href="https://github.com/continuedev/continue">Continue</a> · <a href="https://github.com/yoanbernabeu/grepai">grepai</a> · <a href="https://github.com/cocoindex-io/cocoindex-code">cocoindex-code</a></sub>
 
 ## 🙏 Prior Art & Acknowledgements
